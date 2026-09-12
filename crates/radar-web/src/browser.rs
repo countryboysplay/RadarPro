@@ -331,7 +331,7 @@ impl RadarWebRenderer {
                 )
             })?;
 
-        let surface_config = surface
+        let mut surface_config = surface
             .get_default_config(&adapter, width, height)
             .ok_or_else(|| {
                 format!(
@@ -339,6 +339,45 @@ impl RadarWebRenderer {
                     adapter_info.name
                 )
             })?;
+        // `get_default_config` leaves `alpha_mode` at whatever the backend's
+        // own default is -- for a canvas surface that is `Opaque` (the
+        // WebGPU spec's own default `GPUCanvasAlphaMode`), which discards
+        // the alpha channel entirely: every pixel the shader writes as
+        // `NO_DATA_COLOR` (`vec4(0.0, 0.0, 0.0, 0.0)`, see
+        // `radar_sweep.wgsl`) would composite as opaque *black*, not "see
+        // the map/page behind it" -- exactly the "solid black square"
+        // symptom this fix addresses, not a shader/science bug (the shader
+        // already writes the scientifically correct alpha; only the
+        // browser was discarding it).
+        //
+        // `PreMultiplied` is the only alpha-respecting mode the WebGPU
+        // canvas API defines (`"opaque" | "premultiplied"` -- there is no
+        // browser-canvas equivalent of straight/post-multiplied alpha), and
+        // it requires the shader's output RGB to already be multiplied by
+        // its own alpha, which `radar_sweep.wgsl`'s final palette-sample
+        // return does explicitly for this reason. Every *other* color this
+        // shader can output (`NO_DATA_COLOR`, `RANGE_FOLDED_COLOR`, and
+        // every shipped default color table's stops) only ever uses alpha
+        // 0 or 255, where premultiplication is a no-op (0*x=0, 1*x=x) --
+        // native rendering (`radar-render`'s off-screen-texture harness,
+        // which has no canvas/alpha_mode concept at all) is therefore
+        // byte-identical before and after this change for all currently
+        // shipped data; a future custom color table using a genuinely
+        // partial alpha value now composites correctly too, instead of
+        // silently looking wrong only in the browser.
+        if surface
+            .get_capabilities(&adapter)
+            .alpha_modes
+            .contains(&wgpu::CompositeAlphaMode::PreMultiplied)
+        {
+            surface_config.alpha_mode = wgpu::CompositeAlphaMode::PreMultiplied;
+        }
+        // Else: leave the backend's default (`Opaque` in practice). This
+        // degrades to the pre-fix "black square" look rather than failing
+        // to render at all -- no browser/backend combination encountered
+        // in this project's own verification lacked `PreMultiplied`
+        // support, but silently falling back rather than erroring keeps a
+        // GPU that genuinely can't do better still usable.
         let surface_format = surface_config.format;
         surface.configure(&device, &surface_config);
 

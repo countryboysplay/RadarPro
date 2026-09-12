@@ -155,5 +155,16 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     if (span > 0.0) {
         u = clamp((sample.value - uniforms.palette_min_dbz) / span, 0.0, 1.0);
     }
-    return textureSampleLevel(palette_tex, palette_sampler, u, 0.0);
+    let palette_color = textureSampleLevel(palette_tex, palette_sampler, u, 0.0);
+    // Premultiply RGB by alpha: the browser-facing surface (see
+    // `radar-web`'s `RadarWebRenderer::create`) is configured for
+    // premultiplied-alpha compositing, which the WebGPU canvas API requires
+    // for any alpha-respecting mode. A color table's stops are authored as
+    // ordinary (straight-alpha) RGBA -- see `COLOR_TABLE_FORMAT.md` -- so
+    // that conversion happens here, once, at the only point a partial
+    // (neither-0-nor-255) alpha value can actually reach this shader.
+    // `NO_DATA_COLOR`/`RANGE_FOLDED_COLOR` above are already
+    // premultiply-safe (alpha 0 or 1), so they return directly without
+    // this step.
+    return vec4<f32>(palette_color.rgb * palette_color.a, palette_color.a);
 }
