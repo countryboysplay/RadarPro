@@ -7,6 +7,7 @@ members = [
     "crates/radar-render",
     "crates/radar-cache",
     "crates/radar-web",
+    "crates/weather-alerts",
     "apps/radar-cli",
 ]
 

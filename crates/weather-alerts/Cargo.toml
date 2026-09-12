@@ -1,0 +1,54 @@
+[package]
+name = "weather-alerts"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "S06: normalized NWS CAP/GeoJSON alert model, bounded never-panicking parsing of the /alerts/active feed, and poll-race-safe alert lifecycle (new/update/replacement/cancellation/time-based expiration) state management, plus a thin wasm-bindgen API for the browser map/UI layer."
+
+[lib]
+# `cdylib` is what `wasm-bindgen`/`wasm-pack` compile into the browser-loaded
+# `.wasm` module (see `src/wasm_api.rs`); `rlib` keeps this crate usable as
+# an ordinary Rust dependency on the host target too, which is what
+# `cargo test -p weather-alerts` (native, exercising the whole domain
+# model/parser/store) builds against -- same split `radar-web` uses.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# Reuses the project's one canonical UTC-timestamp type (milliseconds since
+# the Unix epoch) rather than introducing a second one -- see `src/time.rs`
+# module docs for why this crate still hand-rolls its own RFC 3339 parser
+# instead of depending on `radar-types` for anything beyond the
+# `Timestamp` value type itself.
+radar-types = { path = "../radar-types" }
+
+# Same pinned version already used by `nexrad-level2`/`radar-cache`, for a
+# structured, non-panicking error enum over untrusted CAP/GeoJSON input.
+thiserror = "=2.0.20"
+
+# Same pinned versions already used by `radar-cache`/`radar-render`
+# (deliberately kept in lockstep across the workspace -- see those crates'
+# `Cargo.toml` comments -- so no two crates in this workspace resolve
+# different `serde`/`serde_json` releases). `serde`'s `derive` feature is
+# used only for this crate's own JSON *output* wire types (`src/json.rs`);
+# *input* (the untrusted `/alerts/active` feed) is parsed by hand via
+# `serde_json::Value` with explicit field-by-field validation, matching
+# this codebase's established discipline for untrusted external input
+# (see `nexrad-level2`'s hand-parsed, bounds-checked binary decoding).
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.151"
+
+# Real browser/wasm-bindgen glue is wasm32-only, the same split `radar-web`
+# uses: a native `cargo build --workspace`/`cargo test -p weather-alerts`
+# never needs to resolve `wasm-bindgen` at all.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "=0.2.128"
+
+# Same pin as `radar-web`: turns a Rust panic into a readable
+# `console.error` message instead of an opaque wasm trap. Kept even though
+# this crate's own code is designed to never panic on untrusted input,
+# purely as defense-in-depth for the wasm boundary (a caller passing a
+# non-UTF8 buffer, an allocation failure, etc.) -- same rationale as
+# `radar-web`.
+[target.'cfg(target_arch = "wasm32")'.dependencies.console_error_panic_hook]
+version = "=0.1.7"

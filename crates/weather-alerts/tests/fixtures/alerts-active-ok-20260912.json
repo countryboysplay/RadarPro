@@ -1,0 +1,1842 @@
+{
+    "@context": [
+        "https://geojson.org/geojson-ld/geojson-context.jsonld",
+        {
+            "@version": "1.1",
+            "wx": "https://api.weather.gov/ontology#",
+            "@vocab": "https://api.weather.gov/ontology#"
+        }
+    ],
+    "type": "FeatureCollection",
+    "features": [
+        {
+            "id": "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.3d35929f1134e39da2c5081fcf20be3ee3116b4a.001.1",
+            "type": "Feature",
+            "geometry": {
+                "type": "Polygon",
+                "coordinates": [
+                    [
+                        [
+                            -95.94,
+                            34.16
+                        ],
+                        [
+                            -95.96,
+                            34.16
+                        ],
+                        [
+                            -96.03,
+                            34.32
+                        ],
+                        [
+                            -95.87,
+                            34.39
+                        ],
+                        [
+                            -95.78,
+                            34.3
+                        ],
+                        [
+                            -95.78,
+                            34.19
+                        ],
+                        [
+                            -95.94,
+                            34.16
+                        ]
+                    ]
+                ]
+            },
+            "properties": {
+                "@id": "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.3d35929f1134e39da2c5081fcf20be3ee3116b4a.001.1",
+                "@type": "wx:Alert",
+                "id": "urn:oid:2.49.0.1.840.0.3d35929f1134e39da2c5081fcf20be3ee3116b4a.001.1",
+                "areaDesc": "Atoka",
+                "geocode": {
+                    "SAME": [
+                        "040005"
+                    ],
+                    "UGC": [
+                        "OKZ048"
+                    ]
+                },
+                "affectedZones": [
+                    "https://api.weather.gov/zones/forecast/OKZ048"
+                ],
+                "references": [],
+                "sent": "2026-09-12T18:09:00-05:00",
+                "effective": "2026-09-12T18:09:00-05:00",
+                "onset": "2026-09-12T18:09:00-05:00",
+                "expires": "2026-09-12T18:45:00-05:00",
+                "ends": null,
+                "status": "Actual",
+                "messageType": "Alert",
+                "category": "Met",
+                "severity": "Moderate",
+                "certainty": "Observed",
+                "urgency": "Expected",
+                "event": "Special Weather Statement",
+                "sender": "w-nws.webmaster@noaa.gov",
+                "senderName": "NWS Norman OK",
+                "headline": "Special Weather Statement issued September 12 at 6:09PM CDT by NWS Norman OK",
+                "description": "At 609 PM CDT, Doppler radar was tracking a strong thunderstorm near\nLane, moving southeast at 10 mph.\n\nHAZARD...Wind gusts of 40 mph and half inch hail.\n\nSOURCE...Radar indicated.\n\nIMPACT...Gusty winds could knock down tree limbs and blow around\nunsecured objects. Minor damage to outdoor objects is\npossible.\n\nLocations impacted include...\nLane, McGee Creek Lake, and Darwin.",
+                "instruction": "If outdoors, consider seeking shelter inside a building.",
+                "response": "Execute",
+                "note": null,
+                "parameters": {
+                    "AWIPSidentifier": [
+                        "SPSOUN"
+                    ],
+                    "WMOidentifier": [
+                        "WWUS84 KOUN 122309"
+                    ],
+                    "NWSheadline": [
+                        "A strong thunderstorm will impact portions of southeastern Atoka County through 645 PM CDT"
+                    ],
+                    "eventMotionDescription": [
+                        "2026-09-12T23:09:00-00:00...storm...330DEG...8KT...34.29,-95.93"
+                    ],
+                    "maxWindGust": [
+                        "40 MPH"
+                    ],
+                    "maxHailSize": [
+                        "0.50"
+                    ],
+                    "BLOCKCHANNEL": [
+                        "EAS",
+                        "NWEM",
+                        "CMAS"
+                    ],
+                    "EAS-ORG": [
+                        "WXR"
+                    ]
+                },
+                "scope": "Public",
+                "code": "IPAWSv1.0",
+                "language": "en-US",
+                "web": "http://www.weather.gov",
+                "eventCode": {
+                    "SAME": [
+                        "SPS"
+                    ],
+                    "NationalWeatherService": [
+                        "SPS"
+                    ]
+                }
+            }
+        },
+        {
+            "id": "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.d668ed02a1423b9de5dcdfffe1b04f07f80b00c7.001.1",
+            "type": "Feature",
+            "geometry": {
+                "type": "Polygon",
+                "coordinates": [
+                    [
+                        [
+                            -98.64,
+                            36.12
+                        ],
+                        [
+                            -98.7,
+                            35.95
+                        ],
+                        [
+                            -98.86,
+                            36.09
+                        ],
+                        [
+                            -98.82,
+                            36.16
+                        ],
+                        [
+                            -98.64,
+                            36.12
+                        ]
+                    ]
+                ]
+            },
+            "properties": {
+                "@id": "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.d668ed02a1423b9de5dcdfffe1b04f07f80b00c7.001.1",
+                "@type": "wx:Alert",
+                "id": "urn:oid:2.49.0.1.840.0.d668ed02a1423b9de5dcdfffe1b04f07f80b00c7.001.1",
+                "areaDesc": "Dewey",
+                "geocode": {
+                    "SAME": [
+                        "040043"
+                    ],
+                    "UGC": [
+                        "OKZ015"
+                    ]
+                },
+                "affectedZones": [
+                    "https://api.weather.gov/zones/forecast/OKZ015"
+                ],
+                "references": [],
+                "sent": "2026-09-12T18:06:00-05:00",
+                "effective": "2026-09-12T18:06:00-05:00",
+                "onset": "2026-09-12T18:06:00-05:00",
+                "expires": "2026-09-12T18:30:00-05:00",
+                "ends": null,
+                "status": "Actual",
+                "messageType": "Alert",
+                "category": "Met",
+                "severity": "Moderate",
+                "certainty": "Observed",
+                "urgency": "Expected",
+                "event": "Special Weather Statement",
+                "sender": "w-nws.webmaster@noaa.gov",
+                "senderName": "NWS Norman OK",
+                "headline": "Special Weather Statement issued September 12 at 6:06PM CDT by NWS Norman OK",
+                "description": "At 606 PM CDT, Doppler radar was tracking a strong thunderstorm 8\nmiles west of Canton Lake, moving southeast at 10 mph.\n\nHAZARD...Wind gusts up to 50 mph and penny size hail.\n\nSOURCE...Radar indicated.\n\nIMPACT...Gusty winds could knock down tree limbs and blow around\nunsecured objects. Minor damage to outdoor objects is\npossible.\n\nLocations impacted include...\nWestern Canton Lake and Hucmac.",
+                "instruction": "If outdoors, consider seeking shelter inside a building.",
+                "response": "Execute",
+                "note": null,
+                "parameters": {
+                    "AWIPSidentifier": [
+                        "SPSOUN"
+                    ],
+                    "WMOidentifier": [
+                        "WWUS84 KOUN 122306"
+                    ],
+                    "NWSheadline": [
+                        "A strong thunderstorm will impact portions of northeastern Dewey County through 630 PM CDT"
+                    ],
+                    "eventMotionDescription": [
+                        "2026-09-12T23:06:00-00:00...storm...307DEG...8KT...36.09,-98.77"
+                    ],
+                    "maxWindGust": [
+                        "50 MPH"
+                    ],
+                    "maxHailSize": [
+                        "0.75"
+                    ],
+                    "BLOCKCHANNEL": [
+                        "EAS",
+                        "NWEM",
+                        "CMAS"
+                    ],
+                    "EAS-ORG": [
+                        "WXR"
+                    ]
+                },
+                "scope": "Public",
+                "code": "IPAWSv1.0",
+                "language": "en-US",
+                "web": "http://www.weather.gov",
+                "eventCode": {
+                    "SAME": [
+                        "SPS"
+                    ],
+                    "NationalWeatherService": [
+                        "SPS"
+                    ]
+                }
+            }
+        },
+        {
+            "id": "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.0b480821d97d7b520d561cbea7e16c04cd1695ef.002.1",
+            "type": "Feature",
+            "geometry": {
+                "type": "Polygon",
+                "coordinates": [
+                    [
+                        [
+                            -97.67,
+                            35.68
+                        ],
+                        [
+                            -97.79,
+                            35.52
+                        ],
+                        [
+                            -98.11,
+                            35.7
+                        ],
+                        [
+                            -98.11,
+                            35.72
+                        ],
+                        [
+                            -97.77,
+                            35.73
+                        ],
+                        [
+                            -97.67,
+                            35.68
+                        ]
+                    ]
+                ]
+            },
+            "properties": {
+                "@id": "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.0b480821d97d7b520d561cbea7e16c04cd1695ef.002.1",
+                "@type": "wx:Alert",
+                "id": "urn:oid:2.49.0.1.840.0.0b480821d97d7b520d561cbea7e16c04cd1695ef.002.1",
+                "areaDesc": "Canadian, OK",
+                "geocode": {
+                    "SAME": [
+                        "040017"
+                    ],
+                    "UGC": [
+                        "OKC017"
+                    ]
+                },
+                "affectedZones": [
+                    "https://api.weather.gov/zones/county/OKC017"
+                ],
+                "references": [
+                    {
+                        "@id": "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.e534d55c7611fc50f6f04105dcc6018708138198.001.1",
+                        "identifier": "urn:oid:2.49.0.1.840.0.e534d55c7611fc50f6f04105dcc6018708138198.001.1",
+                        "sender": "w-nws.webmaster@noaa.gov",
+                        "sent": "2026-09-12T17:44:00-05:00"
+                    }
+                ],
+                "sent": "2026-09-12T18:03:00-05:00",
+                "effective": "2026-09-12T18:03:00-05:00",
+                "onset": "2026-09-12T18:03:00-05:00",
+                "expires": "2026-09-12T18:30:00-05:00",
+                "ends": "2026-09-12T18:30:00-05:00",
+                "status": "Actual",
+                "messageType": "Update",
+                "category": "Met",
+                "severity": "Severe",
+                "certainty": "Observed",
+                "urgency": "Immediate",
+                "event": "Severe Thunderstorm Warning",
+                "sender": "w-nws.webmaster@noaa.gov",
+                "senderName": "NWS Norman OK",
+                "headline": "Severe Thunderstorm Warning issued September 12 at 6:03PM CDT until September 12 at 6:30PM CDT by NWS Norman OK",
+                "description": "At 602 PM CDT, a severe thunderstorm was located 7 miles northeast of\nConcho, moving southeast at 10 mph.\n\nHAZARD...60 mph wind gusts and quarter size hail.\n\nSOURCE...Radar indicated.\n\nIMPACT...Hail damage to vehicles is expected. Expect wind damage to\nroofs, siding, and trees.\n\nLocations impacted include...\nNorthwestern Oklahoma City, Yukon, Piedmont, Okarche, and Richland.",
+                "instruction": "For your protection move to an interior room on the lowest floor of a\nbuilding.",
+                "response": "Shelter",
+                "note": null,
+                "parameters": {
+                    "AWIPSidentifier": [
+                        "SVSOUN"
+                    ],
+                    "WMOidentifier": [
+                        "WWUS54 KOUN 122303"
+                    ],
+                    "NWSheadline": [
+                        "A SEVERE THUNDERSTORM WARNING REMAINS IN EFFECT UNTIL 630 PM CDT FOR NORTHEASTERN CANADIAN COUNTY"
+                    ],
+                    "eventMotionDescription": [
+                        "2026-09-12T23:02:00-00:00...storm...307DEG...8KT...35.66,-97.88"
+                    ],
+                    "windThreat": [
+                        "RADAR INDICATED"
+                    ],
+                    "maxWindGust": [
+                        "60 MPH"
+                    ],
+                    "hailThreat": [
+                        "RADAR INDICATED"
+                    ],
+                    "maxHailSize": [
+                        "1.00"
+                    ],
+                    "BLOCKCHANNEL": [
+                        "EAS",
+                        "NWEM",
+                        "CMAS"
+                    ],
+                    "EAS-ORG": [
+                        "WXR"
+                    ],
+                    "VTEC": [
+                        "/O.CON.KOUN.SV.W.0890.000000T0000Z-260912T2330Z/"
+                    ],
+                    "eventEndingTime": [
+                        "2026-09-12T18:30:00-05:00"
+                    ]
+                },
+                "scope": "Public",
+                "code": "IPAWSv1.0",
+                "language": "en-US",
+                "web": "http://www.weather.gov",
+                "eventCode": {
+                    "SAME": [
+                        "SVS"
+                    ],
+                    "NationalWeatherService": [
+                        "SVW"
+                    ]
+                }
+            }
+        },
+        {
+            "id": "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.6e7c0cedf6b784de4b8421f808863ac9ab1d0af5.001.1",
+            "type": "Feature",
+            "geometry": {
+                "type": "Polygon",
+                "coordinates": [
+                    [
+                        [
+                            -94.81,
+                            33.98
+                        ],
+                        [
+                            -94.47,
+                            33.9
+                        ],
+                        [
+                            -93.87,
+                            33.6
+                        ],
+                        [
+                            -94.1,
+                            33.59
+                        ],
+                        [
+                            -94.44,
+                            33.62
+                        ],
+                        [
+                            -94.46,
+                            33.63
+                        ],
+                        [
+                            -94.45,
+                            33.64
+                        ],
+                        [
+                            -94.46,
+                            33.65
+                        ],
+                        [
+                            -94.49,
+                            33.64
+                        ],
+                        [
+                            -94.58,
+                            33.67
+                        ],
+                        [
+                            -94.59,
+                            33.69
+                        ],
+                        [
+                            -94.59,
+                            33.67
+                        ],
+                        [
+                            -94.65,
+                            33.68
+                        ],
+                        [
+                            -94.64,
+                            33.7
+                        ],
+                        [
+                            -94.65,
+                            33.69
+                        ],
+                        [
+                            -94.74,
+                            33.72
+                        ],
+                        [
+                            -94.74,
+                            33.73
+                        ],
+                        [
+                            -94.75,
+                            33.72
+                        ],
+                        [
+                            -94.75,
+                            33.73
+                        ],
+                        [
+                            -94.78,
+                            33.73
+                        ],
+                        [
+                            -94.81,
+                            33.98
+                        ]
+                    ]
+                ]
+            },
+            "properties": {
+                "@id": "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.6e7c0cedf6b784de4b8421f808863ac9ab1d0af5.001.1",
+                "@type": "wx:Alert",
+                "id": "urn:oid:2.49.0.1.840.0.6e7c0cedf6b784de4b8421f808863ac9ab1d0af5.001.1",
+                "areaDesc": "Little River; McCurtain",
+                "geocode": {
+                    "SAME": [
+                        "005081",
+                        "040089"
+                    ],
+                    "UGC": [
+                        "ARZ059",
+                        "OKZ077"
+                    ]
+                },
+                "affectedZones": [
+                    "https://api.weather.gov/zones/forecast/ARZ059",
+                    "https://api.weather.gov/zones/forecast/OKZ077"
+                ],
+                "references": [],
+                "sent": "2026-09-12T17:51:00-05:00",
+                "effective": "2026-09-12T17:51:00-05:00",
+                "onset": "2026-09-12T17:51:00-05:00",
+                "expires": "2026-09-12T19:00:00-05:00",
+                "ends": null,
+                "status": "Actual",
+                "messageType": "Alert",
+                "category": "Met",
+                "severity": "Moderate",
+                "certainty": "Observed",
+                "urgency": "Expected",
+                "event": "Special Weather Statement",
+                "sender": "w-nws.webmaster@noaa.gov",
+                "senderName": "NWS Shreveport LA",
+                "headline": "Special Weather Statement issued September 12 at 5:51PM CDT by NWS Shreveport LA",
+                "description": "At 551 PM CDT, Doppler radar was tracking an area of strong\nthunderstorms 9 miles east of Broken Bow, or 14 miles west of\nHoratio, moving south at 10 mph.\n\nHAZARD...Wind gusts up to 50 mph and nickel size hail.\n\nSOURCE...Radar indicated.\n\nIMPACT...Gusty winds could knock down tree limbs and blow around\nunsecured objects. Minor damage to outdoor objects is\npossible.\n\nLocations impacted include...\nAshdown, Foreman, Idabel, Wilton, Winthrop, Arkinda, Richmond,\nHaworth, Wallace, America, Tom, Moon, Shinewell, Bokhoma, Arden,\nGoodwater, Goodlake, Harris and Pine Prairie.",
+                "instruction": "Monitor the weather situation closely and be alert for threatening\nweather conditions.\n\nIf outdoors, consider seeking shelter inside a building.\n\nThis storm may intensify, so be certain to monitor local radio\nstations and available television stations for additional information\nand possible warnings from the National Weather Service.\n\nFrequent cloud to ground lightning is occurring with this storm.\nLightning can strike 10 miles away from a thunderstorm. Seek a safe\nshelter inside a building or vehicle.",
+                "response": "Execute",
+                "note": null,
+                "parameters": {
+                    "AWIPSidentifier": [
+                        "SPSSHV"
+                    ],
+                    "WMOidentifier": [
+                        "WWUS84 KSHV 122251"
+                    ],
+                    "NWSheadline": [
+                        "AN AREA OF STRONG THUNDERSTORMS WILL IMPACT LITTLE RIVER AND SOUTHEASTERN MCCURTAIN COUNTIES UNTIL 7 PM CDT"
+                    ],
+                    "eventMotionDescription": [
+                        "2026-09-12T22:51:00-00:00...storm...337DEG...9KT...33.98,-94.6"
+                    ],
+                    "maxWindGust": [
+                        "50 MPH"
+                    ],
+                    "maxHailSize": [
+                        "0.88"
+                    ],
+                    "BLOCKCHANNEL": [
+                        "EAS",
+                        "NWEM",
+                        "CMAS"
+                    ],
+                    "EAS-ORG": [
+                        "WXR"
+                    ]
+                },
+                "scope": "Public",
+                "code": "IPAWSv1.0",
+                "language": "en-US",
+                "web": "http://www.weather.gov",
+                "eventCode": {
+                    "SAME": [
+                        "SPS"
+                    ],
+                    "NationalWeatherService": [
+                        "SPS"
+                    ]
+                }
+            }
+        },
+        {
+            "id": "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.8a8194a05f3d62ba8b11427e30ea0b3a36c1b2e8.001.1",
+            "type": "Feature",
+            "geometry": {
+                "type": "Polygon",
+                "coordinates": [
+                    [
+                        [
+                            -95.78,
+                            34.15
+                        ],
+                        [
+                            -95.78,
+                            34.38
+                        ],
+                        [
+                            -95.45,
+                            34.26
+                        ],
+                        [
+                            -95.46,
+                            34.08
+                        ],
+                        [
+                            -95.78,
+                            34.15
+                        ]
+                    ]
+                ]
+            },
+            "properties": {
+                "@id": "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.8a8194a05f3d62ba8b11427e30ea0b3a36c1b2e8.001.1",
+                "@type": "wx:Alert",
+                "id": "urn:oid:2.49.0.1.840.0.8a8194a05f3d62ba8b11427e30ea0b3a36c1b2e8.001.1",
+                "areaDesc": "Pushmataha; Choctaw",
+                "geocode": {
+                    "SAME": [
+                        "040127",
+                        "040023"
+                    ],
+                    "UGC": [
+                        "OKZ049",
+                        "OKZ053"
+                    ]
+                },
+                "affectedZones": [
+                    "https://api.weather.gov/zones/forecast/OKZ049",
+                    "https://api.weather.gov/zones/forecast/OKZ053"
+                ],
+                "references": [],
+                "sent": "2026-09-12T17:43:00-05:00",
+                "effective": "2026-09-12T17:43:00-05:00",
+                "onset": "2026-09-12T17:43:00-05:00",
+                "expires": "2026-09-12T18:15:00-05:00",
+                "ends": null,
+                "status": "Actual",
+                "messageType": "Alert",
+                "category": "Met",
+                "severity": "Moderate",
+                "certainty": "Observed",
+                "urgency": "Expected",
+                "event": "Special Weather Statement",
+                "sender": "w-nws.webmaster@noaa.gov",
+                "senderName": "NWS Tulsa OK",
+                "headline": "Special Weather Statement issued September 12 at 5:43PM CDT by NWS Tulsa OK",
+                "description": "At 543 PM CDT, Doppler radar indicated strong thunderstorms along a\nline extending from 4 miles east of Antlers to 5 miles west of\nMoyers. Movement was south at 5 mph.\n\nHAZARD...Wind gusts up to 40 mph.\n\nSOURCE...Radar indicated.\n\nIMPACT...Gusty winds could knock down small tree limbs and blow\naround unsecured objects.\n\nLocations in or near the path include...\nAntlers...                        Moyers...\nKellond...                        Messer...\nDarwin...                         Speer...\nDela...",
+                "instruction": "If outdoors, consider seeking shelter inside a building.",
+                "response": "Execute",
+                "note": null,
+                "parameters": {
+                    "AWIPSidentifier": [
+                        "SPSTSA"
+                    ],
+                    "WMOidentifier": [
+                        "WWUS84 KTSA 122243"
+                    ],
+                    "NWSheadline": [
+                        "STRONG THUNDERSTORMS WILL IMPACT SOUTHWESTERN PUSHMATAHA AND NORTH CENTRAL CHOCTAW COUNTIES THROUGH 615 PM CDT"
+                    ],
+                    "eventMotionDescription": [
+                        "2026-09-12T22:43:00-00:00...storm...000DEG...6KT...34.24,-95.55 34.31,-95.75"
+                    ],
+                    "maxWindGust": [
+                        "40 MPH"
+                    ],
+                    "maxHailSize": [
+                        "0.00"
+                    ],
+                    "BLOCKCHANNEL": [
+                        "EAS",
+                        "NWEM",
+                        "CMAS"
+                    ],
+                    "EAS-ORG": [
+                        "WXR"
+                    ]
+                },
+                "scope": "Public",
+                "code": "IPAWSv1.0",
+                "language": "en-US",
+                "web": "http://www.weather.gov",
+                "eventCode": {
+                    "SAME": [
+                        "SPS"
+                    ],
+                    "NationalWeatherService": [
+                        "SPS"
+                    ]
+                }
+            }
+        },
+        {
+            "id": "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.a5af048b04fd9d374be9c45496b186a17dde9464.001.1",
+            "type": "Feature",
+            "geometry": {
+                "type": "Polygon",
+                "coordinates": [
+                    [
+                        [
+                            -94.8,
+                            34.51
+                        ],
+                        [
+                            -94.46,
+                            34.45
+                        ],
+                        [
+                            -94.47,
+                            34.19
+                        ],
+                        [
+                            -94.24,
+                            34.19
+                        ],
+                        [
+                            -94.25,
+                            34.35
+                        ],
+                        [
+                            -93.94,
+                            34.35
+                        ],
+                        [
+                            -93.93,
+                            34.19
+                        ],
+                        [
+                            -93.82,
+                            34.18
+                        ],
+                        [
+                            -93.82,
+                            34.01
+                        ],
+                        [
+                            -94.47,
+                            33.9
+                        ],
+                        [
+                            -95.16,
+                            34.06
+                        ],
+                        [
+                            -95.15,
+                            34.24
+                        ],
+                        [
+                            -95.05,
+                            34.24
+                        ],
+                        [
+                            -95.05,
+                            34.51
+                        ],
+                        [
+                            -94.8,
+                            34.51
+                        ]
+                    ]
+                ]
+            },
+            "properties": {
+                "@id": "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.a5af048b04fd9d374be9c45496b186a17dde9464.001.1",
+                "@type": "wx:Alert",
+                "id": "urn:oid:2.49.0.1.840.0.a5af048b04fd9d374be9c45496b186a17dde9464.001.1",
+                "areaDesc": "Sevier; Howard; Little River; McCurtain",
+                "geocode": {
+                    "SAME": [
+                        "005133",
+                        "005061",
+                        "005081",
+                        "040089"
+                    ],
+                    "UGC": [
+                        "ARZ050",
+                        "ARZ051",
+                        "ARZ059",
+                        "OKZ077"
+                    ]
+                },
+                "affectedZones": [
+                    "https://api.weather.gov/zones/forecast/ARZ050",
+                    "https://api.weather.gov/zones/forecast/ARZ051",
+                    "https://api.weather.gov/zones/forecast/ARZ059",
+                    "https://api.weather.gov/zones/forecast/OKZ077"
+                ],
+                "references": [],
+                "sent": "2026-09-12T16:54:00-05:00",
+                "effective": "2026-09-12T16:54:00-05:00",
+                "onset": "2026-09-12T16:54:00-05:00",
+                "expires": "2026-09-12T18:15:00-05:00",
+                "ends": null,
+                "status": "Actual",
+                "messageType": "Alert",
+                "category": "Met",
+                "severity": "Moderate",
+                "certainty": "Observed",
+                "urgency": "Expected",
+                "event": "Special Weather Statement",
+                "sender": "w-nws.webmaster@noaa.gov",
+                "senderName": "NWS Shreveport LA",
+                "headline": "Special Weather Statement issued September 12 at 4:54PM CDT by NWS Shreveport LA",
+                "description": "At 454 PM CDT, Doppler radar was tracking an area of strong\nthunderstorms 19 miles north of Broken Bow, or 23 miles northwest of\nDe Queen, moving south at 15 mph.\n\nHAZARD...Wind gusts of 50 to 55 mph and nickel size hail.\n\nSOURCE...Radar indicated.\n\nIMPACT...Gusty winds could knock down tree limbs and blow around\nunsecured objects. Minor damage to outdoor objects is\npossible.\n\nLocations impacted include...\nDe Queen, Dierks, Horatio, Umpire, Broken Bow, Lockesburg, Gillham,\nCorinth, Athens, Center Point, Wright City, Hochatown, Eagletown,\nWest Line, Plunketville, Watson, Cerrogordo, West Otis and\nSherwood.",
+                "instruction": "Monitor the weather situation closely and be alert for threatening\nweather conditions.\n\nThis storm may intensify, so be certain to monitor local radio\nstations and available television stations for additional information\nand possible warnings from the National Weather Service.\n\nFrequent cloud to ground lightning is occurring with this storm.\nLightning can strike 10 miles away from a thunderstorm. Seek a safe\nshelter inside a building or vehicle.\n\nIf on or near any lakes, get out of the water and move indoors or\ninside a vehicle. Remember, lightning can strike out to 10 miles from\nthe parent thunderstorm. If you can hear thunder, you are close\nenough to be struck by lightning. Move to safe shelter now! Do not be\ncaught on the water in a thunderstorm.\n\nPersons in campgrounds should consider seeking sturdy shelter until\nthis storm passes.",
+                "response": "Execute",
+                "note": null,
+                "parameters": {
+                    "AWIPSidentifier": [
+                        "SPSSHV"
+                    ],
+                    "WMOidentifier": [
+                        "WWUS84 KSHV 122154"
+                    ],
+                    "NWSheadline": [
+                        "AN AREA OF STRONG THUNDERSTORMS WILL IMPACT NORTHWESTERN LITTLE RIVER...HOWARD...SEVIER AND MCCURTAIN COUNTIES UNTIL 615 PM CDT"
+                    ],
+                    "eventMotionDescription": [
+                        "2026-09-12T21:53:00-00:00...storm...337DEG...13KT...34.28,-94.64"
+                    ],
+                    "maxHailSize": [
+                        "0.88"
+                    ],
+                    "BLOCKCHANNEL": [
+                        "EAS",
+                        "NWEM",
+                        "CMAS"
+                    ],
+                    "EAS-ORG": [
+                        "WXR"
+                    ]
+                },
+                "scope": "Public",
+                "code": "IPAWSv1.0",
+                "language": "en-US",
+                "web": "http://www.weather.gov",
+                "eventCode": {
+                    "SAME": [
+                        "SPS"
+                    ],
+                    "NationalWeatherService": [
+                        "SPS"
+                    ]
+                }
+            }
+        },
+        {
+            "id": "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.36976f32e2eaa3e9b15b73be1b6d47c3e785a7d9.001.1",
+            "type": "Feature",
+            "geometry": null,
+            "properties": {
+                "@id": "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.36976f32e2eaa3e9b15b73be1b6d47c3e785a7d9.001.1",
+                "@type": "wx:Alert",
+                "id": "urn:oid:2.49.0.1.840.0.36976f32e2eaa3e9b15b73be1b6d47c3e785a7d9.001.1",
+                "areaDesc": "Alfalfa, OK; Blaine, OK; Canadian, OK; Cleveland, OK; Coal, OK; Custer, OK; Dewey, OK; Ellis, OK; Garfield, OK; Harper, OK; Hughes, OK; Kingfisher, OK; Lincoln, OK; Logan, OK; McClain, OK; Major, OK; Noble, OK; Oklahoma, OK; Payne, OK; Pontotoc, OK; Pottawatomie, OK; Roger Mills, OK; Seminole, OK; Woods, OK; Woodward, OK",
+                "geocode": {
+                    "SAME": [
+                        "040003",
+                        "040011",
+                        "040017",
+                        "040027",
+                        "040029",
+                        "040039",
+                        "040043",
+                        "040045",
+                        "040047",
+                        "040059",
+                        "040063",
+                        "040073",
+                        "040081",
+                        "040083",
+                        "040087",
+                        "040093",
+                        "040103",
+                        "040109",
+                        "040119",
+                        "040123",
+                        "040125",
+                        "040129",
+                        "040133",
+                        "040151",
+                        "040153"
+                    ],
+                    "UGC": [
+                        "OKC003",
+                        "OKC011",
+                        "OKC017",
+                        "OKC027",
+                        "OKC029",
+                        "OKC039",
+                        "OKC043",
+                        "OKC045",
+                        "OKC047",
+                        "OKC059",
+                        "OKC063",
+                        "OKC073",
+                        "OKC081",
+                        "OKC083",
+                        "OKC087",
+                        "OKC093",
+                        "OKC103",
+                        "OKC109",
+                        "OKC119",
+                        "OKC123",
+                        "OKC125",
+                        "OKC129",
+                        "OKC133",
+                        "OKC151",
+                        "OKC153"
+                    ]
+                },
+                "affectedZones": [
+                    "https://api.weather.gov/zones/county/OKC003",
+                    "https://api.weather.gov/zones/county/OKC011",
+                    "https://api.weather.gov/zones/county/OKC017",
+                    "https://api.weather.gov/zones/county/OKC027",
+                    "https://api.weather.gov/zones/county/OKC029",
+                    "https://api.weather.gov/zones/county/OKC039",
+                    "https://api.weather.gov/zones/county/OKC043",
+                    "https://api.weather.gov/zones/county/OKC045",
+                    "https://api.weather.gov/zones/county/OKC047",
+                    "https://api.weather.gov/zones/county/OKC059",
+                    "https://api.weather.gov/zones/county/OKC063",
+                    "https://api.weather.gov/zones/county/OKC073",
+                    "https://api.weather.gov/zones/county/OKC081",
+                    "https://api.weather.gov/zones/county/OKC083",
+                    "https://api.weather.gov/zones/county/OKC087",
+                    "https://api.weather.gov/zones/county/OKC093",
+                    "https://api.weather.gov/zones/county/OKC103",
+                    "https://api.weather.gov/zones/county/OKC109",
+                    "https://api.weather.gov/zones/county/OKC119",
+                    "https://api.weather.gov/zones/county/OKC123",
+                    "https://api.weather.gov/zones/county/OKC125",
+                    "https://api.weather.gov/zones/county/OKC129",
+                    "https://api.weather.gov/zones/county/OKC133",
+                    "https://api.weather.gov/zones/county/OKC151",
+                    "https://api.weather.gov/zones/county/OKC153"
+                ],
+                "references": [],
+                "sent": "2026-09-12T15:44:00-05:00",
+                "effective": "2026-09-12T15:44:00-05:00",
+                "onset": "2026-09-12T15:44:00-05:00",
+                "expires": "2026-09-12T22:00:00-05:00",
+                "ends": "2026-09-12T22:00:00-05:00",
+                "status": "Actual",
+                "messageType": "Alert",
+                "category": "Met",
+                "severity": "Severe",
+                "certainty": "Possible",
+                "urgency": "Future",
+                "event": "Severe Thunderstorm Watch",
+                "sender": "w-nws.webmaster@noaa.gov",
+                "senderName": "NWS Norman OK",
+                "headline": "Severe Thunderstorm Watch issued September 12 at 3:44PM CDT until September 12 at 10:00PM CDT by NWS Norman OK",
+                "description": "THE NATIONAL WEATHER SERVICE HAS ISSUED SEVERE THUNDERSTORM WATCH\n667 IN EFFECT UNTIL 10 PM CDT THIS EVENING FOR THE FOLLOWING\nAREAS\n\nIN OKLAHOMA THIS WATCH INCLUDES 25 COUNTIES\n\nIN CENTRAL OKLAHOMA\n\nCANADIAN              CLEVELAND             KINGFISHER\nLINCOLN               LOGAN                 MCCLAIN\nOKLAHOMA              PAYNE                 POTTAWATOMIE\n\nIN EAST CENTRAL OKLAHOMA\n\nPONTOTOC              SEMINOLE\n\nIN NORTHERN OKLAHOMA\n\nGARFIELD              NOBLE\n\nIN NORTHWEST OKLAHOMA\n\nALFALFA               BLAINE                DEWEY\nELLIS                 HARPER                MAJOR\nWOODS                 WOODWARD\n\nIN SOUTHEAST OKLAHOMA\n\nCOAL                  HUGHES\n\nIN WESTERN OKLAHOMA\n\nCUSTER                ROGER MILLS\n\nTHIS INCLUDES THE CITIES OF ADA, ALVA, ARNETT, BLANCHARD,\nBUFFALO, CARMEN, CHANDLER, CHEROKEE, CHEYENNE, CLINTON, COALGATE,\nCONCHO, DAVENPORT, EL RENO, ENID, FAIRVIEW, FARGO, GAGE, GEARY,\nGUTHRIE, HAMMON, HELENA, HENNESSEY, HOLDENVILLE, KINGFISHER,\nLAVERNE, LEEDEY, MEEKER, MOORE, MUSTANG, NEWCASTLE, NORMAN,\nOKARCHE, OKEENE, OKLAHOMA CITY, PERRY, PRAGUE, PURCELL, SEILING,\nSEMINOLE, SHATTUCK, SHAWNEE, STILLWATER, STROUD, TALOGA, VICI,\nWATONGA, WEATHERFORD, WELLSTON, WETUMKA, WEWOKA, WOODWARD,\nAND YUKON.",
+                "instruction": null,
+                "response": "Monitor",
+                "note": null,
+                "parameters": {
+                    "AWIPSidentifier": [
+                        "WCNOUN"
+                    ],
+                    "WMOidentifier": [
+                        "WWUS64 KOUN 122044"
+                    ],
+                    "BLOCKCHANNEL": [
+                        "EAS",
+                        "NWEM",
+                        "CMAS"
+                    ],
+                    "EAS-ORG": [
+                        "WXR"
+                    ],
+                    "VTEC": [
+                        "/O.NEW.KOUN.SV.A.0667.260912T2044Z-260913T0300Z/"
+                    ],
+                    "eventEndingTime": [
+                        "2026-09-12T22:00:00-05:00"
+                    ]
+                },
+                "scope": "Public",
+                "code": "IPAWSv1.0",
+                "language": "en-US",
+                "web": "http://www.weather.gov",
+                "eventCode": {
+                    "SAME": [
+                        "SVA"
+                    ],
+                    "NationalWeatherService": [
+                        "SVA"
+                    ]
+                }
+            }
+        },
+        {
+            "id": "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.f9b2a4fe999e516193fa557f90a4b6947cf0c68e.001.1",
+            "type": "Feature",
+            "geometry": null,
+            "properties": {
+                "@id": "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.f9b2a4fe999e516193fa557f90a4b6947cf0c68e.001.1",
+                "@type": "wx:Alert",
+                "id": "urn:oid:2.49.0.1.840.0.f9b2a4fe999e516193fa557f90a4b6947cf0c68e.001.1",
+                "areaDesc": "Beaver, OK; Gray, TX; Hemphill, TX; Lipscomb, TX; Ochiltree, TX; Roberts, TX; Wheeler, TX",
+                "geocode": {
+                    "SAME": [
+                        "040007",
+                        "048179",
+                        "048211",
+                        "048295",
+                        "048357",
+                        "048393",
+                        "048483"
+                    ],
+                    "UGC": [
+                        "OKC007",
+                        "TXC179",
+                        "TXC211",
+                        "TXC295",
+                        "TXC357",
+                        "TXC393",
+                        "TXC483"
+                    ]
+                },
+                "affectedZones": [
+                    "https://api.weather.gov/zones/county/OKC007",
+                    "https://api.weather.gov/zones/county/TXC179",
+                    "https://api.weather.gov/zones/county/TXC211",
+                    "https://api.weather.gov/zones/county/TXC295",
+                    "https://api.weather.gov/zones/county/TXC357",
+                    "https://api.weather.gov/zones/county/TXC393",
+                    "https://api.weather.gov/zones/county/TXC483"
+                ],
+                "references": [],
+                "sent": "2026-09-12T15:44:00-05:00",
+                "effective": "2026-09-12T15:44:00-05:00",
+                "onset": "2026-09-12T15:44:00-05:00",
+                "expires": "2026-09-12T22:00:00-05:00",
+                "ends": "2026-09-12T22:00:00-05:00",
+                "status": "Actual",
+                "messageType": "Alert",
+                "category": "Met",
+                "severity": "Severe",
+                "certainty": "Possible",
+                "urgency": "Future",
+                "event": "Severe Thunderstorm Watch",
+                "sender": "w-nws.webmaster@noaa.gov",
+                "senderName": "NWS Amarillo TX",
+                "headline": "Severe Thunderstorm Watch issued September 12 at 3:44PM CDT until September 12 at 10:00PM CDT by NWS Amarillo TX",
+                "description": "THE NATIONAL WEATHER SERVICE HAS ISSUED SEVERE THUNDERSTORM WATCH\n667 IN EFFECT UNTIL 10 PM CDT THIS EVENING FOR THE FOLLOWING\nAREAS\n\nIN OKLAHOMA THIS WATCH INCLUDES 1 COUNTY\n\nIN THE PANHANDLE OF OKLAHOMA\n\nBEAVER\n\nIN TEXAS THIS WATCH INCLUDES 6 COUNTIES\n\nIN THE PANHANDLE OF TEXAS\n\nGRAY                  HEMPHILL              LIPSCOMB\nOCHILTREE             ROBERTS               WHEELER\n\nTHIS INCLUDES THE CITIES OF BEAVER, BOOKER, BRISCOE, CANADIAN,\nCODMAN, FARNSWORTH, FOLLETT, FORGAN, GLAZIER, HIGGINS, KINGSMILL,\nLAKE MARVIN, LELA, LORA, MIAMI, PAMPA, PERRYTON, SHAMROCK,\nTWITTY, WAKA, WHEELER, AND WOLF CREEK PARK.",
+                "instruction": null,
+                "response": "Monitor",
+                "note": null,
+                "parameters": {
+                    "AWIPSidentifier": [
+                        "WCNAMA"
+                    ],
+                    "WMOidentifier": [
+                        "WWUS64 KAMA 122044"
+                    ],
+                    "BLOCKCHANNEL": [
+                        "EAS",
+                        "NWEM",
+                        "CMAS"
+                    ],
+                    "EAS-ORG": [
+                        "WXR"
+                    ],
+                    "VTEC": [
+                        "/O.NEW.KAMA.SV.A.0667.260912T2044Z-260913T0300Z/"
+                    ],
+                    "eventEndingTime": [
+                        "2026-09-12T22:00:00-05:00"
+                    ]
+                },
+                "scope": "Public",
+                "code": "IPAWSv1.0",
+                "language": "en-US",
+                "web": "http://www.weather.gov",
+                "eventCode": {
+                    "SAME": [
+                        "SVA"
+                    ],
+                    "NationalWeatherService": [
+                        "SVA"
+                    ]
+                }
+            }
+        },
+        {
+            "id": "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.cfc455190288d0ff5f3df3c2799de103ef15c9d2.001.1",
+            "type": "Feature",
+            "geometry": null,
+            "properties": {
+                "@id": "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.cfc455190288d0ff5f3df3c2799de103ef15c9d2.001.1",
+                "@type": "wx:Alert",
+                "id": "urn:oid:2.49.0.1.840.0.cfc455190288d0ff5f3df3c2799de103ef15c9d2.001.1",
+                "areaDesc": "Sevier; Howard; Little River; Hempstead; Nevada; Miller; Lafayette; Columbia; Union; Caddo; Bossier; Webster; Claiborne; Lincoln; Union; De Soto; Red River; Bienville; Jackson; Ouachita; Sabine; Natchitoches; Winn; Grant; Caldwell; La Salle; McCurtain; Red River; Bowie; Franklin; Titus; Camp; Morris; Cass; Wood; Upshur; Marion; Smith; Gregg; Harrison; Cherokee; Rusk; Panola; Nacogdoches; Shelby; Angelina; San Augustine; Sabine",
+                "geocode": {
+                    "SAME": [
+                        "005133",
+                        "005061",
+                        "005081",
+                        "005057",
+                        "005099",
+                        "005091",
+                        "005073",
+                        "005027",
+                        "005139",
+                        "022017",
+                        "022015",
+                        "022119",
+                        "022027",
+                        "022061",
+                        "022111",
+                        "022031",
+                        "022081",
+                        "022013",
+                        "022049",
+                        "022073",
+                        "022085",
+                        "022069",
+                        "022127",
+                        "022043",
+                        "022021",
+                        "022059",
+                        "040089",
+                        "048387",
+                        "048037",
+                        "048159",
+                        "048449",
+                        "048063",
+                        "048343",
+                        "048067",
+                        "048499",
+                        "048459",
+                        "048315",
+                        "048423",
+                        "048183",
+                        "048203",
+                        "048073",
+                        "048401",
+                        "048365",
+                        "048347",
+                        "048419",
+                        "048005",
+                        "048405",
+                        "048403"
+                    ],
+                    "UGC": [
+                        "ARZ050",
+                        "ARZ051",
+                        "ARZ059",
+                        "ARZ060",
+                        "ARZ061",
+                        "ARZ070",
+                        "ARZ071",
+                        "ARZ072",
+                        "ARZ073",
+                        "LAZ001",
+                        "LAZ002",
+                        "LAZ003",
+                        "LAZ004",
+                        "LAZ005",
+                        "LAZ006",
+                        "LAZ010",
+                        "LAZ011",
+                        "LAZ012",
+                        "LAZ013",
+                        "LAZ014",
+                        "LAZ017",
+                        "LAZ018",
+                        "LAZ019",
+                        "LAZ020",
+                        "LAZ021",
+                        "LAZ022",
+                        "OKZ077",
+                        "TXZ096",
+                        "TXZ097",
+                        "TXZ108",
+                        "TXZ109",
+                        "TXZ110",
+                        "TXZ111",
+                        "TXZ112",
+                        "TXZ124",
+                        "TXZ125",
+                        "TXZ126",
+                        "TXZ136",
+                        "TXZ137",
+                        "TXZ138",
+                        "TXZ149",
+                        "TXZ150",
+                        "TXZ151",
+                        "TXZ152",
+                        "TXZ153",
+                        "TXZ165",
+                        "TXZ166",
+                        "TXZ167"
+                    ]
+                },
+                "affectedZones": [
+                    "https://api.weather.gov/zones/forecast/ARZ050",
+                    "https://api.weather.gov/zones/forecast/ARZ051",
+                    "https://api.weather.gov/zones/forecast/ARZ059",
+                    "https://api.weather.gov/zones/forecast/ARZ060",
+                    "https://api.weather.gov/zones/forecast/ARZ061",
+                    "https://api.weather.gov/zones/forecast/ARZ070",
+                    "https://api.weather.gov/zones/forecast/ARZ071",
+                    "https://api.weather.gov/zones/forecast/ARZ072",
+                    "https://api.weather.gov/zones/forecast/ARZ073",
+                    "https://api.weather.gov/zones/forecast/LAZ001",
+                    "https://api.weather.gov/zones/forecast/LAZ002",
+                    "https://api.weather.gov/zones/forecast/LAZ003",
+                    "https://api.weather.gov/zones/forecast/LAZ004",
+                    "https://api.weather.gov/zones/forecast/LAZ005",
+                    "https://api.weather.gov/zones/forecast/LAZ006",
+                    "https://api.weather.gov/zones/forecast/LAZ010",
+                    "https://api.weather.gov/zones/forecast/LAZ011",
+                    "https://api.weather.gov/zones/forecast/LAZ012",
+                    "https://api.weather.gov/zones/forecast/LAZ013",
+                    "https://api.weather.gov/zones/forecast/LAZ014",
+                    "https://api.weather.gov/zones/forecast/LAZ017",
+                    "https://api.weather.gov/zones/forecast/LAZ018",
+                    "https://api.weather.gov/zones/forecast/LAZ019",
+                    "https://api.weather.gov/zones/forecast/LAZ020",
+                    "https://api.weather.gov/zones/forecast/LAZ021",
+                    "https://api.weather.gov/zones/forecast/LAZ022",
+                    "https://api.weather.gov/zones/forecast/OKZ077",
+                    "https://api.weather.gov/zones/forecast/TXZ096",
+                    "https://api.weather.gov/zones/forecast/TXZ097",
+                    "https://api.weather.gov/zones/forecast/TXZ108",
+                    "https://api.weather.gov/zones/forecast/TXZ109",
+                    "https://api.weather.gov/zones/forecast/TXZ110",
+                    "https://api.weather.gov/zones/forecast/TXZ111",
+                    "https://api.weather.gov/zones/forecast/TXZ112",
+                    "https://api.weather.gov/zones/forecast/TXZ124",
+                    "https://api.weather.gov/zones/forecast/TXZ125",
+                    "https://api.weather.gov/zones/forecast/TXZ126",
+                    "https://api.weather.gov/zones/forecast/TXZ136",
+                    "https://api.weather.gov/zones/forecast/TXZ137",
+                    "https://api.weather.gov/zones/forecast/TXZ138",
+                    "https://api.weather.gov/zones/forecast/TXZ149",
+                    "https://api.weather.gov/zones/forecast/TXZ150",
+                    "https://api.weather.gov/zones/forecast/TXZ151",
+                    "https://api.weather.gov/zones/forecast/TXZ152",
+                    "https://api.weather.gov/zones/forecast/TXZ153",
+                    "https://api.weather.gov/zones/forecast/TXZ165",
+                    "https://api.weather.gov/zones/forecast/TXZ166",
+                    "https://api.weather.gov/zones/forecast/TXZ167"
+                ],
+                "references": [
+                    {
+                        "@id": "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.3876b450018d6822fd68d9d4d675947d80ee5041.001.1",
+                        "identifier": "urn:oid:2.49.0.1.840.0.3876b450018d6822fd68d9d4d675947d80ee5041.001.1",
+                        "sender": "w-nws.webmaster@noaa.gov",
+                        "sent": "2026-09-11T23:15:00-05:00"
+                    }
+                ],
+                "sent": "2026-09-12T13:21:00-05:00",
+                "effective": "2026-09-12T13:21:00-05:00",
+                "onset": "2026-09-12T13:21:00-05:00",
+                "expires": "2026-09-13T02:00:00-05:00",
+                "ends": "2026-09-13T19:00:00-05:00",
+                "status": "Actual",
+                "messageType": "Update",
+                "category": "Met",
+                "severity": "Moderate",
+                "certainty": "Likely",
+                "urgency": "Expected",
+                "event": "Heat Advisory",
+                "sender": "w-nws.webmaster@noaa.gov",
+                "senderName": "NWS Shreveport LA",
+                "headline": "Heat Advisory issued September 12 at 1:21PM CDT until September 13 at 7:00PM CDT by NWS Shreveport LA",
+                "description": "* WHAT...Heat index values up to 107.\n\n* WHERE...Portions of south central and southwest Arkansas, north\ncentral and northwest Louisiana, southeast Oklahoma, and east and\nnortheast Texas.\n\n* WHEN...Until 7 PM CDT Sunday.\n\n* IMPACTS...Hot temperatures and high humidity may cause heat\nillnesses.",
+                "instruction": "Drink plenty of fluids, stay in an air-conditioned room, stay out of\nthe sun, and check up on relatives and neighbors.",
+                "response": "Execute",
+                "note": null,
+                "parameters": {
+                    "AWIPSidentifier": [
+                        "NPWSHV"
+                    ],
+                    "WMOidentifier": [
+                        "WWUS74 KSHV 121821"
+                    ],
+                    "NWSheadline": [
+                        "HEAT ADVISORY NOW IN EFFECT UNTIL 7 PM CDT SUNDAY"
+                    ],
+                    "BLOCKCHANNEL": [
+                        "EAS",
+                        "NWEM",
+                        "CMAS"
+                    ],
+                    "VTEC": [
+                        "/O.EXT.KSHV.HT.Y.0018.000000T0000Z-260914T0000Z/"
+                    ],
+                    "eventEndingTime": [
+                        "2026-09-13T19:00:00-05:00"
+                    ]
+                },
+                "scope": "Public",
+                "code": "IPAWSv1.0",
+                "language": "en-US",
+                "web": "http://www.weather.gov",
+                "eventCode": {
+                    "SAME": [
+                        "NWS"
+                    ],
+                    "NationalWeatherService": [
+                        "HTY"
+                    ]
+                }
+            }
+        },
+        {
+            "id": "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.ccb6dd765788ab06b8674ddafc8e8b5bb7a2f0d1.002.1",
+            "type": "Feature",
+            "geometry": null,
+            "properties": {
+                "@id": "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.ccb6dd765788ab06b8674ddafc8e8b5bb7a2f0d1.002.1",
+                "@type": "wx:Alert",
+                "id": "urn:oid:2.49.0.1.840.0.ccb6dd765788ab06b8674ddafc8e8b5bb7a2f0d1.002.1",
+                "areaDesc": "North and Central Sebastian; Southern Crawford; Central and Southern Franklin; Pushmataha; Choctaw; Okfuskee; Okmulgee; Muskogee; McIntosh; Pittsburg; Haskell; Latimer; Northern Le Flore; Central and Southern Sequoyah",
+                "geocode": {
+                    "SAME": [
+                        "005131",
+                        "005033",
+                        "005047",
+                        "040127",
+                        "040023",
+                        "040107",
+                        "040111",
+                        "040101",
+                        "040091",
+                        "040121",
+                        "040061",
+                        "040077",
+                        "040079",
+                        "040135"
+                    ],
+                    "UGC": [
+                        "ARZ129",
+                        "ARZ219",
+                        "ARZ220",
+                        "OKZ049",
+                        "OKZ053",
+                        "OKZ065",
+                        "OKZ066",
+                        "OKZ070",
+                        "OKZ071",
+                        "OKZ073",
+                        "OKZ074",
+                        "OKZ075",
+                        "OKZ176",
+                        "OKZ272"
+                    ]
+                },
+                "affectedZones": [
+                    "https://api.weather.gov/zones/forecast/ARZ129",
+                    "https://api.weather.gov/zones/forecast/ARZ219",
+                    "https://api.weather.gov/zones/forecast/ARZ220",
+                    "https://api.weather.gov/zones/forecast/OKZ049",
+                    "https://api.weather.gov/zones/forecast/OKZ053",
+                    "https://api.weather.gov/zones/forecast/OKZ065",
+                    "https://api.weather.gov/zones/forecast/OKZ066",
+                    "https://api.weather.gov/zones/forecast/OKZ070",
+                    "https://api.weather.gov/zones/forecast/OKZ071",
+                    "https://api.weather.gov/zones/forecast/OKZ073",
+                    "https://api.weather.gov/zones/forecast/OKZ074",
+                    "https://api.weather.gov/zones/forecast/OKZ075",
+                    "https://api.weather.gov/zones/forecast/OKZ176",
+                    "https://api.weather.gov/zones/forecast/OKZ272"
+                ],
+                "references": [
+                    {
+                        "@id": "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.8d698d0c1fd55c140b5a2daa1e5845a4437290ac.001.1",
+                        "identifier": "urn:oid:2.49.0.1.840.0.8d698d0c1fd55c140b5a2daa1e5845a4437290ac.001.1",
+                        "sender": "w-nws.webmaster@noaa.gov",
+                        "sent": "2026-09-11T23:18:00-05:00"
+                    },
+                    {
+                        "@id": "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.e6c3bf24e168db29f0b746f481707232c61dbee2.001.2",
+                        "identifier": "urn:oid:2.49.0.1.840.0.e6c3bf24e168db29f0b746f481707232c61dbee2.001.2",
+                        "sender": "w-nws.webmaster@noaa.gov",
+                        "sent": "2026-09-12T12:00:00-05:00"
+                    }
+                ],
+                "sent": "2026-09-12T12:13:00-05:00",
+                "effective": "2026-09-12T12:13:00-05:00",
+                "onset": "2026-09-12T12:13:00-05:00",
+                "expires": "2026-09-13T01:00:00-05:00",
+                "ends": "2026-09-12T19:00:00-05:00",
+                "status": "Actual",
+                "messageType": "Update",
+                "category": "Met",
+                "severity": "Moderate",
+                "certainty": "Likely",
+                "urgency": "Expected",
+                "event": "Heat Advisory",
+                "sender": "w-nws.webmaster@noaa.gov",
+                "senderName": "NWS Tulsa OK",
+                "headline": "Heat Advisory issued September 12 at 12:13PM CDT until September 12 at 7:00PM CDT by NWS Tulsa OK",
+                "description": "* WHAT...For the first Heat Advisory, heat index values up to 107.\nFor the second Heat Advisory, heat index values up to 107 expected.\n\n* WHERE...Portions of northwest and west central Arkansas and east\ncentral, northeast, and southeast Oklahoma.\n\n* WHEN...For the first Heat Advisory, until 7 PM CDT this evening.\nFor the second Heat Advisory, from noon to 7 PM CDT Sunday.\n\n* IMPACTS...Heat related illnesses are possible especially impacting\nthose not acclimated to the conditions or those performing\nstrenuous activities.",
+                "instruction": "Take extra precautions when outside. Wear lightweight and loose\nfitting clothing. Try to limit strenuous activities to early morning\nor evening. Take action when you see symptoms of heat exhaustion and\nheat stroke.",
+                "response": "Execute",
+                "note": null,
+                "parameters": {
+                    "AWIPSidentifier": [
+                        "NPWTSA"
+                    ],
+                    "WMOidentifier": [
+                        "WWUS74 KTSA 121713"
+                    ],
+                    "NWSheadline": [
+                        "HEAT ADVISORY REMAINS IN EFFECT UNTIL 7 PM CDT THIS EVENING... ...HEAT ADVISORY REMAINS IN EFFECT FROM NOON TO 7 PM CDT SUNDAY"
+                    ],
+                    "BLOCKCHANNEL": [
+                        "EAS",
+                        "NWEM",
+                        "CMAS"
+                    ],
+                    "VTEC": [
+                        "/O.CON.KTSA.HT.Y.0057.000000T0000Z-260913T0000Z/"
+                    ],
+                    "eventEndingTime": [
+                        "2026-09-12T19:00:00-05:00"
+                    ]
+                },
+                "scope": "Public",
+                "code": "IPAWSv1.0",
+                "language": "en-US",
+                "web": "http://www.weather.gov",
+                "eventCode": {
+                    "SAME": [
+                        "NWS"
+                    ],
+                    "NationalWeatherService": [
+                        "HTY"
+                    ]
+                }
+            }
+        },
+        {
+            "id": "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.ccb6dd765788ab06b8674ddafc8e8b5bb7a2f0d1.003.1",
+            "type": "Feature",
+            "geometry": null,
+            "properties": {
+                "@id": "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.ccb6dd765788ab06b8674ddafc8e8b5bb7a2f0d1.003.1",
+                "@type": "wx:Alert",
+                "id": "urn:oid:2.49.0.1.840.0.ccb6dd765788ab06b8674ddafc8e8b5bb7a2f0d1.003.1",
+                "areaDesc": "Washington; Nowata; Craig; Pawnee; Tulsa; Rogers; Mayes; Creek; Wagoner; Western Osage; Northern Sequoyah; Northeast Osage; Central Le Flore; Southeast Osage; Southern Le Flore",
+                "geocode": {
+                    "SAME": [
+                        "040147",
+                        "040105",
+                        "040035",
+                        "040117",
+                        "040143",
+                        "040131",
+                        "040097",
+                        "040037",
+                        "040145",
+                        "040113",
+                        "040135",
+                        "040079"
+                    ],
+                    "UGC": [
+                        "OKZ055",
+                        "OKZ056",
+                        "OKZ057",
+                        "OKZ059",
+                        "OKZ060",
+                        "OKZ061",
+                        "OKZ062",
+                        "OKZ064",
+                        "OKZ067",
+                        "OKZ154",
+                        "OKZ172",
+                        "OKZ254",
+                        "OKZ276",
+                        "OKZ354",
+                        "OKZ376"
+                    ]
+                },
+                "affectedZones": [
+                    "https://api.weather.gov/zones/forecast/OKZ055",
+                    "https://api.weather.gov/zones/forecast/OKZ056",
+                    "https://api.weather.gov/zones/forecast/OKZ057",
+                    "https://api.weather.gov/zones/forecast/OKZ059",
+                    "https://api.weather.gov/zones/forecast/OKZ060",
+                    "https://api.weather.gov/zones/forecast/OKZ061",
+                    "https://api.weather.gov/zones/forecast/OKZ062",
+                    "https://api.weather.gov/zones/forecast/OKZ064",
+                    "https://api.weather.gov/zones/forecast/OKZ067",
+                    "https://api.weather.gov/zones/forecast/OKZ154",
+                    "https://api.weather.gov/zones/forecast/OKZ172",
+                    "https://api.weather.gov/zones/forecast/OKZ254",
+                    "https://api.weather.gov/zones/forecast/OKZ276",
+                    "https://api.weather.gov/zones/forecast/OKZ354",
+                    "https://api.weather.gov/zones/forecast/OKZ376"
+                ],
+                "references": [
+                    {
+                        "@id": "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.e6c3bf24e168db29f0b746f481707232c61dbee2.002.1",
+                        "identifier": "urn:oid:2.49.0.1.840.0.e6c3bf24e168db29f0b746f481707232c61dbee2.002.1",
+                        "sender": "w-nws.webmaster@noaa.gov",
+                        "sent": "2026-09-12T12:00:00-05:00"
+                    }
+                ],
+                "sent": "2026-09-12T12:13:00-05:00",
+                "effective": "2026-09-12T12:13:00-05:00",
+                "onset": "2026-09-13T12:00:00-05:00",
+                "expires": "2026-09-13T01:00:00-05:00",
+                "ends": "2026-09-13T19:00:00-05:00",
+                "status": "Actual",
+                "messageType": "Update",
+                "category": "Met",
+                "severity": "Moderate",
+                "certainty": "Likely",
+                "urgency": "Expected",
+                "event": "Heat Advisory",
+                "sender": "w-nws.webmaster@noaa.gov",
+                "senderName": "NWS Tulsa OK",
+                "headline": "Heat Advisory issued September 12 at 12:13PM CDT until September 13 at 7:00PM CDT by NWS Tulsa OK",
+                "description": "* WHAT...Heat index values up to 107 expected.\n\n* WHERE...Portions of east central, northeast, and southeast\nOklahoma.\n\n* WHEN...From noon to 7 PM CDT Sunday.\n\n* IMPACTS...Heat related illnesses are possible especially impacting\nthose not acclimated to the conditions or those performing\nstrenuous activities.",
+                "instruction": "Take extra precautions when outside. Wear lightweight and loose\nfitting clothing. Try to limit strenuous activities to early morning\nor evening. Take action when you see symptoms of heat exhaustion and\nheat stroke.",
+                "response": "Execute",
+                "note": null,
+                "parameters": {
+                    "AWIPSidentifier": [
+                        "NPWTSA"
+                    ],
+                    "WMOidentifier": [
+                        "WWUS74 KTSA 121713"
+                    ],
+                    "NWSheadline": [
+                        "HEAT ADVISORY REMAINS IN EFFECT FROM NOON TO 7 PM CDT SUNDAY"
+                    ],
+                    "BLOCKCHANNEL": [
+                        "EAS",
+                        "NWEM",
+                        "CMAS"
+                    ],
+                    "VTEC": [
+                        "/O.CON.KTSA.HT.Y.0058.260913T1700Z-260914T0000Z/"
+                    ],
+                    "eventEndingTime": [
+                        "2026-09-13T19:00:00-05:00"
+                    ]
+                },
+                "scope": "Public",
+                "code": "IPAWSv1.0",
+                "language": "en-US",
+                "web": "http://www.weather.gov",
+                "eventCode": {
+                    "SAME": [
+                        "NWS"
+                    ],
+                    "NationalWeatherService": [
+                        "HTY"
+                    ]
+                }
+            }
+        },
+        {
+            "id": "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.ccb6dd765788ab06b8674ddafc8e8b5bb7a2f0d1.002.2",
+            "type": "Feature",
+            "geometry": null,
+            "properties": {
+                "@id": "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.ccb6dd765788ab06b8674ddafc8e8b5bb7a2f0d1.002.2",
+                "@type": "wx:Alert",
+                "id": "urn:oid:2.49.0.1.840.0.ccb6dd765788ab06b8674ddafc8e8b5bb7a2f0d1.002.2",
+                "areaDesc": "North and Central Sebastian; Southern Crawford; Central and Southern Franklin; Pushmataha; Choctaw; Okfuskee; Okmulgee; Muskogee; McIntosh; Pittsburg; Haskell; Latimer; Northern Le Flore; Central and Southern Sequoyah",
+                "geocode": {
+                    "SAME": [
+                        "005131",
+                        "005033",
+                        "005047",
+                        "040127",
+                        "040023",
+                        "040107",
+                        "040111",
+                        "040101",
+                        "040091",
+                        "040121",
+                        "040061",
+                        "040077",
+                        "040079",
+                        "040135"
+                    ],
+                    "UGC": [
+                        "ARZ129",
+                        "ARZ219",
+                        "ARZ220",
+                        "OKZ049",
+                        "OKZ053",
+                        "OKZ065",
+                        "OKZ066",
+                        "OKZ070",
+                        "OKZ071",
+                        "OKZ073",
+                        "OKZ074",
+                        "OKZ075",
+                        "OKZ176",
+                        "OKZ272"
+                    ]
+                },
+                "affectedZones": [
+                    "https://api.weather.gov/zones/forecast/ARZ129",
+                    "https://api.weather.gov/zones/forecast/ARZ219",
+                    "https://api.weather.gov/zones/forecast/ARZ220",
+                    "https://api.weather.gov/zones/forecast/OKZ049",
+                    "https://api.weather.gov/zones/forecast/OKZ053",
+                    "https://api.weather.gov/zones/forecast/OKZ065",
+                    "https://api.weather.gov/zones/forecast/OKZ066",
+                    "https://api.weather.gov/zones/forecast/OKZ070",
+                    "https://api.weather.gov/zones/forecast/OKZ071",
+                    "https://api.weather.gov/zones/forecast/OKZ073",
+                    "https://api.weather.gov/zones/forecast/OKZ074",
+                    "https://api.weather.gov/zones/forecast/OKZ075",
+                    "https://api.weather.gov/zones/forecast/OKZ176",
+                    "https://api.weather.gov/zones/forecast/OKZ272"
+                ],
+                "references": [
+                    {
+                        "@id": "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.e6c3bf24e168db29f0b746f481707232c61dbee2.001.1",
+                        "identifier": "urn:oid:2.49.0.1.840.0.e6c3bf24e168db29f0b746f481707232c61dbee2.001.1",
+                        "sender": "w-nws.webmaster@noaa.gov",
+                        "sent": "2026-09-12T12:00:00-05:00"
+                    }
+                ],
+                "sent": "2026-09-12T12:13:00-05:00",
+                "effective": "2026-09-12T12:13:00-05:00",
+                "onset": "2026-09-13T12:00:00-05:00",
+                "expires": "2026-09-13T01:00:00-05:00",
+                "ends": "2026-09-13T19:00:00-05:00",
+                "status": "Actual",
+                "messageType": "Update",
+                "category": "Met",
+                "severity": "Moderate",
+                "certainty": "Likely",
+                "urgency": "Expected",
+                "event": "Heat Advisory",
+                "sender": "w-nws.webmaster@noaa.gov",
+                "senderName": "NWS Tulsa OK",
+                "headline": "Heat Advisory issued September 12 at 12:13PM CDT until September 13 at 7:00PM CDT by NWS Tulsa OK",
+                "description": "* WHAT...For the first Heat Advisory, heat index values up to 107.\nFor the second Heat Advisory, heat index values up to 107 expected.\n\n* WHERE...Portions of northwest and west central Arkansas and east\ncentral, northeast, and southeast Oklahoma.\n\n* WHEN...For the first Heat Advisory, until 7 PM CDT this evening.\nFor the second Heat Advisory, from noon to 7 PM CDT Sunday.\n\n* IMPACTS...Heat related illnesses are possible especially impacting\nthose not acclimated to the conditions or those performing\nstrenuous activities.",
+                "instruction": "Take extra precautions when outside. Wear lightweight and loose\nfitting clothing. Try to limit strenuous activities to early morning\nor evening. Take action when you see symptoms of heat exhaustion and\nheat stroke.",
+                "response": "Execute",
+                "note": null,
+                "parameters": {
+                    "AWIPSidentifier": [
+                        "NPWTSA"
+                    ],
+                    "WMOidentifier": [
+                        "WWUS74 KTSA 121713"
+                    ],
+                    "NWSheadline": [
+                        "HEAT ADVISORY REMAINS IN EFFECT UNTIL 7 PM CDT THIS EVENING... ...HEAT ADVISORY REMAINS IN EFFECT FROM NOON TO 7 PM CDT SUNDAY"
+                    ],
+                    "BLOCKCHANNEL": [
+                        "EAS",
+                        "NWEM",
+                        "CMAS"
+                    ],
+                    "VTEC": [
+                        "/O.CON.KTSA.HT.Y.0058.260913T1700Z-260914T0000Z/"
+                    ],
+                    "eventEndingTime": [
+                        "2026-09-13T19:00:00-05:00"
+                    ]
+                },
+                "scope": "Public",
+                "code": "IPAWSv1.0",
+                "language": "en-US",
+                "web": "http://www.weather.gov",
+                "eventCode": {
+                    "SAME": [
+                        "NWS"
+                    ],
+                    "NationalWeatherService": [
+                        "HTY"
+                    ]
+                }
+            }
+        },
+        {
+            "id": "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.f9c64754c6e76499b52f7d2705bc1d4dd25acdd1.001.1",
+            "type": "Feature",
+            "geometry": null,
+            "properties": {
+                "@id": "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.f9c64754c6e76499b52f7d2705bc1d4dd25acdd1.001.1",
+                "@type": "wx:Alert",
+                "id": "urn:oid:2.49.0.1.840.0.f9c64754c6e76499b52f7d2705bc1d4dd25acdd1.001.1",
+                "areaDesc": "Beckham; Washita; Caddo; Canadian; Oklahoma; Grady; McClain; Cleveland; Pottawatomie; Seminole; Hughes; Harmon; Greer; Kiowa; Jackson; Tillman; Comanche; Stephens; Garvin; Murray; Pontotoc; Coal; Cotton; Jefferson; Carter; Johnston; Atoka; Love; Marshall; Bryan; Hardeman; Foard; Wilbarger; Wichita; Knox; Baylor; Archer; Clay",
+                "geocode": {
+                    "SAME": [
+                        "040009",
+                        "040149",
+                        "040015",
+                        "040017",
+                        "040109",
+                        "040051",
+                        "040087",
+                        "040027",
+                        "040125",
+                        "040133",
+                        "040063",
+                        "040057",
+                        "040055",
+                        "040075",
+                        "040065",
+                        "040141",
+                        "040031",
+                        "040137",
+                        "040049",
+                        "040099",
+                        "040123",
+                        "040029",
+                        "040033",
+                        "040067",
+                        "040019",
+                        "040069",
+                        "040005",
+                        "040085",
+                        "040095",
+                        "040013",
+                        "048197",
+                        "048155",
+                        "048487",
+                        "048485",
+                        "048275",
+                        "048023",
+                        "048009",
+                        "048077"
+                    ],
+                    "UGC": [
+                        "OKZ021",
+                        "OKZ022",
+                        "OKZ023",
+                        "OKZ024",
+                        "OKZ025",
+                        "OKZ027",
+                        "OKZ028",
+                        "OKZ029",
+                        "OKZ030",
+                        "OKZ031",
+                        "OKZ032",
+                        "OKZ033",
+                        "OKZ034",
+                        "OKZ035",
+                        "OKZ036",
+                        "OKZ037",
+                        "OKZ038",
+                        "OKZ039",
+                        "OKZ040",
+                        "OKZ041",
+                        "OKZ042",
+                        "OKZ043",
+                        "OKZ044",
+                        "OKZ045",
+                        "OKZ046",
+                        "OKZ047",
+                        "OKZ048",
+                        "OKZ050",
+                        "OKZ051",
+                        "OKZ052",
+                        "TXZ083",
+                        "TXZ084",
+                        "TXZ085",
+                        "TXZ086",
+                        "TXZ087",
+                        "TXZ088",
+                        "TXZ089",
+                        "TXZ090"
+                    ]
+                },
+                "affectedZones": [
+                    "https://api.weather.gov/zones/forecast/OKZ021",
+                    "https://api.weather.gov/zones/forecast/OKZ022",
+                    "https://api.weather.gov/zones/forecast/OKZ023",
+                    "https://api.weather.gov/zones/forecast/OKZ024",
+                    "https://api.weather.gov/zones/forecast/OKZ025",
+                    "https://api.weather.gov/zones/forecast/OKZ027",
+                    "https://api.weather.gov/zones/forecast/OKZ028",
+                    "https://api.weather.gov/zones/forecast/OKZ029",
+                    "https://api.weather.gov/zones/forecast/OKZ030",
+                    "https://api.weather.gov/zones/forecast/OKZ031",
+                    "https://api.weather.gov/zones/forecast/OKZ032",
+                    "https://api.weather.gov/zones/forecast/OKZ033",
+                    "https://api.weather.gov/zones/forecast/OKZ034",
+                    "https://api.weather.gov/zones/forecast/OKZ035",
+                    "https://api.weather.gov/zones/forecast/OKZ036",
+                    "https://api.weather.gov/zones/forecast/OKZ037",
+                    "https://api.weather.gov/zones/forecast/OKZ038",
+                    "https://api.weather.gov/zones/forecast/OKZ039",
+                    "https://api.weather.gov/zones/forecast/OKZ040",
+                    "https://api.weather.gov/zones/forecast/OKZ041",
+                    "https://api.weather.gov/zones/forecast/OKZ042",
+                    "https://api.weather.gov/zones/forecast/OKZ043",
+                    "https://api.weather.gov/zones/forecast/OKZ044",
+                    "https://api.weather.gov/zones/forecast/OKZ045",
+                    "https://api.weather.gov/zones/forecast/OKZ046",
+                    "https://api.weather.gov/zones/forecast/OKZ047",
+                    "https://api.weather.gov/zones/forecast/OKZ048",
+                    "https://api.weather.gov/zones/forecast/OKZ050",
+                    "https://api.weather.gov/zones/forecast/OKZ051",
+                    "https://api.weather.gov/zones/forecast/OKZ052",
+                    "https://api.weather.gov/zones/forecast/TXZ083",
+                    "https://api.weather.gov/zones/forecast/TXZ084",
+                    "https://api.weather.gov/zones/forecast/TXZ085",
+                    "https://api.weather.gov/zones/forecast/TXZ086",
+                    "https://api.weather.gov/zones/forecast/TXZ087",
+                    "https://api.weather.gov/zones/forecast/TXZ088",
+                    "https://api.weather.gov/zones/forecast/TXZ089",
+                    "https://api.weather.gov/zones/forecast/TXZ090"
+                ],
+                "references": [
+                    {
+                        "@id": "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.cd6cd2dd70f1d76b225de1e213d69d9059c60847.001.1",
+                        "identifier": "urn:oid:2.49.0.1.840.0.cd6cd2dd70f1d76b225de1e213d69d9059c60847.001.1",
+                        "sender": "w-nws.webmaster@noaa.gov",
+                        "sent": "2026-09-11T12:39:00-05:00"
+                    }
+                ],
+                "sent": "2026-09-12T02:32:00-05:00",
+                "effective": "2026-09-12T02:32:00-05:00",
+                "onset": "2026-09-12T13:00:00-05:00",
+                "expires": "2026-09-12T19:00:00-05:00",
+                "ends": "2026-09-12T19:00:00-05:00",
+                "status": "Actual",
+                "messageType": "Update",
+                "category": "Met",
+                "severity": "Moderate",
+                "certainty": "Likely",
+                "urgency": "Expected",
+                "event": "Heat Advisory",
+                "sender": "w-nws.webmaster@noaa.gov",
+                "senderName": "NWS Norman OK",
+                "headline": "Heat Advisory issued September 12 at 2:32AM CDT until September 12 at 7:00PM CDT by NWS Norman OK",
+                "description": "* WHAT...Heat index values up to 109 expected.\n\n* WHERE...Portions of central, east central, southeast, southern,\nsouthwest, and western Oklahoma and northern Texas.\n\n* WHEN...From 1 PM this afternoon to 7 PM CDT this evening.\n\n* IMPACTS...Hot temperatures and high humidity may cause heat\nillnesses.",
+                "instruction": "Drink plenty of fluids, stay in an air-conditioned room, stay out of\nthe sun, and check up on relatives and neighbors.",
+                "response": "Execute",
+                "note": null,
+                "parameters": {
+                    "AWIPSidentifier": [
+                        "NPWOUN"
+                    ],
+                    "WMOidentifier": [
+                        "WWUS74 KOUN 120732"
+                    ],
+                    "NWSheadline": [
+                        "HEAT ADVISORY REMAINS IN EFFECT FROM 1 PM THIS AFTERNOON TO 7 PM CDT THIS EVENING"
+                    ],
+                    "BLOCKCHANNEL": [
+                        "EAS",
+                        "NWEM",
+                        "CMAS"
+                    ],
+                    "VTEC": [
+                        "/O.CON.KOUN.HT.Y.0053.260912T1800Z-260913T0000Z/"
+                    ],
+                    "eventEndingTime": [
+                        "2026-09-12T19:00:00-05:00"
+                    ]
+                },
+                "scope": "Public",
+                "code": "IPAWSv1.0",
+                "language": "en-US",
+                "web": "http://www.weather.gov",
+                "eventCode": {
+                    "SAME": [
+                        "NWS"
+                    ],
+                    "NationalWeatherService": [
+                        "HTY"
+                    ]
+                }
+            }
+        }
+    ],
+    "title": "Current watches, warnings, and advisories for Oklahoma",
+    "updated": "2026-09-12T23:13:20+00:00"
+}
