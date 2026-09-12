@@ -20,6 +20,10 @@ import { PlaybackControls } from "./ui/PlaybackControls";
 import { ProbePanel } from "./ui/ProbePanel";
 import { Legend } from "./ui/Legend";
 import { ColorTableEditor } from "./ui/ColorTableEditor";
+import { AlertsPanel } from "./ui/AlertsPanel";
+import { AlertDetail } from "./ui/AlertDetail";
+import { useAlertPoller } from "./alerts/useAlertPoller";
+import type { AlertJson } from "./alerts/types";
 
 /** Fixed reference radii (km) for the range rings drawn around the
  * selected site -- a documented, reasonable default (not derived from any
@@ -80,6 +84,29 @@ export default function App() {
   } = useRadarRenderer(canvasRef);
 
   const history = useScanHistory(icao);
+
+  // S06: NWS alerts. `useAlertPoller` owns the whole poll loop + wasm
+  // `AlertStoreHandle`; this component only ever reads its current active
+  // set/geojson and tracks which one (if any) is selected for the details
+  // panel -- see that hook's module docs for the nationwide-poll-scope and
+  // never-second-guess-the-store rationale.
+  const alerts = useAlertPoller();
+  const [selectedAlertKey, setSelectedAlertKey] = useState<string | null>(null);
+  // Last-known content for every key ever seen active, kept only so a
+  // still-open details panel can keep showing an alert's final content
+  // (with a "no longer active" banner) after `AlertStore` removes it from
+  // the active set, instead of the panel's content abruptly vanishing.
+  // This never changes *whether*/*when* an alert is considered active --
+  // that remains entirely `alerts.activeAlerts`, read fresh every render.
+  const lastKnownAlertsRef = useRef<Map<string, AlertJson>>(new Map());
+  for (const { key, alert } of alerts.activeAlerts) {
+    lastKnownAlertsRef.current.set(key, alert);
+  }
+  const selectedActiveEntry = alerts.activeAlerts.find((a) => a.key === selectedAlertKey) ?? null;
+  const selectedAlert = selectedActiveEntry?.alert ?? (selectedAlertKey ? lastKnownAlertsRef.current.get(selectedAlertKey) ?? null : null);
+  const handleAlertClick = useCallback((key: string | null) => {
+    setSelectedAlertKey(key);
+  }, []);
 
   // Decoded-volume/selection state. Kept small and derived -- the raw
   // bytes themselves never enter React state (GLOBAL_CONTRACT).
@@ -320,6 +347,9 @@ export default function App() {
         rangeRings={rangeRingsGeo}
         onCursorMove={handleCursorMove}
         onCursorLeave={handleCursorLeave}
+        alerts={alerts.geojson}
+        selectedAlertKey={selectedAlertKey}
+        onAlertClick={handleAlertClick}
       />
 
       <div className="hud-panel hud-panel-left">
@@ -413,6 +443,24 @@ export default function App() {
           />
         )}
       </div>
+
+      <div className="hud-panel hud-panel-alerts">
+        <AlertsPanel
+          status={alerts.status}
+          error={alerts.error}
+          alerts={alerts.activeAlerts}
+          selectedKey={selectedAlertKey}
+          onSelect={handleAlertClick}
+          lastPolledAt={alerts.lastPolledAt}
+          heldCount={alerts.heldCount}
+        />
+      </div>
+
+      {selectedAlert && (
+        <div className="hud-panel hud-panel-alert-detail">
+          <AlertDetail alert={selectedAlert} isActive={selectedActiveEntry !== null} onClose={() => setSelectedAlertKey(null)} />
+        </div>
+      )}
     </div>
   );
 }

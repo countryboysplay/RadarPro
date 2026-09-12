@@ -308,3 +308,208 @@ body,
   font-size: 0.78rem;
   word-break: break-word;
 }
+
+/* NWS Alerts (S06) */
+
+.hud-panel-alerts {
+  left: 1rem;
+  bottom: 1rem;
+  top: auto;
+  width: 360px;
+  max-height: 40vh;
+}
+
+.hud-panel-alert-detail {
+  right: 1rem;
+  bottom: 1rem;
+  top: auto;
+  width: 400px;
+  max-height: 70vh;
+}
+
+.alerts-panel-title {
+  color: #8fd0ff;
+}
+
+.alerts-panel-status {
+  font-size: 0.75rem;
+  color: #b5b5bc;
+}
+
+.alerts-panel-status-error {
+  color: #ff8f8f;
+}
+
+.alerts-panel-empty {
+  color: #7a7a82;
+  font-size: 0.8rem;
+  padding: 0.4rem 0;
+}
+
+.alerts-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: calc(40vh - 6rem);
+  overflow-y: auto;
+}
+
+.alert-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid #2a2a2e;
+  padding: 0.4rem 0.2rem;
+  cursor: pointer;
+}
+
+.alert-row:hover {
+  background: rgba(143, 208, 255, 0.08);
+}
+
+.alert-row-selected {
+  background: rgba(143, 208, 255, 0.16);
+}
+
+.alert-severity-dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-top: 0.2rem;
+}
+
+.alert-row-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.alert-row-event {
+  font-weight: bold;
+}
+
+.alert-row-headline {
+  font-size: 0.75rem;
+  color: #b5b5bc;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.alerts-panel-footer {
+  margin-top: 0.4rem;
+  padding-top: 0.4rem;
+  border-top: 1px solid #3a3a40;
+  font-size: 0.7rem;
+  color: #7a7a82;
+}
+
+/* Alert details panel */
+
+.alert-detail-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.alert-detail-severity {
+  font-size: 0.7rem;
+  font-weight: bold;
+  color: #101012;
+  border-radius: 3px;
+  padding: 0.1rem 0.4rem;
+  text-transform: uppercase;
+}
+
+.alert-detail-event {
+  font-weight: bold;
+  flex: 1;
+}
+
+.alert-detail-close {
+  background: transparent;
+  border: none;
+  color: inherit;
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 0.2rem;
+}
+
+.alert-detail-inactive-banner {
+  margin-top: 0.4rem;
+  padding: 0.3rem 0.5rem;
+  background: rgba(255, 143, 143, 0.12);
+  border: 1px solid #cc6a6a;
+  color: #ff8f8f;
+  font-size: 0.75rem;
+  border-radius: 3px;
+}
+
+.alert-detail-headline {
+  margin-top: 0.4rem;
+  font-weight: bold;
+  color: #e0c25a;
+}
+
+.alert-detail-fields {
+  margin: 0.5rem 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.15rem 0.6rem;
+  font-size: 0.8rem;
+}
+
+.alert-detail-fields dt {
+  color: #9a9aa2;
+}
+
+.alert-detail-fields dd {
+  margin: 0;
+}
+
+.alert-detail-areas {
+  margin: 0;
+  padding-left: 1rem;
+}
+
+.alert-detail-section-title {
+  margin-top: 0.5rem;
+  color: #8fd0ff;
+  font-size: 0.8rem;
+  font-weight: bold;
+}
+
+.alert-detail-text {
+  white-space: pre-wrap;
+  font-size: 0.82rem;
+  margin: 0.3rem 0;
+}
+
+.alert-detail-instruction .alert-detail-text {
+  color: #ffd9a0;
+}
+
+.alert-detail-showmore {
+  background: transparent;
+  border: none;
+  color: #8fd0ff;
+  cursor: pointer;
+  font-size: 0.75rem;
+  padding: 0;
+}
+
+.alert-detail-attribution {
+  margin-top: 0.6rem;
+  padding-top: 0.4rem;
+  border-top: 1px solid #3a3a40;
+  font-size: 0.7rem;
+  color: #7a7a82;
+}

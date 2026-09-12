@@ -5,6 +5,9 @@ import { useEffect, useRef, type RefObject } from "react";
 import { MapLibreMap } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { RadarSite } from "../sites";
+import type { AlertFeatureCollection } from "../alerts/types";
+import { SEVERITY_COLORS, severityRank } from "../alerts/types";
+import { pointInAlertGeometry } from "../alerts/geometryHitTest";
 
 /**
  * Draw `rings` (radar-web's `rangeRingsGeoJson` output -- plain `[lon,
@@ -52,6 +55,83 @@ function drawRangeRings(map: MapLibreMap, canvas: HTMLCanvasElement, rings: numb
     ctx.closePath();
     ctx.stroke();
   }
+}
+
+/**
+ * Draw NWS alert polygons/multipolygons (S06) into a dedicated overlay
+ * canvas, styled by severity (`SEVERITY_COLORS`), the selected alert (if
+ * any) outlined more heavily.
+ *
+ * # Also needed the overlay-canvas treatment, same as range rings
+ *
+ * A native MapLibre `geojson` source + `fill`/`line` layer was tried
+ * first here too. It does render -- but for the same structural reason
+ * documented above `drawRangeRings`: it paints into the *map's own*
+ * canvas, a plain sibling `<div>`'s internal canvas with no explicit
+ * `zIndex`, while the radar sweep `<canvas>` is a separate, absolutely
+ * positioned DOM element at `zIndex: 1` layered on top of that whole map
+ * div. Nothing drawn by a native MapLibre layer can ever appear above
+ * that opaque sweep canvas, regardless of MapLibre's own layer order.
+ * Confirmed during this task's own browser verification: an alert
+ * polygon whose on-screen position happened to fall under the radar
+ * canvas's ~460km-radius box around the selected site rendered zero
+ * visible pixels there (while the same polygon's portion outside that box
+ * rendered fine) -- exactly the range-rings bug, and for exactly the same
+ * reason, since alert polygons are frequently centered on or near the
+ * currently-selected radar site (that is the whole point of overlaying
+ * them on a radar workstation). This canvas sits one `zIndex` above the
+ * radar canvas (matching `drawRangeRings`'s fix) so alert shapes are never
+ * occluded regardless of where they fall relative to the sweep image.
+ */
+function drawAlerts(
+  map: MapLibreMap,
+  canvas: HTMLCanvasElement,
+  alerts: AlertFeatureCollection | null,
+  selectedKey: string | null,
+) {
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  const { width, height } = canvas;
+  ctx.clearRect(0, 0, width, height);
+  if (!alerts) return;
+
+  function strokeRing(ring: [number, number][]) {
+    if (ring.length === 0) return;
+    ctx!.beginPath();
+    ring.forEach(([lon, lat], i) => {
+      const p = map.project([lon, lat]);
+      if (i === 0) ctx!.moveTo(p.x, p.y);
+      else ctx!.lineTo(p.x, p.y);
+    });
+    ctx!.closePath();
+  }
+
+  for (const feature of alerts.features) {
+    if (!feature.geometry) continue; // no drawn shape -- normal, list/detail-only.
+    const color = SEVERITY_COLORS[feature.properties.severity];
+    const selected = feature.id === selectedKey;
+    ctx.fillStyle = color;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = selected ? 3 : 1.5;
+    ctx.globalAlpha = 0.22;
+    ctx.beginPath();
+    const polygons =
+      feature.geometry.type === "Polygon" ? [feature.geometry.coordinates] : feature.geometry.coordinates;
+    for (const polygon of polygons) {
+      for (const ring of polygon) {
+        strokeRing(ring as [number, number][]);
+      }
+    }
+    ctx.fill("evenodd");
+    ctx.globalAlpha = selected ? 0.95 : 0.75;
+    for (const polygon of polygons) {
+      for (const ring of polygon) {
+        strokeRing(ring as [number, number][]);
+        ctx.stroke();
+      }
+    }
+  }
+  ctx.globalAlpha = 1;
 }
 
 /**
@@ -122,6 +202,16 @@ export interface MapViewProps {
    * the geographic half of S05's data-probe/cursor-readout feature. */
   onCursorMove?: (lat: number, lon: number) => void;
   onCursorLeave?: () => void;
+  /** S06: currently-active NWS alerts (`useAlertPoller`'s `geojson`),
+   * drawn as a severity-colored overlay -- `null` until the first poll
+   * resolves. */
+  alerts?: AlertFeatureCollection | null;
+  /** Stable `AlertKey` of the alert currently shown in the details panel,
+   * if any -- drawn with a heavier outline. */
+  selectedAlertKey?: string | null;
+  /** Fired when the user clicks an alert polygon (or clicks empty map
+   * space while an alert is selected, with `key: null`, to deselect). */
+  onAlertClick?: (key: string | null) => void;
 }
 
 /**
@@ -150,12 +240,20 @@ export function MapView({
   rangeRings = null,
   onCursorMove,
   onCursorLeave,
+  alerts = null,
+  selectedAlertKey = null,
+  onAlertClick,
 }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const ringsCanvasRef = useRef<HTMLCanvasElement>(null);
+  const alertsCanvasRef = useRef<HTMLCanvasElement>(null);
   const rangeRingsRef = useRef<number[][][] | null>(rangeRings);
   rangeRingsRef.current = rangeRings;
+  const alertsRef = useRef<AlertFeatureCollection | null>(alerts);
+  alertsRef.current = alerts;
+  const selectedAlertKeyRef = useRef<string | null>(selectedAlertKey);
+  selectedAlertKeyRef.current = selectedAlertKey;
 
   // Create the map once.
   useEffect(() => {
@@ -182,6 +280,7 @@ export function MapView({
     const map = mapRef.current;
     const canvas = canvasRef.current;
     const ringsCanvas = ringsCanvasRef.current;
+    const alertsCanvas = alertsCanvasRef.current;
     if (!map || !canvas) return;
 
     function updateOverlay() {
@@ -208,6 +307,20 @@ export function MapView({
           ringsCanvas.style.height = mapCanvas.style.height;
         }
         drawRangeRings(map, ringsCanvas, rangeRingsRef.current);
+      }
+
+      // Same backing-buffer sync for the alert-polygon overlay -- see
+      // `drawAlerts`'s doc comment for why this is a manual canvas, not a
+      // native MapLibre layer.
+      if (alertsCanvas) {
+        const mapCanvas = map.getCanvas();
+        if (alertsCanvas.width !== mapCanvas.width || alertsCanvas.height !== mapCanvas.height) {
+          alertsCanvas.width = mapCanvas.width;
+          alertsCanvas.height = mapCanvas.height;
+          alertsCanvas.style.width = mapCanvas.style.width;
+          alertsCanvas.style.height = mapCanvas.style.height;
+        }
+        drawAlerts(map, alertsCanvas, alertsRef.current, selectedAlertKeyRef.current);
       }
     }
 
@@ -243,6 +356,62 @@ export function MapView({
     if (!map || !ringsCanvas) return;
     drawRangeRings(map, ringsCanvas, rangeRings);
   }, [rangeRings]);
+
+  // Redraw alert polygons whenever the active set or selection changes
+  // (map pan/zoom/resize is handled by `updateOverlay` above).
+  useEffect(() => {
+    const map = mapRef.current;
+    const alertsCanvas = alertsCanvasRef.current;
+    if (!map || !alertsCanvas) return;
+    drawAlerts(map, alertsCanvas, alerts, selectedAlertKey);
+  }, [alerts, selectedAlertKey]);
+
+  // Alert click handling: resolve a map click to "which alert (if any) was
+  // clicked" via plain lon/lat point-in-polygon hit testing against the
+  // currently-active set (see `geometryHitTest.ts` -- native MapLibre
+  // feature-picking only works for layers actually registered with the
+  // map, and alert polygons are deliberately drawn to a manual canvas
+  // instead; see `drawAlerts`'s doc comment). Also sets a pointer cursor on
+  // hover for discoverability, and clicking empty map space deselects.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    function alertAtPoint(lngLat: { lat: number; lng: number }): string | null {
+      const current = alertsRef.current;
+      if (!current) return null;
+      const point: [number, number] = [lngLat.lng, lngLat.lat];
+      let best: { key: string; severityRank: number } | null = null;
+      for (const feature of current.features) {
+        if (!feature.geometry) continue;
+        if (!pointInAlertGeometry(point, feature.geometry)) continue;
+        const rank = severityRank(feature.properties.severity);
+        // Multiple overlapping alert polygons at one point are possible
+        // (e.g. a Flood Watch under a Severe Thunderstorm Warning) --
+        // surface the most severe one first, a reasonable UX choice, not
+        // a lifecycle decision.
+        if (!best || rank < best.severityRank) {
+          best = { key: feature.id, severityRank: rank };
+        }
+      }
+      return best?.key ?? null;
+    }
+
+    function handleClick(e: { lngLat: { lat: number; lng: number } }) {
+      onAlertClick?.(alertAtPoint(e.lngLat));
+    }
+    function handleHoverMove(e: { lngLat: { lat: number; lng: number } }) {
+      map!.getCanvas().style.cursor = alertAtPoint(e.lngLat) ? "pointer" : "";
+    }
+
+    map.on("click", handleClick);
+    map.on("mousemove", handleHoverMove);
+    return () => {
+      map.off("click", handleClick);
+      map.off("mousemove", handleHoverMove);
+      map.getCanvas().style.cursor = "";
+    };
+  }, [onAlertClick]);
 
   // Geographic cursor readout: MapLibre's own `mousemove`/`mouseout`
   // events already carry the cursor resolved to a map lat/lon via
@@ -302,6 +471,24 @@ export function MapView({
         style={{
           position: "absolute",
           zIndex: 2,
+          top: 0,
+          left: 0,
+          width: "100%",
+          height: "100%",
+          pointerEvents: "none",
+        }}
+      />
+      {/* S06 alert polygons, one z-index above the range rings -- same
+          "manual overlay canvas above the opaque radar canvas" fix,
+          `pointerEvents: none` since clicks are resolved via the `map`
+          instance's own `click` event + lon/lat hit testing above, not via
+          this canvas element directly (letting mouse events pass through
+          to MapLibre's normal pan/zoom handling underneath). */}
+      <canvas
+        ref={alertsCanvasRef}
+        style={{
+          position: "absolute",
+          zIndex: 3,
           top: 0,
           left: 0,
           width: "100%",
