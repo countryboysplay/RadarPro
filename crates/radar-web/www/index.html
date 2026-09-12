@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<title>radar-web S04 browser proof</title>
+<title>radar-web S05 browser proof</title>
 <style>
   body {
     font-family: ui-monospace, Consolas, monospace;
@@ -24,6 +24,25 @@
     border: 1px solid #444;
     display: block;
   }
+  #controls {
+    margin-top: 1rem;
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+  }
+  #controls label {
+    display: flex;
+    flex-direction: column;
+    font-size: 0.85rem;
+    gap: 0.25rem;
+  }
+  select {
+    font-family: inherit;
+    background: #1a1a1a;
+    color: #ddd;
+    border: 1px solid #444;
+    padding: 0.25rem;
+  }
   #status {
     margin-top: 1rem;
     padding: 0.75rem 1rem;
@@ -40,8 +59,16 @@
 </style>
 </head>
 <body>
-  <h1>radar-web -- S04 browser decode/render proof (KTLX fixture)</h1>
+  <h1>radar-web -- S05 browser decode/multi-moment-elevation-render proof (KTLX fixture)</h1>
   <canvas id="radar-canvas" width="512" height="512"></canvas>
+  <div id="controls">
+    <label>Elevation
+      <select id="elevation-select" disabled></select>
+    </label>
+    <label>Moment
+      <select id="moment-select" disabled></select>
+    </label>
+  </div>
   <div id="status"></div>
   <script type="module" src="./index.js"></script>
 </body>

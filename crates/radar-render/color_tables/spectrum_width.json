@@ -1,0 +1,19 @@
+{
+  "format_version": 1,
+  "name": "RadarPro Default Spectrum Width",
+  "moments": ["SW"],
+  "units": "m/s",
+  "mode": "gradient",
+  "domain": { "min": 0.0, "max": 15.0 },
+  "cyclic": false,
+  "stops": [
+    { "value": 0.0, "color": [0, 0, 0, 0] },
+    { "value": 1.0, "color": [0, 0, 0, 0] },
+    { "value": 1.01, "color": [64, 180, 180, 255] },
+    { "value": 5.0, "color": [0, 200, 200, 255] },
+    { "value": 10.0, "color": [0, 120, 220, 255] },
+    { "value": 15.0, "color": [120, 0, 200, 255] }
+  ],
+  "missing_color": [0, 0, 0, 0],
+  "range_folded_color": [255, 0, 255, 255]
+}

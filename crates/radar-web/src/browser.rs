@@ -3,7 +3,7 @@
 //! `radar_render::gpu`'s existing pipeline/bind-group/buffer/texture code
 //! unmodified. The one genuinely new piece of `wgpu` code in this crate is
 //! [`RadarWebRenderer::create`]'s surface acquisition/configuration and
-//! [`RadarWebRenderer::render_frame`]'s presentation -- `radar-render`'s
+//! [`RadarWebRenderer::select_and_render`]'s presentation -- `radar-render`'s
 //! native harness renders off-screen and reads pixels back for a PNG, so it
 //! never needed either.
 //!
@@ -51,6 +51,27 @@
 //! size with the backing buffer matching 1:1 (no `devicePixelRatio`
 //! scaling) -- real DPI-aware resizing is out of scope for this proof; see
 //! `www/index.html`.
+//!
+//! # S05: decode once, switch (elevation, moment) selection freely
+//!
+//! [`RadarWebRenderer::decode_volume`] decodes the full
+//! [`radar_types::Volume`] (every sweep, every moment) exactly once and
+//! keeps it in memory; [`RadarWebRenderer::select_and_render`] re-runs only
+//! the CPU-side buffer-build + GPU upload + render/present steps for a new
+//! `(sweep_index, MomentKind)` selection, never calling
+//! `nexrad_level2::decode_volume` again. See [`crate::render_select`] for
+//! the pure, host-testable selection logic this delegates to, and its
+//! `#[cfg(test)]` module for a structural proof (no GPU required) that
+//! switching selection really does skip re-decoding.
+//!
+//! This module also exposes S05 deliverables 2 (the original color-table
+//! format, [`radar_render::color_table`]) and 3 (`radar-geo`'s cursor-probe
+//! and range-ring logic) through [`RadarWebRenderer::load_color_table`]/
+//! [`RadarWebRenderer::active_color_table_json`]/
+//! [`RadarWebRenderer::probe_gate`] and the free function
+//! [`range_rings_geojson`].
+
+use std::collections::HashMap;
 
 use js_sys::Promise;
 use wasm_bindgen::prelude::*;
@@ -58,19 +79,17 @@ use wasm_bindgen_futures::future_to_promise;
 use web_sys::HtmlCanvasElement;
 
 use radar_render::camera::clip_to_world;
+use radar_render::color_table::{build_lut_from_table, default_color_table, ColorTable};
 use radar_render::gpu::{
     self, GpuUniforms, PaletteGpuResources, RenderTarget, SweepGpuResources, SweepPipeline,
     UniformsGpu,
 };
 use radar_render::lookup_texture::{build_radial_lookup, DEFAULT_LOOKUP_TEXEL_COUNT};
-use radar_render::palette::{
-    build_palette_lut, default_ref_palette_stops, DEFAULT_REF_MAX_DBZ, DEFAULT_REF_MIN_DBZ,
-    PALETTE_TEXEL_COUNT,
-};
+use radar_render::palette::PALETTE_TEXEL_COUNT;
 use radar_render::sweep_buffers::{build_sweep_buffers, GpuRadialMeta};
-use radar_types::{AzimuthResolution, MomentKind, Volume};
+use radar_types::{AzimuthResolution, GateValue, MomentKind, Volume};
 
-use crate::sweep_select::pick_lowest_elevation_sweep_index;
+use crate::{render_select, sweep_select};
 
 /// Runs once when the wasm module is instantiated (before any exported
 /// function can be called): installs a panic hook that turns a Rust panic
@@ -85,21 +104,29 @@ fn on_wasm_module_init() {
     console_error_panic_hook::set_once();
 }
 
-/// Metadata about the sweep [`RadarWebRenderer::decode_sweep`] selected,
-/// readable from JS via plain getters. Deliberately not the full
-/// `radar_types::Sweep` -- that carries every radial's gate array, which
-/// belongs on the GPU (via [`RadarWebRenderer::render_frame`]), not
-/// marshalled through the JS boundary.
+/// Metadata about a decoded [`radar_types::Volume`], readable from JS via
+/// plain getters -- enough for a UI to build an elevation picker.
+/// Deliberately not the full `Volume` -- that carries every sweep's every
+/// radial's gate array, which belongs on the GPU
+/// ([`RadarWebRenderer::select_and_render`]), not marshalled through the
+/// JS boundary.
+///
+/// Per-sweep moment availability (which [`MomentKind`]s a given sweep
+/// actually carries -- not every sweep in a VCP carries every moment, e.g.
+/// SAILS/split cuts) is a separate call,
+/// [`RadarWebRenderer::moment_wire_codes_for_sweep`], rather than baked
+/// into this struct, so a UI does not have to marshal a full
+/// sweep-by-moment matrix up front if it only needs one sweep's moments at
+/// a time.
 #[wasm_bindgen]
-pub struct SweepInfo {
+pub struct VolumeSummary {
     site_icao: String,
     sweep_count: u32,
-    elevation_deg: f32,
-    radial_count: u32,
+    elevation_degs: Vec<f32>,
 }
 
 #[wasm_bindgen]
-impl SweepInfo {
+impl VolumeSummary {
     #[wasm_bindgen(getter, js_name = siteIcao)]
     pub fn site_icao(&self) -> String {
         self.site_icao.clone()
@@ -110,20 +137,98 @@ impl SweepInfo {
         self.sweep_count
     }
 
-    #[wasm_bindgen(getter, js_name = elevationDeg)]
-    pub fn elevation_deg(&self) -> f32 {
-        self.elevation_deg
-    }
-
-    #[wasm_bindgen(getter, js_name = radialCount)]
-    pub fn radial_count(&self) -> u32 {
-        self.radial_count
+    /// One elevation angle (degrees) per sweep, in `volume.sweeps` order --
+    /// index `i` here is sweep index `i` everywhere else in this API
+    /// (`selectAndRender`, `momentWireCodesForSweep`, `probeGate`).
+    #[wasm_bindgen(js_name = elevationDegs)]
+    pub fn elevation_degs(&self) -> Vec<f32> {
+        self.elevation_degs.clone()
     }
 }
 
-/// GPU resources for one uploaded sweep: everything
-/// [`RadarWebRenderer::render_frame`] needs to draw it again without
-/// re-uploading, built once per [`RadarWebRenderer::decode_sweep`] call.
+/// What [`RadarWebRenderer::load_color_table`] applied, for a UI to
+/// confirm/display after a successful load.
+#[wasm_bindgen]
+pub struct ColorTableApplyResult {
+    name: String,
+    applied_to: Vec<String>,
+}
+
+#[wasm_bindgen]
+impl ColorTableApplyResult {
+    #[wasm_bindgen(getter, js_name = name)]
+    pub fn name(&self) -> String {
+        self.name.clone()
+    }
+
+    /// [`MomentKind::wire_code`] strings this table is now the active
+    /// palette for.
+    #[wasm_bindgen(js_name = appliedTo)]
+    pub fn applied_to(&self) -> Vec<String> {
+        self.applied_to.clone()
+    }
+}
+
+/// Result of [`RadarWebRenderer::probe_gate`]: a cursor resolved to a
+/// specific radial/gate on the currently-probed sweep, with its
+/// missing/range-folded/valid state kept distinct -- never collapsed --
+/// per `GLOBAL_CONTRACT.md`.
+#[wasm_bindgen]
+pub struct GateProbeResult {
+    azimuth_deg: f64,
+    slant_range_km: f64,
+    radial_index: u32,
+    gate_index: u32,
+    /// One of `"valid"`, `"missing"`, or `"range_folded"`.
+    state: String,
+    /// The raw physical value, present only when `state == "valid"`.
+    value: Option<f64>,
+    /// `value`'s physical unit (from the active color table's `units`
+    /// field), present only when `state == "valid"`.
+    units: Option<String>,
+}
+
+#[wasm_bindgen]
+impl GateProbeResult {
+    #[wasm_bindgen(getter, js_name = azimuthDeg)]
+    pub fn azimuth_deg(&self) -> f64 {
+        self.azimuth_deg
+    }
+
+    #[wasm_bindgen(getter, js_name = slantRangeKm)]
+    pub fn slant_range_km(&self) -> f64 {
+        self.slant_range_km
+    }
+
+    #[wasm_bindgen(getter, js_name = radialIndex)]
+    pub fn radial_index(&self) -> u32 {
+        self.radial_index
+    }
+
+    #[wasm_bindgen(getter, js_name = gateIndex)]
+    pub fn gate_index(&self) -> u32 {
+        self.gate_index
+    }
+
+    #[wasm_bindgen(getter, js_name = state)]
+    pub fn state(&self) -> String {
+        self.state.clone()
+    }
+
+    #[wasm_bindgen(getter, js_name = value)]
+    pub fn value(&self) -> Option<f64> {
+        self.value
+    }
+
+    #[wasm_bindgen(getter, js_name = units)]
+    pub fn units(&self) -> Option<String> {
+        self.units.clone()
+    }
+}
+
+/// GPU resources for one uploaded `(sweep, moment)` selection: everything
+/// [`RadarWebRenderer::select_and_render`] needs to draw it again without
+/// re-uploading, built once per distinct selection.
 struct UploadedSweep {
     // Held for their GPU-side storage buffers/texture/sampler, which
     // `bind_group` below borrows into a GPU-visible bind group at build
@@ -135,8 +240,10 @@ struct UploadedSweep {
     bind_group: wgpu::BindGroup,
 }
 
-/// A live GPU device/surface pair targeting one `<canvas>`, plus whatever
-/// sweep has most recently been decoded/uploaded. Constructed via
+/// A live GPU device/surface pair targeting one `<canvas>`, the most
+/// recently decoded [`Volume`] (if any), any custom color tables loaded
+/// via [`RadarWebRenderer::load_color_table`], and whatever `(sweep,
+/// moment)` selection has most recently been uploaded. Constructed via
 /// [`init_gpu`] from JS; every other method is called on the handle it
 /// resolves to.
 #[wasm_bindgen]
@@ -150,7 +257,14 @@ pub struct RadarWebRenderer {
     adapter_name: String,
     adapter_backend: wgpu::Backend,
     volume: Option<Volume>,
-    selected_sweep_index: Option<usize>,
+    /// User-loaded color tables, keyed by the moment(s) they were applied
+    /// to. A moment absent here falls back to
+    /// [`radar_render::color_table::default_color_table`] -- see
+    /// [`RadarWebRenderer::active_color_table_for`].
+    color_tables: HashMap<MomentKind, ColorTable>,
+    /// The `(sweep_index, MomentKind)` selection [`UploadedSweep`] (if any)
+    /// currently reflects.
+    selection: Option<(usize, MomentKind)>,
     uploaded: Option<UploadedSweep>,
 }
 
@@ -240,9 +354,20 @@ impl RadarWebRenderer {
             adapter_name: adapter_info.name,
             adapter_backend: adapter_info.backend,
             volume: None,
-            selected_sweep_index: None,
+            color_tables: HashMap::new(),
+            selection: None,
             uploaded: None,
         })
+    }
+
+    /// `moment`'s active palette: a user-loaded override if one was
+    /// applied via [`RadarWebRenderer::load_color_table`], otherwise this
+    /// crate's own built-in default for that moment.
+    fn active_color_table_for(&self, moment: MomentKind) -> ColorTable {
+        self.color_tables
+            .get(&moment)
+            .cloned()
+            .unwrap_or_else(|| default_color_table(moment))
     }
 }
 
@@ -265,102 +390,156 @@ impl RadarWebRenderer {
         format!("{:?}", self.adapter_backend)
     }
 
-    /// Decode `archive2_bytes` (a full raw Archive II Level II volume) and
-    /// select the lowest-elevation sweep that carries a REF (reflectivity)
-    /// moment -- see [`crate::sweep_select`]. Returns metadata about that
-    /// sweep for the caller to display/log; does not touch the GPU.
+    /// Decode `archive2_bytes` (a full raw Archive II Level II volume)
+    /// **once**, keeping every sweep/moment in memory. Does not touch the
+    /// GPU or select anything to render -- call
+    /// [`RadarWebRenderer::select_and_render`] afterward with a chosen
+    /// `(sweep_index, moment)` pair.
+    ///
+    /// A previously-loaded color table (via
+    /// [`RadarWebRenderer::load_color_table`]) is unaffected by decoding a
+    /// new volume -- palettes are a per-moment display choice, independent
+    /// of which volume's data is being displayed.
     ///
     /// A `#[wasm_bindgen]`-exported `&[u8]` parameter accepts a JS
     /// `Uint8Array` directly (copied into this function's own `Vec<u8>` by
     /// the generated glue), so no explicit `js_sys::Uint8Array` type is
     /// needed in this signature.
-    #[wasm_bindgen(js_name = decodeSweep)]
-    pub fn decode_sweep(&mut self, archive2_bytes: &[u8]) -> Result<SweepInfo, JsValue> {
+    #[wasm_bindgen(js_name = decodeVolume)]
+    pub fn decode_volume(&mut self, archive2_bytes: &[u8]) -> Result<VolumeSummary, JsValue> {
         let volume = nexrad_level2::decode_volume(archive2_bytes)
             .map_err(|e| JsValue::from_str(&format!("failed to decode Archive II volume: {e}")))?;
 
-        let sweep_index = pick_lowest_elevation_sweep_index(&volume, MomentKind::Reflectivity)
-            .ok_or_else(|| {
-                JsValue::from_str("no sweep in this volume carries a REF (reflectivity) moment")
-            })?;
-        let sweep = &volume.sweeps[sweep_index];
-        let info = SweepInfo {
+        let summary = VolumeSummary {
             site_icao: volume.site.icao.clone(),
             sweep_count: volume.sweeps.len() as u32,
-            elevation_deg: sweep.elevation_angle_deg,
-            radial_count: sweep.radials.len() as u32,
+            elevation_degs: volume
+                .sweeps
+                .iter()
+                .map(|s| s.elevation_angle_deg)
+                .collect(),
         };
 
-        self.selected_sweep_index = Some(sweep_index);
         self.volume = Some(volume);
-        // A new decode invalidates any GPU resources uploaded for a
-        // previous sweep; `render_frame` rebuilds them lazily.
+        // A new decode invalidates any GPU resources uploaded for the
+        // previous volume's selection; `select_and_render` rebuilds them
+        // lazily on the next call.
         self.uploaded = None;
-        Ok(info)
+        self.selection = None;
+        Ok(summary)
     }
 
-    /// Upload the selected sweep's GPU storage buffers/lookup texture/
-    /// palette (first call after a `decodeSweep` only; subsequent calls
-    /// reuse them) and render + present one frame to the `<canvas>`
-    /// surface. Must be called after a successful `decodeSweep`.
-    #[wasm_bindgen(js_name = renderFrame)]
-    pub fn render_frame(&mut self) -> Result<(), JsValue> {
+    /// Every [`MomentKind::wire_code`] present on at least one radial of
+    /// sweep `sweep_index` of the most recently decoded volume -- for
+    /// building a per-elevation moment picker. Must be called after a
+    /// successful [`RadarWebRenderer::decode_volume`].
+    #[wasm_bindgen(js_name = momentWireCodesForSweep)]
+    pub fn moment_wire_codes_for_sweep(&self, sweep_index: u32) -> Result<Vec<String>, JsValue> {
         let volume = self.volume.as_ref().ok_or_else(|| {
-            JsValue::from_str("renderFrame called before a successful decodeSweep")
+            JsValue::from_str("momentWireCodesForSweep called before a successful decodeVolume")
         })?;
-        let sweep_index = self
-            .selected_sweep_index
-            .expect("set together with `volume` in decode_sweep");
-        let sweep = &volume.sweeps[sweep_index];
+        let summaries = render_select::volume_sweep_summaries(volume);
+        let summary = summaries.get(sweep_index as usize).ok_or_else(|| {
+            JsValue::from_str(&format!(
+                "sweep index {sweep_index} out of range (volume has {} sweeps)",
+                summaries.len()
+            ))
+        })?;
+        Ok(summary
+            .moments
+            .iter()
+            .map(|kind| kind.wire_code().to_string())
+            .collect())
+    }
 
-        if self.uploaded.is_none() {
-            let buffer_data = build_sweep_buffers(sweep, MomentKind::Reflectivity);
-            let azimuth_resolution = sweep
-                .radials
-                .first()
-                .map(|r| r.azimuth_resolution)
-                .unwrap_or(AzimuthResolution::One);
-            let lookup_table = build_radial_lookup(
-                &buffer_data.source_radials,
-                azimuth_resolution,
-                DEFAULT_LOOKUP_TEXEL_COUNT,
-            );
-            let palette_lut = build_palette_lut(
-                &default_ref_palette_stops(),
-                DEFAULT_REF_MIN_DBZ,
-                DEFAULT_REF_MAX_DBZ,
-                PALETTE_TEXEL_COUNT,
-            );
+    /// The lowest-elevation sweep index carrying `moment_wire_code`, or
+    /// `None` if no sweep does -- the same default-selection rule this
+    /// crate's earlier S04 proof always used ([`crate::sweep_select`]),
+    /// exposed as a convenience for a UI's initial pick before the user
+    /// has chosen anything.
+    #[wasm_bindgen(js_name = defaultSweepIndexForMoment)]
+    pub fn default_sweep_index_for_moment(
+        &self,
+        moment_wire_code: &str,
+    ) -> Result<Option<u32>, JsValue> {
+        let moment = resolve_moment(moment_wire_code)?;
+        let volume = self.volume.as_ref().ok_or_else(|| {
+            JsValue::from_str("defaultSweepIndexForMoment called before a successful decodeVolume")
+        })?;
+        Ok(sweep_select::pick_lowest_elevation_sweep_index(volume, moment).map(|i| i as u32))
+    }
 
-            let sweep_gpu =
-                gpu::upload_sweep(&self.device, &self.queue, &buffer_data, &lookup_table);
-            let palette_gpu = gpu::upload_palette(&self.device, &self.queue, &palette_lut);
-            let max_range_km = farthest_gate_edge_km(&buffer_data.radial_meta);
-            let uniforms_gpu = UniformsGpu::new(
-                &self.device,
-                GpuUniforms {
-                    clip_to_world: clip_to_world((0.0, 0.0), (max_range_km, max_range_km)),
-                    site_max_range_km: max_range_km,
-                    lookup_texel_count: DEFAULT_LOOKUP_TEXEL_COUNT,
-                    palette_min_dbz: DEFAULT_REF_MIN_DBZ,
-                    palette_max_dbz: DEFAULT_REF_MAX_DBZ,
-                    _pad: [0; 4],
-                },
-            );
-            let bind_group = gpu::create_bind_group(
-                &self.device,
-                &self.pipeline.bind_group_layout,
-                &uniforms_gpu,
-                &sweep_gpu,
-                &palette_gpu,
-            );
+    /// Parse, validate, and apply a color table (see
+    /// `COLOR_TABLE_FORMAT.md` and [`radar_render::color_table`]) from a
+    /// JSON string. On success, the table becomes the active palette for
+    /// every [`MomentKind`] it names (replacing that moment's previous
+    /// active table, default or otherwise) and this method returns which
+    /// moments were affected. On a malformed table, returns a `JsValue`
+    /// error describing exactly what failed validation -- never panics.
+    #[wasm_bindgen(js_name = loadColorTable)]
+    pub fn load_color_table(&mut self, json: &str) -> Result<ColorTableApplyResult, JsValue> {
+        let table = ColorTable::from_json(json).map_err(|e| JsValue::from_str(&e.to_string()))?;
+        let moments = table.resolved_moments();
+        let applied_to: Vec<String> = moments
+            .iter()
+            .map(|kind| kind.wire_code().to_string())
+            .collect();
+        let name = table.name.clone();
 
-            self.uploaded = Some(UploadedSweep {
-                _sweep_gpu: sweep_gpu,
-                _palette_gpu: palette_gpu,
-                _uniforms_gpu: uniforms_gpu,
-                bind_group,
-            });
+        for moment in moments {
+            self.color_tables.insert(moment, table.clone());
+            self.invalidate_upload_if_selected(moment);
+        }
+
+        Ok(ColorTableApplyResult { name, applied_to })
+    }
+
+    /// Revert `moment_wire_code` to this crate's built-in default palette,
+    /// discarding any table previously loaded for it via
+    /// [`RadarWebRenderer::load_color_table`].
+    #[wasm_bindgen(js_name = resetColorTable)]
+    pub fn reset_color_table(&mut self, moment_wire_code: &str) -> Result<(), JsValue> {
+        let moment = resolve_moment(moment_wire_code)?;
+        self.color_tables.remove(&moment);
+        self.invalidate_upload_if_selected(moment);
+        Ok(())
+    }
+
+    /// The active color table for `moment_wire_code` (a user-loaded
+    /// override, or this crate's built-in default), serialized back to the
+    /// same JSON shape [`RadarWebRenderer::load_color_table`] reads -- for
+    /// a UI to display or offer as a starting point for editing.
+    #[wasm_bindgen(js_name = activeColorTableJson)]
+    pub fn active_color_table_json(&self, moment_wire_code: &str) -> Result<String, JsValue> {
+        let moment = resolve_moment(moment_wire_code)?;
+        self.active_color_table_for(moment)
+            .to_json_pretty()
+            .map_err(|e| JsValue::from_str(&e.to_string()))
+    }
+
+    /// Render + present one frame for the given `(sweep_index, moment)`
+    /// selection. If this exact selection was the last one rendered, its
+    /// GPU resources are reused unchanged (just a re-render); otherwise
+    /// (a different elevation, a different moment, or the active color
+    /// table for this moment changed since the last render) the CPU-side
+    /// buffers/lookup texture/palette are rebuilt and re-uploaded first.
+    ///
+    /// Crucially, none of this ever re-decodes the Archive II bytes --
+    /// every code path here operates on the [`Volume`] already decoded by
+    /// [`RadarWebRenderer::decode_volume`]. Must be called after a
+    /// successful `decodeVolume`.
+    #[wasm_bindgen(js_name = selectAndRender)]
+    pub fn select_and_render(
+        &mut self,
+        sweep_index: u32,
+        moment_wire_code: &str,
+    ) -> Result<(), JsValue> {
+        let moment = resolve_moment(moment_wire_code)?;
+        let selection = (sweep_index as usize, moment);
+
+        if self.uploaded.is_none() || self.selection != Some(selection) {
+            self.upload_selection(selection.0, moment, moment_wire_code)?;
+            self.selection = Some(selection);
         }
         let bind_group = &self
             .uploaded
@@ -413,6 +592,212 @@ impl RadarWebRenderer {
 
         Ok(())
     }
+
+    /// Given the site's lat/lon, which sweep/moment is being probed, and a
+    /// cursor's lat/lon, resolve the cursor to a specific radial/gate on
+    /// that sweep and return its state and (if valid) value -- see
+    /// [`GateProbeResult`]'s docs for the exact never-collapse guarantee.
+    /// Returns `Ok(None)` when the cursor does not resolve to any
+    /// radial/gate at all (outside the sweep's angular/range coverage),
+    /// which is a normal "off the sweep" outcome, not an error.
+    ///
+    /// Reuses `radar-geo`'s already-tested
+    /// [`radar_geo::locate_gate_value`]/[`radar_geo::cursor_to_polar`]
+    /// directly rather than reimplementing the cursor -> polar ->
+    /// radial/gate resolution here.
+    #[wasm_bindgen(js_name = probeGate)]
+    pub fn probe_gate(
+        &self,
+        site_lat_deg: f64,
+        site_lon_deg: f64,
+        sweep_index: u32,
+        moment_wire_code: &str,
+        cursor_lat_deg: f64,
+        cursor_lon_deg: f64,
+    ) -> Result<Option<GateProbeResult>, JsValue> {
+        let moment = resolve_moment(moment_wire_code)?;
+        let volume = self.volume.as_ref().ok_or_else(|| {
+            JsValue::from_str("probeGate called before a successful decodeVolume")
+        })?;
+        let sweep = volume.sweeps.get(sweep_index as usize).ok_or_else(|| {
+            JsValue::from_str(&format!(
+                "sweep index {sweep_index} out of range (volume has {} sweeps)",
+                volume.sweeps.len()
+            ))
+        })?;
+
+        let site = radar_geo::LatLon::new(site_lat_deg, site_lon_deg);
+        let cursor = radar_geo::LatLon::new(cursor_lat_deg, cursor_lon_deg);
+
+        let Some((radial_gate, gate_value)) =
+            radar_geo::locate_gate_value(site, sweep, moment, cursor)
+        else {
+            return Ok(None);
+        };
+        let polar = radar_geo::cursor_to_polar(site, f64::from(sweep.elevation_angle_deg), cursor)
+            .expect(
+                "locate_gate_value already resolved this exact cursor via cursor_to_polar \
+                 internally, so the same call here must also succeed",
+            );
+
+        let (state, value, units) = match *gate_value {
+            GateValue::Missing => ("missing".to_string(), None, None),
+            GateValue::RangeFolded => ("range_folded".to_string(), None, None),
+            GateValue::Value(v) => {
+                let table = self.active_color_table_for(moment);
+                ("valid".to_string(), Some(f64::from(v)), Some(table.units))
+            }
+        };
+
+        Ok(Some(GateProbeResult {
+            azimuth_deg: polar.azimuth_deg,
+            slant_range_km: polar.slant_range_km,
+            radial_index: radial_gate.radial_index as u32,
+            gate_index: radial_gate.gate_index as u32,
+            state,
+            value,
+            units,
+        }))
+    }
+}
+
+impl RadarWebRenderer {
+    /// If `moment` is the moment of the currently-uploaded selection,
+    /// invalidate the upload so the next `selectAndRender` call rebuilds
+    /// it with the (now-changed) active color table -- called after
+    /// [`RadarWebRenderer::load_color_table`]/
+    /// [`RadarWebRenderer::reset_color_table`] change what "active
+    /// palette" means for that moment.
+    fn invalidate_upload_if_selected(&mut self, moment: MomentKind) {
+        if let Some((_, selected_moment)) = self.selection {
+            if selected_moment == moment {
+                self.uploaded = None;
+            }
+        }
+    }
+
+    /// Build the CPU-side sweep buffers/lookup texture/palette for
+    /// `(sweep_index, moment)` and upload them as a fresh
+    /// [`UploadedSweep`], replacing `self.uploaded`. The only code path
+    /// that touches `self.volume`/`nexrad_level2` state for a render --
+    /// [`RadarWebRenderer::select_and_render`] calls this only when the
+    /// selection or active palette actually changed.
+    fn upload_selection(
+        &mut self,
+        sweep_index: usize,
+        moment: MomentKind,
+        moment_wire_code: &str,
+    ) -> Result<(), JsValue> {
+        // Scoped so the borrow of `self.volume` ends before this function
+        // needs `&self.color_tables`/`&mut self` again -- `build_sweep_buffers`
+        // returns an owned `SweepBufferData` (it clones each matching
+        // radial), so nothing below depends on `volume`/`sweep` staying
+        // borrowed.
+        let buffer_data = {
+            let volume = self.volume.as_ref().ok_or_else(|| {
+                JsValue::from_str("selectAndRender called before a successful decodeVolume")
+            })?;
+            let sweep =
+                render_select::resolve_sweep(volume, sweep_index, moment).ok_or_else(|| {
+                    JsValue::from_str(&format!(
+                        "sweep {sweep_index} does not carry moment {moment_wire_code}"
+                    ))
+                })?;
+            build_sweep_buffers(sweep, moment)
+        };
+
+        let azimuth_resolution = buffer_data
+            .source_radials
+            .first()
+            .map(|r| r.azimuth_resolution)
+            .unwrap_or(AzimuthResolution::One);
+        let lookup_table = build_radial_lookup(
+            &buffer_data.source_radials,
+            azimuth_resolution,
+            DEFAULT_LOOKUP_TEXEL_COUNT,
+        );
+
+        let table = self.active_color_table_for(moment);
+        let palette_lut = build_lut_from_table(&table, PALETTE_TEXEL_COUNT);
+        let max_range_km = farthest_gate_edge_km(&buffer_data.radial_meta);
+
+        let sweep_gpu = gpu::upload_sweep(&self.device, &self.queue, &buffer_data, &lookup_table);
+        let palette_gpu = gpu::upload_palette(&self.device, &self.queue, &palette_lut);
+        let uniforms_gpu = UniformsGpu::new(
+            &self.device,
+            GpuUniforms {
+                clip_to_world: clip_to_world((0.0, 0.0), (max_range_km, max_range_km)),
+                site_max_range_km: max_range_km,
+                lookup_texel_count: DEFAULT_LOOKUP_TEXEL_COUNT,
+                // Despite the field names (dating from the S03 REF-only
+                // proof), these are now a generic palette-domain min/max --
+                // whatever unit `table.units` documents (m/s, dB, deg, ...),
+                // not necessarily dBZ. See `GpuUniforms`'s doc comment.
+                palette_min_dbz: table.domain.min,
+                palette_max_dbz: table.domain.max,
+                _pad: [0; 4],
+            },
+        );
+        let bind_group = gpu::create_bind_group(
+            &self.device,
+            &self.pipeline.bind_group_layout,
+            &uniforms_gpu,
+            &sweep_gpu,
+            &palette_gpu,
+        );
+
+        self.uploaded = Some(UploadedSweep {
+            _sweep_gpu: sweep_gpu,
+            _palette_gpu: palette_gpu,
+            _uniforms_gpu: uniforms_gpu,
+            bind_group,
+        });
+        Ok(())
+    }
+}
+
+/// Range rings around `(site_lat_deg, site_lon_deg)` at each radius in
+/// `radii_km`, as a GeoJSON-coordinate-ordered (`[lon, lat]`, per GeoJSON's
+/// own convention -- longitude first) nested array: one inner array of
+/// `[lon, lat]` pairs per ring, in the same order as `radii_km`, directly
+/// usable as a MapLibre GeoJSON `MultiLineString`'s `coordinates`.
+///
+/// A free function (not a [`RadarWebRenderer`] method) since it needs no
+/// decoded volume/GPU state at all -- it is a thin, direct exposure of
+/// `radar-geo`'s [`radar_geo::range_rings`], returning geometry only, with
+/// no knowledge of MapLibre or any other map renderer (`ARCHITECTURE.md`:
+/// "map integration is an adapter boundary, not a core dependency").
+#[wasm_bindgen(js_name = rangeRingsGeoJson)]
+pub fn range_rings_geojson(
+    site_lat_deg: f64,
+    site_lon_deg: f64,
+    radii_km: Vec<f64>,
+    num_points: u32,
+) -> JsValue {
+    let site = radar_geo::LatLon::new(site_lat_deg, site_lon_deg);
+    let rings = radar_geo::range_rings(site, &radii_km, num_points as usize);
+
+    let outer = js_sys::Array::new();
+    for ring in rings {
+        let ring_coords = js_sys::Array::new();
+        for point in ring {
+            let pair = js_sys::Array::of2(
+                &JsValue::from_f64(point.lon_deg),
+                &JsValue::from_f64(point.lat_deg),
+            );
+            ring_coords.push(&pair);
+        }
+        outer.push(&ring_coords);
+    }
+    outer.into()
+}
+
+/// Resolve a JS-supplied moment wire code to a [`MomentKind`], or a
+/// descriptive `JsValue` error -- shared by every method that takes one,
+/// so an unknown code always fails the same documented way.
+fn resolve_moment(moment_wire_code: &str) -> Result<MomentKind, JsValue> {
+    MomentKind::from_wire_code(moment_wire_code)
+        .ok_or_else(|| JsValue::from_str(&format!("unknown moment wire code {moment_wire_code:?}")))
 }
 
 /// The farthest gate's far edge across every radial in `radial_meta`, in km

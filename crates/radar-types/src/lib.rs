@@ -312,6 +312,54 @@ pub enum MomentKind {
     DifferentialPhase,
 }
 
+impl MomentKind {
+    /// This moment's canonical short wire-style name, matching the Archive
+    /// II Data Moment identifiers `RADAR_TECHNICAL.md` documents (`REF`,
+    /// `VEL`, `SW`, `ZDR`, `CC`, `PHI`) -- `CC` rather than the wire's own
+    /// `"RHO"` spelling, matching this enum's own
+    /// [`MomentKind::CorrelationCoefficient`] naming (see that variant's
+    /// doc comment).
+    ///
+    /// Added narrowly for S05: `radar-render`'s original color-table
+    /// format and `radar-web`'s wasm API both need a stable, short,
+    /// human-readable way to name a moment kind in JSON/JS, and that
+    /// mapping belongs once on `MomentKind` itself rather than duplicated
+    /// ad hoc in each of those crates.
+    pub const fn wire_code(self) -> &'static str {
+        match self {
+            MomentKind::Reflectivity => "REF",
+            MomentKind::Velocity => "VEL",
+            MomentKind::SpectrumWidth => "SW",
+            MomentKind::DifferentialReflectivity => "ZDR",
+            MomentKind::CorrelationCoefficient => "CC",
+            MomentKind::DifferentialPhase => "PHI",
+        }
+    }
+
+    /// Parse [`MomentKind::wire_code`]'s output back into a [`MomentKind`],
+    /// or `None` for any other string. Case-sensitive (wire codes are
+    /// always upper-case) -- a caller accepting less-trusted input (e.g. a
+    /// user-edited color-table file, or a moment code from JS) must treat
+    /// `None` as a validation error, never guess via case-folding.
+    pub fn from_wire_code(code: &str) -> Option<Self> {
+        match code {
+            "REF" => Some(MomentKind::Reflectivity),
+            "VEL" => Some(MomentKind::Velocity),
+            "SW" => Some(MomentKind::SpectrumWidth),
+            "ZDR" => Some(MomentKind::DifferentialReflectivity),
+            "CC" => Some(MomentKind::CorrelationCoefficient),
+            "PHI" => Some(MomentKind::DifferentialPhase),
+            _ => None,
+        }
+    }
+}
+
+impl fmt::Display for MomentKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.wire_code())
+    }
+}
+
 /// A single gate's decoded value for a moment, preserving "missing" and
 /// "range-folded" as distinct states rather than collapsing them into a
 /// numeric placeholder.
@@ -463,5 +511,29 @@ mod tests {
             GateValue::Value(v) => assert_eq!(v, 12.5),
             _ => panic!("expected Value"),
         }
+    }
+
+    #[test]
+    fn moment_kind_wire_code_round_trips_for_every_variant() {
+        let all = [
+            MomentKind::Reflectivity,
+            MomentKind::Velocity,
+            MomentKind::SpectrumWidth,
+            MomentKind::DifferentialReflectivity,
+            MomentKind::CorrelationCoefficient,
+            MomentKind::DifferentialPhase,
+        ];
+        for kind in all {
+            let code = kind.wire_code();
+            assert_eq!(MomentKind::from_wire_code(code), Some(kind));
+            assert_eq!(kind.to_string(), code);
+        }
+    }
+
+    #[test]
+    fn moment_kind_from_wire_code_rejects_unknown_and_wrong_case() {
+        assert_eq!(MomentKind::from_wire_code("RHO"), None);
+        assert_eq!(MomentKind::from_wire_code("ref"), None);
+        assert_eq!(MomentKind::from_wire_code(""), None);
     }
 }

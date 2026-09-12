@@ -36,3 +36,12 @@ pollster = "=1.0.1"
 # `png` feature keeps this to just the PNG codec rather than the full
 # multi-format `image` build.
 image = { version = "=0.25.10", default-features = false, features = ["png"] }
+
+# S05: `color_table` parses/validates/serializes the original JSON
+# color-table format (`COLOR_TABLE_FORMAT.md`) -- RADAR_TECHNICAL.md calls
+# for this to be a real, user-editable file format, and JSON is this
+# workspace's existing serialization choice (`radar-cache` already depends
+# on both at these exact pinned versions; matched here rather than letting
+# the two crates drift to different `serde`/`serde_json` releases).
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.151"

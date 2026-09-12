@@ -309,6 +309,18 @@ pub struct UniformsGpu {
 /// (see that file for the authoritative layout comments); `#[repr(C)]`
 /// with only 4-byte-aligned fields after the matrix keeps this struct's
 /// Rust layout identical to WGSL's, so no manual byte packing is needed.
+///
+/// `palette_min_dbz`/`palette_max_dbz` keep their S03-era, REF-specific
+/// names for both fields (and the matching WGSL field names in
+/// `shaders/radar_sweep.wgsl`) to avoid an invasive, purely-cosmetic
+/// rename across this struct, that shader, and every caller
+/// (`src/bin/harness.rs`, `gpu_tests.rs`, `radar-web`'s `browser.rs`).
+/// Their actual contract, since S05, is a **generic palette-domain
+/// min/max**: whatever [`crate::color_table::ColorTable::domain`] the
+/// active moment's color table declares (dBZ for REF, but m/s for VEL/SW,
+/// dB for ZDR, degrees for PHI, dimensionless for CC) -- see
+/// [`crate::color_table::build_lut_from_table`], which this same domain
+/// feeds into to build the LUT these two values are sampled against.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct GpuUniforms {

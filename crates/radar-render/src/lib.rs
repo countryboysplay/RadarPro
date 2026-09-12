@@ -66,8 +66,20 @@
 //! `radar-geo`'s job (see `docs/adr/0006-earth-model-for-radar-geometry.md`)
 //! and stays a separate concern from proving this render pipeline. See
 //! `shaders/radar_sweep.wgsl`'s header comment for the full boundary.
+//!
+//! # S05: beyond the one hardcoded REF ramp
+//!
+//! [`palette`] above is explicitly an S03 placeholder (one hardcoded REF
+//! ramp). [`color_table`] is S05's real, original, documented,
+//! user-editable color-table format (`COLOR_TABLE_FORMAT.md`, one file per
+//! built-in default under `color_tables/`, `docs/adr/0009-original-color-table-format.md`)
+//! supporting any [`radar_types::MomentKind`], stepped or gradient
+//! mappings, alpha, and explicit missing/range-folded colors — it
+//! generalizes (reuses, does not duplicate) `palette`'s interpolation
+//! primitives rather than replacing this module.
 
 pub mod camera;
+pub mod color_table;
 pub mod gpu;
 pub mod lookup_texture;
 pub mod palette;

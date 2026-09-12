@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
-description = "S04 proof-of-concept: browser/WebAssembly glue exposing nexrad-level2 decode + radar-render's wgpu pipeline to a <canvas>. An adapter crate (ARCHITECTURE.md: 'map integration is an adapter boundary, not a core dependency') -- it contains no decoding or rendering logic of its own, only wasm-bindgen plumbing and the one piece of wgpu code the native radar-render harness never needed: acquiring/presenting a Surface from a browser canvas."
+description = "Browser/WebAssembly glue exposing nexrad-level2 decode + radar-geo polar-geometry math + radar-render's wgpu pipeline and color-table format to a <canvas>. An adapter crate (ARCHITECTURE.md: 'map integration is an adapter boundary, not a core dependency') -- it contains no decoding, geometry, or palette logic of its own: wasm-bindgen plumbing, the wgpu Surface-acquisition/presentation code the native radar-render harness never needed, and (since S05) decode-once/re-render-any-(elevation,moment)-selection, color-table load/apply, cursor-probe, and range-ring APIs built on top of already-proven radar-geo/radar-render functions."
 
 [lib]
 # `cdylib` is what `wasm-bindgen`/`wasm-pack` compile into the browser-loaded
@@ -14,8 +14,9 @@ description = "S04 proof-of-concept: browser/WebAssembly glue exposing nexrad-le
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-# Needed unconditionally: `sweep_select` (pure sweep-picking logic, unit
-# tested on the host target) depends on `radar_types::{Volume, MomentKind}`.
+# Needed unconditionally: `sweep_select`/`render_select` (pure sweep-
+# picking/selection logic, unit tested on the host target) depend on
+# `radar_types::{Volume, MomentKind, Sweep}`.
 radar-types = { path = "../radar-types" }
 
 # Everything below is real browser/GPU glue and is wasm32-only: `wgpu`'s
@@ -27,6 +28,13 @@ radar-types = { path = "../radar-types" }
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 nexrad-level2 = { path = "../nexrad-level2" }
 radar-render = { path = "../radar-render" }
+# S05 deliverable 3: exposes `radar-geo`'s already-proven, already-tested
+# cursor-probe (`locate_gate_value`) and range-ring (`range_rings`) logic
+# to the browser via wasm-bindgen, rather than reimplementing either. This
+# crate already compiles cleanly to wasm32 with zero changes (confirmed in
+# earlier stages), so no feature-gating inside `radar-geo` itself is
+# needed.
+radar-geo = { path = "../radar-geo" }
 
 # Same pin as `radar-render`, plus the `webgl` feature (not on by default)
 # so a browser without WebGPU still gets the WebGL2 fallback backend --
@@ -55,3 +63,15 @@ features = ["HtmlCanvasElement", "console"]
 # panicking wasm32 binary otherwise surfaces -- see `src/browser.rs`.
 [target.'cfg(target_arch = "wasm32")'.dependencies.console_error_panic_hook]
 version = "=0.1.7"
+
+[dev-dependencies]
+# Unconditional (not wasm32-gated): `src/render_select.rs`'s host-run
+# `#[test]`s decode the real KTLX fixture and build its GPU-buffer-input
+# representation on the native target, to prove "decode once, then build
+# input for two different (elevation, moment) selections without a second
+# decode call" structurally (see that module). Neither dependency has any
+# wasm-specific requirement -- both are already used natively by
+# `radar-render`'s own harness/tests -- so this is safe on every target
+# without pulling any browser/GPU stack into a native, non-test build.
+nexrad-level2 = { path = "../nexrad-level2" }
+radar-render = { path = "../radar-render" }

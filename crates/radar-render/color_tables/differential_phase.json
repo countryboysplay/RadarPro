@@ -1,0 +1,20 @@
+{
+  "format_version": 1,
+  "name": "RadarPro Default Differential Phase",
+  "moments": ["PHI"],
+  "units": "deg",
+  "mode": "gradient",
+  "domain": { "min": 0.0, "max": 360.0 },
+  "cyclic": true,
+  "stops": [
+    { "value": 0.0, "color": [255, 0, 0, 255] },
+    { "value": 60.0, "color": [255, 255, 0, 255] },
+    { "value": 120.0, "color": [0, 255, 0, 255] },
+    { "value": 180.0, "color": [0, 255, 255, 255] },
+    { "value": 240.0, "color": [0, 0, 255, 255] },
+    { "value": 300.0, "color": [255, 0, 255, 255] },
+    { "value": 360.0, "color": [255, 0, 0, 255] }
+  ],
+  "missing_color": [0, 0, 0, 0],
+  "range_folded_color": [255, 255, 255, 255]
+}

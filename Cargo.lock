@@ -1364,6 +1364,8 @@ dependencies = [
  "pollster",
  "radar-geo",
  "radar-types",
+ "serde",
+ "serde_json",
  "wgpu",
 ]
 
@@ -1378,6 +1380,7 @@ dependencies = [
  "console_error_panic_hook",
  "js-sys",
  "nexrad-level2",
+ "radar-geo",
  "radar-render",
  "radar-types",
  "wasm-bindgen",

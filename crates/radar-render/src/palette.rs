@@ -22,8 +22,20 @@
 
 /// One control point in a palette ramp: a physical value (dBZ, for the
 /// example REF ramp) and the RGBA8 color it maps to. Values between two
-/// stops are linearly interpolated (component-wise, including alpha).
-#[derive(Debug, Clone, Copy, PartialEq)]
+/// stops are linearly interpolated (component-wise, including alpha) in
+/// [`ColorTableMode::Gradient`] mode, or held unchanged in
+/// [`ColorTableMode::Stepped`] mode -- see [`sample_stops`]/
+/// [`sample_stops_stepped`] and [`crate::color_table`].
+///
+/// `Serialize`/`Deserialize` are derived so [`crate::color_table::ColorTable`]
+/// (which re-exports this type as `ColorStop`) can read/write a stop
+/// directly as a JSON `{"value": ..., "color": [r, g, b, a]}` object with
+/// no separate, duplicated JSON-facing struct.
+///
+/// [`ColorTableMode::Gradient`]: crate::color_table::ColorTableMode::Gradient
+/// [`ColorTableMode::Stepped`]: crate::color_table::ColorTableMode::Stepped
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PaletteStop {
     pub value: f32,
     pub color: [u8; 4],
@@ -127,8 +139,17 @@ pub fn build_palette_lut(
 }
 
 /// Linearly interpolate `stops` at `value`, clamping outside the stops'
-/// own value range.
-fn sample_stops(stops: &[PaletteStop], value: f32) -> [u8; 4] {
+/// own value range. `stops` must be non-empty (checked by every caller in
+/// this crate before reaching here) and, for a fully-defined result,
+/// sorted ascending by `value` -- unsorted input does not panic (see the
+/// fallback comment below) but produces an undefined-order ramp.
+///
+/// `pub(crate)` (rather than private) so [`crate::color_table`] can reuse
+/// this exact interpolation for [`ColorTableMode::Gradient`] mode instead
+/// of duplicating it.
+///
+/// [`ColorTableMode::Gradient`]: crate::color_table::ColorTableMode::Gradient
+pub(crate) fn sample_stops(stops: &[PaletteStop], value: f32) -> [u8; 4] {
     if value <= stops[0].value {
         return stops[0].color;
     }
@@ -156,7 +177,35 @@ fn sample_stops(stops: &[PaletteStop], value: f32) -> [u8; 4] {
     stops[last].color
 }
 
-fn lerp_color(a: [u8; 4], b: [u8; 4], t: f32) -> [u8; 4] {
+/// Like [`sample_stops`], but "stepped": value `v` in
+/// `[stops[i].value, stops[i + 1].value)` returns `stops[i].color`
+/// unchanged -- no interpolation -- which is the traditional NWS-style
+/// discrete color-band look. Clamps to the first/last stop's color outside
+/// the stops' own value range, exactly like [`sample_stops`].
+///
+/// `pub(crate)` for the same reason as [`sample_stops`]: shared with
+/// [`crate::color_table`]'s [`ColorTableMode::Stepped`] mode rather than
+/// duplicated there.
+///
+/// [`ColorTableMode::Stepped`]: crate::color_table::ColorTableMode::Stepped
+pub(crate) fn sample_stops_stepped(stops: &[PaletteStop], value: f32) -> [u8; 4] {
+    if value <= stops[0].value {
+        return stops[0].color;
+    }
+    let last = stops.len() - 1;
+    if value >= stops[last].value {
+        return stops[last].color;
+    }
+    for i in 0..last {
+        if value >= stops[i].value && value < stops[i + 1].value {
+            return stops[i].color;
+        }
+    }
+    // Same unreachable-if-sorted fallback as `sample_stops`.
+    stops[last].color
+}
+
+pub(crate) fn lerp_color(a: [u8; 4], b: [u8; 4], t: f32) -> [u8; 4] {
     let t = t.clamp(0.0, 1.0);
     let mut out = [0u8; 4];
     for i in 0..4 {
@@ -239,5 +288,44 @@ mod tests {
         let stops = vec![PaletteStop::new(0.0, [10, 20, 30, 255])];
         let lut = build_palette_lut(&stops, -5.0, 5.0, 8);
         assert!(lut.iter().all(|&c| c == [10, 20, 30, 255]));
+    }
+
+    // --- sample_stops_stepped: used by `color_table::ColorTableMode::Stepped` ---
+
+    #[test]
+    fn sample_stops_stepped_holds_lower_stop_color_until_next_threshold() {
+        let stops = vec![
+            PaletteStop::new(0.0, [10, 10, 10, 255]),
+            PaletteStop::new(10.0, [20, 20, 20, 255]),
+            PaletteStop::new(20.0, [30, 30, 30, 255]),
+        ];
+        // Exactly on a stop: that stop's color.
+        assert_eq!(sample_stops_stepped(&stops, 0.0), [10, 10, 10, 255]);
+        assert_eq!(sample_stops_stepped(&stops, 10.0), [20, 20, 20, 255]);
+        // Mid-bucket: the lower stop's color, unchanged (no interpolation,
+        // unlike `sample_stops`).
+        assert_eq!(sample_stops_stepped(&stops, 5.0), [10, 10, 10, 255]);
+        assert_eq!(sample_stops_stepped(&stops, 19.99), [20, 20, 20, 255]);
+        // At/above the last stop: clamps to the last stop's color.
+        assert_eq!(sample_stops_stepped(&stops, 20.0), [30, 30, 30, 255]);
+        assert_eq!(sample_stops_stepped(&stops, 999.0), [30, 30, 30, 255]);
+        // Below the first stop: clamps to the first stop's color.
+        assert_eq!(sample_stops_stepped(&stops, -5.0), [10, 10, 10, 255]);
+    }
+
+    #[test]
+    fn sample_stops_stepped_never_blends_unlike_gradient_sample_stops() {
+        // Same two stops, sampled at the exact midpoint value: gradient
+        // mode must blend (a color strictly between the two), stepped
+        // mode must not (exactly the lower stop's color).
+        let stops = vec![
+            PaletteStop::new(0.0, [0, 0, 0, 255]),
+            PaletteStop::new(10.0, [200, 0, 0, 255]),
+        ];
+        let gradient_mid = sample_stops(&stops, 5.0);
+        let stepped_mid = sample_stops_stepped(&stops, 5.0);
+        assert_eq!(stepped_mid, [0, 0, 0, 255]);
+        assert_ne!(gradient_mid, stepped_mid);
+        assert!(gradient_mid[0] > 0 && gradient_mid[0] < 200);
     }
 }
