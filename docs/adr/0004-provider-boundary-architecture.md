@@ -1,0 +1,24 @@
+# ADR-0004: Provider boundary architecture for observations, forecasts, and alerts
+
+Status: Accepted
+
+## Context
+RadarPro consumes data from multiple, heterogeneous providers: public NOAA/NWS sources (required to provide a useful no-subscription baseline), optional commercial/model sources such as WeatherNext 3 (which must fail independently and must not be redistributed publicly without reviewing current terms), and future sources (HRRR, MRMS). `GLOBAL_CONTRACT.md` requires that provider-specific names and formats stop at provider boundaries, that observations and forecasts always be distinguishable (never calling model precipitation "future radar"), that forecasts retain initialization time/lead time/valid time separately, and that a failing optional provider (WeatherNext 3) not take down the rest of the system. `ARCHITECTURE.md` names dedicated provider crates (`provider-weathernext3`, `provider-hrrr`, `mrms`, `weather-alerts`) feeding into "normalized domain models."
+
+## Decision
+Each data source is integrated behind a provider boundary: a dedicated module/crate translates that provider's field names, formats, units, and quirks into RadarPro's normalized domain models (`radar-types`, and later `forecast-core`) before anything downstream (cache, analysis, render, UI) sees the data. Providers are additive and independently failable — the normalized model always distinguishes observation vs. forecast and preserves initialization/lead/valid time as separate fields; a provider outage or missing credential degrades only that provider's data, never the whole pipeline. Optional/commercial providers (e.g., WeatherNext 3) are not required for the system to function and ship no embedded credentials.
+
+## Alternatives
+- **Let each UI layer/consumer parse provider formats directly**: fastest to wire up a single provider end-to-end, but immediately violates "provider-specific names and formats stop at provider boundaries" and means every new provider requires touching UI/render code, and every provider's failure mode leaks into shared code paths.
+- **One generic "weather data" interface with no per-provider normalization crate, relying on runtime field mapping/config**: less code up front, but pushes the "stop at provider boundaries" responsibility into configuration rather than types, making it easy to accidentally leak a provider-specific unit, code, or naming convention into the domain model, and harder to catch at compile time.
+- **A single shared "providers" crate for all sources instead of one crate per provider**: less workspace boilerplate, but couples unrelated providers' release cadence, dependencies (e.g., WeatherNext 3 client libraries), and licensing/redistribution concerns together — awkward given WeatherNext 3's distinct redistribution-terms constraint and its requirement to fail independently.
+
+## Consequences
+**Benefits**: adding a new provider (or removing WeatherNext 3 entirely) is localized to its crate and does not ripple into cache/render/UI; the normalized model enforces (in types, not just convention) that observations and forecasts stay distinguishable and that forecast time semantics (init/lead/valid) survive translation; credentials for commercial providers stay isolated to that provider's boundary and are never hard-coded, satisfying "credentials never ship in source"; the public NOAA/NWS provider can be developed and shipped as a complete no-subscription baseline independent of whether WeatherNext 3 integration exists yet.
+
+**Costs/risks**: more crates and translation boilerplate than a single ad-hoc integration; the normalized domain model must be expressive enough for every provider's real semantics (e.g., ensemble forecasts, grid vs. polar geometry) or the boundary will leak anyway; requires ongoing discipline (and ADRs, per `CLAUDE.md`) whenever a provider's format doesn't fit the model cleanly.
+
+**Scientific implications**: keeping the observation/forecast distinction and time semantics in the shared domain model (rather than per-provider or per-UI logic) is what makes the "never call model precipitation future radar" rule enforceable across every current and future provider, not just the ones written carefully.
+
+## Validation
+No provider crates exist yet — S00 explicitly avoids a WeatherNext implementation and any production services. This ADR is recorded now because `ARCHITECTURE.md` already names the provider crates and the boundary shapes how `radar-types`/`forecast-core` must be designed from S01 onward. It will be validated when the first observation provider (public NOAA/NWS) and, later, the first optional forecast provider are integrated: the check is that provider-specific field names/formats do not appear outside that provider's crate, and that disabling/removing a provider does not require changes to cache, render, or UI code.
