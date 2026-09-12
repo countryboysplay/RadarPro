@@ -1,0 +1,20 @@
+{
+  "format_version": 1,
+  "name": "RadarPro Default Velocity",
+  "moments": ["VEL"],
+  "units": "m/s",
+  "mode": "gradient",
+  "domain": { "min": -32.0, "max": 32.0 },
+  "cyclic": false,
+  "stops": [
+    { "value": -32.0, "color": [0, 255, 0, 255] },
+    { "value": -16.0, "color": [0, 170, 0, 255] },
+    { "value": -2.0, "color": [0, 60, 0, 255] },
+    { "value": 0.0, "color": [110, 110, 110, 255] },
+    { "value": 2.0, "color": [60, 0, 0, 255] },
+    { "value": 16.0, "color": [170, 0, 0, 255] },
+    { "value": 32.0, "color": [255, 0, 0, 255] }
+  ],
+  "missing_color": [0, 0, 0, 0],
+  "range_folded_color": [255, 0, 255, 255]
+}

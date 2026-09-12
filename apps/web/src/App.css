@@ -1,7 +1,8 @@
-/* RadarPro -- S04 live-radar map view.
+/* RadarPro -- S05 radar workstation.
  *
- * Minimal styling only: S04's brief is the live data pipeline, not visual
- * polish ("no need for a polished UI, S05 handles real workstation UX").
+ * Functional, information-dense styling -- this stage's brief is real
+ * single-panel analysis workflows (pickers, playback, probe, legend,
+ * color-table editor), not visual polish.
  */
 
 html,
@@ -15,7 +16,6 @@ body,
 .hud-panel {
   position: absolute;
   top: 1rem;
-  left: 1rem;
   z-index: 10;
   background: rgba(17, 17, 20, 0.85);
   color: #e6e6e6;
@@ -24,6 +24,21 @@ body,
   padding: 0.75rem 1rem;
   max-width: 420px;
   font-size: 0.85rem;
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
+}
+
+.hud-panel-left {
+  left: 1rem;
+}
+
+.hud-panel-right {
+  right: 1rem;
+  width: 340px;
+}
+
+.hud-panel > * + * {
+  margin-top: 0.6rem;
 }
 
 .hud-panel h1 {
@@ -55,5 +70,241 @@ body,
 
 .hud-panel dd {
   margin: 0;
+  word-break: break-word;
+}
+
+.info-panel {
+  margin: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.2rem 0.6rem;
+  padding-top: 0.4rem;
+  border-top: 1px solid #3a3a40;
+}
+
+.info-panel dt {
+  color: #9a9aa2;
+}
+
+.info-panel dd {
+  margin: 0;
+  word-break: break-word;
+}
+
+.keyboard-hint {
+  color: #7a7a82;
+  font-size: 0.72rem;
+  border-top: 1px solid #3a3a40;
+  padding-top: 0.4rem;
+}
+
+/* Playback controls */
+
+.playback-controls {
+  border-top: 1px solid #3a3a40;
+  padding-top: 0.5rem;
+}
+
+.playback-buttons {
+  display: flex;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+}
+
+.playback-buttons button {
+  font: inherit;
+  background: #1c1c20;
+  color: inherit;
+  border: 1px solid #3a3a40;
+  border-radius: 3px;
+  padding: 0.2rem 0.5rem;
+  cursor: pointer;
+}
+
+.playback-buttons button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.playback-status {
+  display: flex;
+  gap: 0.6rem;
+  margin-top: 0.35rem;
+  font-size: 0.78rem;
+  color: #b5b5bc;
+}
+
+.play-mode {
+  text-transform: uppercase;
+  font-weight: bold;
+}
+
+.play-mode-live {
+  color: #6fd66f;
+}
+
+.play-mode-paused {
+  color: #e0c25a;
+}
+
+.play-mode-playing {
+  color: #8fd0ff;
+}
+
+.playback-speed {
+  display: block;
+  margin-top: 0.35rem;
+  font-size: 0.78rem;
+}
+
+/* Legend */
+
+.legend {
+  border-bottom: 1px solid #3a3a40;
+  padding-bottom: 0.6rem;
+}
+
+.legend-title {
+  color: #8fd0ff;
+  margin-bottom: 0.3rem;
+}
+
+.legend-bar {
+  height: 14px;
+  border-radius: 3px;
+  border: 1px solid #3a3a40;
+}
+
+.legend-domain {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  color: #b5b5bc;
+  margin-top: 0.2rem;
+}
+
+.legend-states {
+  display: flex;
+  gap: 0.8rem;
+  margin-top: 0.35rem;
+  font-size: 0.75rem;
+}
+
+.legend-swatch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.legend-swatch-box {
+  width: 12px;
+  height: 12px;
+  border: 1px solid #55555c;
+  border-radius: 2px;
+  display: inline-block;
+}
+
+.legend-empty {
+  color: #7a7a82;
+  font-size: 0.78rem;
+}
+
+/* Data probe */
+
+.probe-panel {
+  border-bottom: 1px solid #3a3a40;
+  padding-bottom: 0.6rem;
+  font-size: 0.8rem;
+}
+
+.probe-panel-title {
+  color: #8fd0ff;
+  margin-bottom: 0.3rem;
+}
+
+.probe-empty {
+  color: #7a7a82;
+}
+
+.probe-polar {
+  color: #b5b5bc;
+  margin-top: 0.2rem;
+}
+
+.probe-value {
+  margin-top: 0.3rem;
+  padding: 0.2rem 0.4rem;
+  border-radius: 3px;
+  display: inline-block;
+  font-weight: bold;
+}
+
+.probe-value-valid {
+  background: rgba(111, 214, 111, 0.18);
+  color: #8fe38f;
+  border: 1px solid #4a9a4a;
+}
+
+.probe-value-missing {
+  background: rgba(150, 150, 160, 0.15);
+  color: #b5b5bc;
+  border: 1px dashed #6a6a72;
+}
+
+.probe-value-range_folded {
+  background: rgba(255, 0, 255, 0.15);
+  color: #ff8fff;
+  border: 1px solid #cc00cc;
+}
+
+.probe-value-none {
+  color: #7a7a82;
+  font-weight: normal;
+}
+
+/* Color-table editor */
+
+.color-table-editor-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.4rem;
+}
+
+.color-table-editor-row button {
+  font: inherit;
+  background: #1c1c20;
+  color: inherit;
+  border: 1px solid #3a3a40;
+  border-radius: 3px;
+  padding: 0.2rem 0.5rem;
+  cursor: pointer;
+}
+
+.color-table-editor-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  background: #101012;
+  color: #d8d8de;
+  border: 1px solid #3a3a40;
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 0.72rem;
+  padding: 0.4rem;
+  resize: vertical;
+}
+
+.color-table-editor-error {
+  margin-top: 0.4rem;
+  color: #ff8f8f;
+  font-size: 0.78rem;
+  word-break: break-word;
+}
+
+.color-table-editor-ok {
+  margin-top: 0.4rem;
+  color: #8fe38f;
+  font-size: 0.78rem;
   word-break: break-word;
 }

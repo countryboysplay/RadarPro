@@ -1,0 +1,20 @@
+{
+  "format_version": 1,
+  "name": "RadarPro Default Correlation Coefficient",
+  "moments": ["CC"],
+  "units": "dimensionless",
+  "mode": "gradient",
+  "domain": { "min": 0.0, "max": 1.05 },
+  "cyclic": false,
+  "stops": [
+    { "value": 0.0, "color": [40, 0, 60, 255] },
+    { "value": 0.5, "color": [0, 60, 180, 255] },
+    { "value": 0.8, "color": [0, 160, 160, 255] },
+    { "value": 0.9, "color": [220, 220, 0, 255] },
+    { "value": 0.95, "color": [230, 140, 0, 255] },
+    { "value": 0.99, "color": [220, 0, 0, 255] },
+    { "value": 1.05, "color": [255, 255, 255, 255] }
+  ],
+  "missing_color": [0, 0, 0, 0],
+  "range_folded_color": [255, 0, 255, 255]
+}

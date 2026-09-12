@@ -1,9 +1,100 @@
 # RadarPro web (`apps/web`)
 
-Stage S04: a live-radar map view built on `crates/radar-web`'s proven
-wasm/WebGPU renderer, MapLibre GL JS, and the current public NOAA/Unidata
-NEXRAD Level II S3 bucket. See
-`Agent Context/context/stages/S04-map-live-radar.md` for the stage brief.
+Stage S05: a single-panel radar analysis workstation built on top of S04's
+live-radar map view (`crates/radar-web`'s wasm/WebGPU renderer, MapLibre GL
+JS, and the current public NOAA/Unidata NEXRAD Level II S3 bucket). See
+`Agent Context/context/stages/S05-radar-workstation.md` for the stage
+brief and `Agent Context/context/stages/S04-map-live-radar.md` for the
+prior stage this builds on.
+
+## S05: what changed on top of S04
+
+`crates/radar-web`'s wasm API was generalized between S04 and S05 from a
+fixed decode-and-render-one-sweep shape (`decodeSweep`/`renderFrame`/
+`SweepInfo`) to decode-once/select-and-render-many
+(`decodeVolume`/`selectAndRender`/`VolumeSummary`), plus color-table
+load/probe/range-ring exports -- see `crates/radar-web/src/browser.rs` and
+its own README. `src/radar/wasmModule.ts` and `src/radar/useRadarRenderer.ts`
+were rewritten against that new surface.
+
+New pieces added for S05 (all under `src/`):
+
+- **`scan/useScanHistory.ts`**: a bounded (`MAX_HISTORY_SCANS = 15`),
+  in-memory cache of recently-downloaded scans on top of S04's
+  `useScanPoller`, with previous/next/loop-play/pause/jump-to-latest
+  controls. Raw bytes live in a plain `Map` ref, never React state; only
+  small per-scan metadata (key + timestamp) drives a `useReducer` state
+  machine. Oldest scan is evicted (FIFO) once the cap is exceeded. Live
+  polling always keeps running in the background regardless of playback
+  mode; only `"live"` mode auto-jumps the displayed frame to a newly
+  downloaded scan -- reviewing history or animating never gets yanked
+  forward by a background download. See that file's doc comments for the
+  full state machine.
+- **`radar/useRadarRenderer.ts`**: decode-once (`decodeVolume`) /
+  select-and-render-many (`selectAndRender`) against the new wasm API,
+  plus `loadColorTable`/`resetColorTable`/`activeColorTableJson` (never
+  throws -- returns a plain `{ ok, ... }` result) and `probeGate`/
+  `rangeRings`.
+- **`colorTables/`**: `colorTableJson.ts` (a plain-TS mirror of
+  `COLOR_TABLE_FORMAT.md`'s shape, used only to build the legend's CSS
+  gradient from a table's own stops -- never a second copy of the color
+  mapping) and `defaultColorTables.ts` (this project's six shipped
+  defaults, vendored into `src/data/color_tables/` and imported as raw
+  text for the color-table editor's preset dropdown).
+- **`ui/`**: `Legend`, `ProbePanel`, `InfoPanel`, `PlaybackControls`,
+  `ColorTableEditor` -- the workstation's small persistent panels.
+- **`App.tsx`**: orchestrates all of the above, plus a handful of keyboard
+  shortcuts (see below) and the mouse-driven data probe / geographic
+  cursor readout wired through `MapView`'s `onCursorMove`/`onCursorLeave`.
+
+### Keyboard shortcuts
+
+Ignored while focus is in the color-table editor's textarea or any
+`<select>`/`<input>`, so they never fight with editing:
+
+| Key | Action |
+|---|---|
+| ← / → | Previous / next scan (from the held history, never re-downloads) |
+| Space | Play / pause the loop |
+| ↑ / ↓ | Step elevation (sweep index) up / down |
+| L | Jump to the latest scan and resume live polling |
+
+### Range rings: a canvas overlay, not a native MapLibre layer
+
+`RadarWebRenderer`'s `rangeRingsGeoJson` free function returns plain `[lon,
+lat]` ring geometry (no MapLibre knowledge). The literal reading of this
+stage's brief -- add it as a MapLibre GeoJSON source + `line` layer -- was
+tried first and does work as a map layer, but that layer paints into the
+*map's own* canvas, which sits **underneath** the radar sweep `<canvas>`
+(see `MapView.tsx`'s layout comment for why the two canvases must be DOM
+siblings, not nested). The radar canvas is opaque (S04's black sweep
+background, `radar-render`'s own clear color -- unrelated to this task and
+not touched by it) and covers exactly the on-screen area a site-centered
+ring would appear in, so a native map-layer ring rendered zero visible
+pixels in practice -- confirmed during this task's own browser
+verification. `MapView.tsx`'s `drawRangeRings` instead paints into a
+dedicated transparent `<canvas>` one z-index *above* the radar sweep
+canvas, still driven entirely by `map.project()` (this remains the only
+MapLibre-aware component; `radar-web` still only ever hands back plain
+coordinate geometry) -- the same way real radar workstations draw range
+rings over the reflectivity image rather than under it. Fixed radii
+50/100/150/200 km, 128 points/ring (`App.tsx`'s
+`RANGE_RING_RADII_KM`/`RANGE_RING_NUM_POINTS`) -- both are documented,
+reasonable defaults, not derived from any per-scan value.
+
+### Known gap: VCP number is not displayed
+
+`radar_types::Volume::volume_coverage_pattern` is decoded natively by
+`nexrad-level2`, but `radar-web`'s wasm `VolumeSummary` (the only
+JS-visible decoded-volume metadata) does not currently expose it --  only
+`siteIcao`/`sweepCount`/`elevationDegs`. Per this task's scope (`radar-web`
+is not to be modified here), `InfoPanel.tsx` documents this and simply
+omits VCP rather than fabricating or guessing at a value. A narrowly-scoped
+follow-up to `radar-web`'s `VolumeSummary` (adding a `volumeCoveragePattern`
+getter, mirroring the existing `siteIcao`/`sweepCount` fields) would close
+this gap. Volume **start time** does not have this problem -- it is read
+directly from the S3 object key (`DiscoveredVolume.startTimeMillis`, the
+same value NOAA encodes in the filename), not from `VolumeSummary`.
 
 ## Wasm build pipeline
 

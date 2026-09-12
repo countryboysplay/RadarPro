@@ -7,6 +7,54 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import type { RadarSite } from "../sites";
 
 /**
+ * Draw `rings` (radar-web's `rangeRingsGeoJson` output -- plain `[lon,
+ * lat]` coordinate geometry, no MapLibre knowledge otherwise) into a 2D
+ * `<canvas>` positioned above the radar sweep canvas, projecting each
+ * point through the live `map` instance (`map.project`).
+ *
+ * A native MapLibre GeoJSON source + `line` layer was tried first (the
+ * literal reading of this stage's brief) and does work as a map layer --
+ * but it paints into the *map's own* canvas, which sits *underneath* the
+ * radar sweep `<canvas>` (see the layout comment below on why those two
+ * canvases must be separate DOM siblings). The radar canvas is opaque
+ * (S04's black sweep background, `radar-render`'s own clear color -- not
+ * something this task touches) and covers the exact on-screen area a
+ * site-centered ring would need to appear in, so a native map-layer ring
+ * is invisible in practice: confirmed during this task's own browser
+ * verification (a ring added as a GeoJSON layer rendered with zero visible
+ * pixels, entirely occluded by the radar canvas drawn on top of it).
+ *
+ * This dedicated overlay canvas -- one z-index above the radar canvas --
+ * is the fix: still driven entirely by `map.project()` (this remains the
+ * one MapLibre-aware component; `radar-web` still only ever hands back
+ * plain coordinate geometry), just painted to a surface that can actually
+ * sit above the opaque sweep image, the same way real radar workstations
+ * draw range rings over the reflectivity image rather than under it.
+ */
+function drawRangeRings(map: MapLibreMap, canvas: HTMLCanvasElement, rings: number[][][] | null) {
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  const { width, height } = canvas;
+  ctx.clearRect(0, 0, width, height);
+  if (!rings || rings.length === 0) return;
+
+  ctx.strokeStyle = "#7aa6c2";
+  ctx.lineWidth = 1;
+  ctx.globalAlpha = 0.65;
+  for (const ring of rings) {
+    if (ring.length === 0) continue;
+    ctx.beginPath();
+    ring.forEach(([lon, lat], i) => {
+      const p = map.project([lon, lat]);
+      if (i === 0) ctx.moveTo(p.x, p.y);
+      else ctx.lineTo(p.x, p.y);
+    });
+    ctx.closePath();
+    ctx.stroke();
+  }
+}
+
+/**
  * MapLibre's free public demo style/tiles
  * (https://demotiles.maplibre.org/style.json).
  *
@@ -60,6 +108,15 @@ export interface MapViewProps {
   site: RadarSite;
   canvasRef: RefObject<HTMLCanvasElement>;
   canvasSize: number;
+  /** Range-ring geometry from `RadarWebRenderer`'s `rangeRingsGeoJson` free
+   * function (plain `[lon, lat]` coordinates, one ring per radius) --
+   * `null` until available. */
+  rangeRings?: number[][][] | null;
+  /** Fired on every map `mousemove`, with the cursor resolved to a map
+   * lat/lon via MapLibre's own `unproject` (exposed as `event.lngLat`) --
+   * the geographic half of S05's data-probe/cursor-readout feature. */
+  onCursorMove?: (lat: number, lon: number) => void;
+  onCursorLeave?: () => void;
 }
 
 /**
@@ -81,9 +138,19 @@ export interface MapViewProps {
  * or re-triggers a GPU render on pan/zoom (the rendered sweep image itself
  * does not change when the map moves, only where it is drawn on screen).
  */
-export function MapView({ site, canvasRef, canvasSize }: MapViewProps) {
+export function MapView({
+  site,
+  canvasRef,
+  canvasSize,
+  rangeRings = null,
+  onCursorMove,
+  onCursorLeave,
+}: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
+  const ringsCanvasRef = useRef<HTMLCanvasElement>(null);
+  const rangeRingsRef = useRef<number[][][] | null>(rangeRings);
+  rangeRingsRef.current = rangeRings;
 
   // Create the map once.
   useEffect(() => {
@@ -109,6 +176,7 @@ export function MapView({ site, canvasRef, canvasSize }: MapViewProps) {
   useEffect(() => {
     const map = mapRef.current;
     const canvas = canvasRef.current;
+    const ringsCanvas = ringsCanvasRef.current;
     if (!map || !canvas) return;
 
     function updateOverlay() {
@@ -121,6 +189,21 @@ export function MapView({ site, canvasRef, canvasSize }: MapViewProps) {
       canvas.style.height = `${sizePx}px`;
       canvas.style.left = `${centerPx.x - sizePx / 2}px`;
       canvas.style.top = `${centerPx.y - sizePx / 2}px`;
+
+      // Keep the range-rings overlay canvas's backing buffer matching the
+      // map's current on-screen size (it covers the full map, unlike the
+      // fixed-size radar sweep canvas above), then redraw -- ring
+      // positions depend on the map's current projection/zoom.
+      if (ringsCanvas) {
+        const mapCanvas = map.getCanvas();
+        if (ringsCanvas.width !== mapCanvas.width || ringsCanvas.height !== mapCanvas.height) {
+          ringsCanvas.width = mapCanvas.width;
+          ringsCanvas.height = mapCanvas.height;
+          ringsCanvas.style.width = mapCanvas.style.width;
+          ringsCanvas.style.height = mapCanvas.style.height;
+        }
+        drawRangeRings(map, ringsCanvas, rangeRingsRef.current);
+      }
     }
 
     map.easeTo({ center: [site.lon, site.lat], duration: 600 });
@@ -144,6 +227,38 @@ export function MapView({ site, canvasRef, canvasSize }: MapViewProps) {
       map.off("load", updateOverlay);
     };
   }, [site, canvasRef]);
+
+  // Redraw the range rings whenever the geometry itself changes (new site,
+  // or the first time it becomes available after wasm load) -- projecting
+  // through `map.project()` needs no "style loaded" wait the way adding a
+  // GeoJSON source would, since it never touches the map's own style/layers.
+  useEffect(() => {
+    const map = mapRef.current;
+    const ringsCanvas = ringsCanvasRef.current;
+    if (!map || !ringsCanvas) return;
+    drawRangeRings(map, ringsCanvas, rangeRings);
+  }, [rangeRings]);
+
+  // Geographic cursor readout: MapLibre's own `mousemove`/`mouseout`
+  // events already carry the cursor resolved to a map lat/lon via
+  // `unproject` internally (`event.lngLat`) -- no manual projection math
+  // needed here.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !onCursorMove) return;
+    function handleMove(e: { lngLat: { lat: number; lng: number } }) {
+      onCursorMove?.(e.lngLat.lat, e.lngLat.lng);
+    }
+    function handleLeave() {
+      onCursorLeave?.();
+    }
+    map.on("mousemove", handleMove);
+    map.on("mouseout", handleLeave);
+    return () => {
+      map.off("mousemove", handleMove);
+      map.off("mouseout", handleLeave);
+    };
+  }, [onCursorMove, onCursorLeave]);
 
   return (
     // Two siblings, not parent/child: MapLibre takes full imperative
@@ -170,6 +285,22 @@ export function MapView({ site, canvasRef, canvasSize }: MapViewProps) {
           // event fires.
           top: 0,
           left: 0,
+          pointerEvents: "none",
+        }}
+      />
+      {/* Range rings, one z-index above the (opaque) radar sweep canvas --
+          see `drawRangeRings`'s doc comment for why a native MapLibre
+          layer (painted into the map's own canvas, underneath the sweep
+          canvas) would be invisible here. */}
+      <canvas
+        ref={ringsCanvasRef}
+        style={{
+          position: "absolute",
+          zIndex: 2,
+          top: 0,
+          left: 0,
+          width: "100%",
+          height: "100%",
           pointerEvents: "none",
         }}
       />

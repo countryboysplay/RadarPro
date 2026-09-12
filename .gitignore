@@ -48,6 +48,10 @@ pnpm-debug.log*
 # Do not ignore fixtures/ contents by default; large binary radar volumes
 # should be added deliberately and documented, not silently excluded here.
 
+### Claude Code local runtime state ###
+# Session-local scheduling lock, not project source.
+.claude/scheduled_tasks.lock
+
 ### Editors / IDEs ###
 .idea/
 

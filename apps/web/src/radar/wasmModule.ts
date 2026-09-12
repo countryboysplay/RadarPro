@@ -12,10 +12,25 @@
 // until `npm run build:wasm` (or `dev`/`build`/`typecheck`, which all run
 // it automatically via npm's `pre*` script hooks) has been run at least
 // once.
-import init, { initGpu, RadarWebRenderer, SweepInfo } from "../wasm/radar_web.js";
+//
+// S05: `radar-web`'s API was generalized from a fixed decode+render-once
+// shape (`decodeSweep`/`renderFrame`/`SweepInfo`) to decode-once /
+// select-and-render-many (`decodeVolume`/`selectAndRender`/
+// `VolumeSummary`), plus color-table load/probe/range-ring exports -- see
+// `crates/radar-web/src/browser.rs` and its README for the full contract.
+// This module just re-exports the new surface; all of the actual calling
+// logic lives in `useRadarRenderer.ts`.
+import init, {
+  initGpu,
+  rangeRingsGeoJson,
+  type ColorTableApplyResult,
+  type GateProbeResult,
+  type RadarWebRenderer,
+  type VolumeSummary,
+} from "../wasm/radar_web.js";
 
-export type { RadarWebRenderer, SweepInfo };
-export { initGpu };
+export type { RadarWebRenderer, VolumeSummary, ColorTableApplyResult, GateProbeResult };
+export { initGpu, rangeRingsGeoJson };
 
 let modulePromise: Promise<void> | null = null;
 

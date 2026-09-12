@@ -1,0 +1,19 @@
+{
+  "format_version": 1,
+  "name": "RadarPro Default Differential Reflectivity",
+  "moments": ["ZDR"],
+  "units": "dB",
+  "mode": "gradient",
+  "domain": { "min": -2.0, "max": 8.0 },
+  "cyclic": false,
+  "stops": [
+    { "value": -2.0, "color": [0, 0, 180, 255] },
+    { "value": 0.0, "color": [0, 180, 180, 255] },
+    { "value": 1.0, "color": [0, 200, 0, 255] },
+    { "value": 2.0, "color": [220, 220, 0, 255] },
+    { "value": 4.0, "color": [230, 120, 0, 255] },
+    { "value": 8.0, "color": [200, 0, 120, 255] }
+  ],
+  "missing_color": [0, 0, 0, 0],
+  "range_folded_color": [255, 0, 255, 255]
+}
