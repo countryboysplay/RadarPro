@@ -55,22 +55,27 @@ function drawRangeRings(map: MapLibreMap, canvas: HTMLCanvasElement, rings: numb
 }
 
 /**
- * MapLibre's free public demo style/tiles
- * (https://demotiles.maplibre.org/style.json).
+ * OpenFreeMap's "Liberty" style (https://openfreemap.org) -- a full
+ * OpenStreetMap-derived vector basemap (streets, cities/labels, land
+ * use, etc.), served from OpenFreeMap's own infrastructure.
  *
- * ---------------------------------------------------------------------
- * UNRESOLVED PRODUCTION CONCERN -- placeholder, not a silently-accepted
- * gap. Per `Agent Context/reference/DATA_SOURCES.md`: "Do not rely on
- * community public tile infrastructure for a high-traffic production app;
- * use a suitable provider or self-hosted tiles." This demo style is a
- * low-detail basemap with no usage guarantees, meant for MapLibre's own
- * examples -- it is used here only because this stage's job is proving the
- * radar-over-map integration, not sourcing production tiles. A real
- * deployment needs a proper tile provider (e.g. MapTiler, Stadia Maps,
- * AWS Location Service) or self-hosted vector tiles before this ships.
- * ---------------------------------------------------------------------
+ * Replaces the earlier MapLibre demo-tiles placeholder
+ * (`https://demotiles.maplibre.org/style.json`, a deliberately
+ * low-detail example style with no usage guarantees, unsuitable for
+ * real use per `Agent Context/reference/DATA_SOURCES.md`: "Do not rely
+ * on community public tile infrastructure for a high-traffic production
+ * app; use a suitable provider or self-hosted tiles"). OpenFreeMap is
+ * purpose-built for exactly that concern -- unlimited, no API key, no
+ * rate limit, explicitly positioned as production-usable -- verified
+ * reachable (HTTP 200, real style JSON) before wiring it in here rather
+ * than assumed. It is not a formally SLA-backed commercial provider
+ * (MapTiler/Stadia Maps/AWS Location Service remain the options if that
+ * becomes a requirement, e.g. contractual uptime guarantees), and
+ * OpenStreetMap-derived data requires attribution -- MapLibre renders
+ * OpenFreeMap's/OSM's built-in attribution control by default; do not
+ * remove it.
  */
-const PLACEHOLDER_MAP_STYLE_URL = "https://demotiles.maplibre.org/style.json";
+const MAP_STYLE_URL = "https://tiles.openfreemap.org/styles/liberty";
 
 /**
  * Approximate radius (km) framed by `radar-web`'s rendered sweep image
@@ -157,7 +162,7 @@ export function MapView({
     if (!containerRef.current) return;
     const map = new MapLibreMap({
       container: containerRef.current,
-      style: PLACEHOLDER_MAP_STYLE_URL,
+      style: MAP_STYLE_URL,
       center: [site.lon, site.lat],
       zoom: 6,
     });
