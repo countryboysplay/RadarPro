@@ -5,6 +5,7 @@ members = [
     "crates/nexrad-level2",
     "crates/radar-geo",
     "crates/radar-render",
+    "crates/radar-cache",
     "apps/radar-cli",
 ]
 
