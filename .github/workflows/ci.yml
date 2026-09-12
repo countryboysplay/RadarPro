@@ -45,6 +45,35 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # apps/web's typecheck/build scripts each first build crates/radar-web
+      # to wasm32 (see apps/web/package.json's pretypecheck/prebuild hooks
+      # and apps/web/README.md's "Wasm build pipeline" / "What CI will need"
+      # sections), so this job needs a Rust toolchain with the wasm32
+      # target and a pinned wasm-bindgen-cli, in addition to Node.
+      - name: Install stable Rust toolchain (wasm32 target)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache cargo registry, index, and build output
+        uses: Swatinem/rust-cache@v2
+
+      # wasm-bindgen-cli's version must match crates/radar-web/Cargo.toml's
+      # pinned `wasm-bindgen` dependency exactly -- a mismatch is a runtime
+      # error, not a compile error (see apps/web/README.md). Cached
+      # separately from Swatinem/rust-cache, which does not cache installed
+      # cargo binaries.
+      - name: Cache wasm-bindgen-cli
+        id: cache-wasm-bindgen-cli
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/wasm-bindgen
+          key: wasm-bindgen-cli-0.2.128-${{ runner.os }}
+
+      - name: Install wasm-bindgen-cli
+        if: steps.cache-wasm-bindgen-cli.outputs.cache-hit != 'true'
+        run: cargo install wasm-bindgen-cli --version 0.2.128 --locked
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:

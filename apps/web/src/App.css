@@ -1,0 +1,59 @@
+/* RadarPro -- S04 live-radar map view.
+ *
+ * Minimal styling only: S04's brief is the live data pipeline, not visual
+ * polish ("no need for a polished UI, S05 handles real workstation UX").
+ */
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+}
+
+.hud-panel {
+  position: absolute;
+  top: 1rem;
+  left: 1rem;
+  z-index: 10;
+  background: rgba(17, 17, 20, 0.85);
+  color: #e6e6e6;
+  border: 1px solid #3a3a40;
+  border-radius: 6px;
+  padding: 0.75rem 1rem;
+  max-width: 420px;
+  font-size: 0.85rem;
+}
+
+.hud-panel h1 {
+  font-size: 1rem;
+  margin: 0 0 0.5rem 0;
+  color: #8fd0ff;
+  font-weight: normal;
+}
+
+.hud-panel select {
+  font: inherit;
+  background: #1c1c20;
+  color: inherit;
+  border: 1px solid #3a3a40;
+  border-radius: 3px;
+  padding: 0.1rem 0.3rem;
+}
+
+.hud-panel dl {
+  margin: 0.6rem 0 0 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.2rem 0.6rem;
+}
+
+.hud-panel dt {
+  color: #9a9aa2;
+}
+
+.hud-panel dd {
+  margin: 0;
+  word-break: break-word;
+}

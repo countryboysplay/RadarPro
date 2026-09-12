@@ -20,6 +20,12 @@
 # build artifact -- same reasoning as ignoring /target.
 **/www/pkg/
 
+# Same reasoning, for apps/web's own copy of this build output: generated
+# by `apps/web/scripts/build-wasm.mjs` (run automatically before
+# dev/build/typecheck via npm `pre*` hooks) into apps/web/src/wasm/. See
+# apps/web/README.md "Wasm build pipeline".
+apps/web/src/wasm/
+
 ### Node / Vite (apps/web) ###
 node_modules/
 **/node_modules/
