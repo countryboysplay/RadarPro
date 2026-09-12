@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/radar-types",
     "crates/nexrad-level2",
+    "crates/radar-geo",
     "apps/radar-cli",
 ]
 

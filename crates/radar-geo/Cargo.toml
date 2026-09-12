@@ -1,0 +1,10 @@
+[package]
+name = "radar-geo"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Radar polar-geometry math for RadarPro: distance/bearing, range rings, beam height, and cursor/radial/gate lookup, computed on demand from polar metadata."
+
+[dependencies]
+radar-types = { path = "../radar-types" }

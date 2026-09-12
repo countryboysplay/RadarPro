@@ -178,6 +178,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "radar-geo"
+version = "0.1.0"
+dependencies = [
+ "radar-types",
+]
+
+[[package]]
 name = "radar-types"
 version = "0.1.0"
 
