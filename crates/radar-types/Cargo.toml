@@ -4,6 +4,6 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
-description = "Provisional shared domain types for RadarPro (S00 placeholder)."
+description = "Canonical shared radar domain types for RadarPro (polar Volume/Sweep/Radial/Moment model)."
 
 [dependencies]

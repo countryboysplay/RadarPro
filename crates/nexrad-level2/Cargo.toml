@@ -4,6 +4,14 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
-description = "Provisional skeleton for NEXRAD Archive II / Level II decoding (S00 placeholder)."
+description = "NEXRAD Archive II / Level II (WSR-88D) decoder."
 
 [dependencies]
+radar-types = { path = "../radar-types" }
+thiserror = "=2.0.20"
+# Pure-Rust bzip2 *decompressor* (no bindings to libbz2, no C toolchain
+# required to build). Archive II only ever needs decompression, never
+# compression, so a decode-only crate is sufficient; picking pure Rust
+# over `bzip2`/`bzip2-sys` avoids a native build dependency for a decoder
+# that must run reliably on untrusted, network-sourced input.
+bzip2-rs = "=0.1.2"

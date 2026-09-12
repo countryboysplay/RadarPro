@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
-description = "RadarPro command-line workstation utility (S00 placeholder)."
+description = "RadarPro command-line workstation utility."
 
 [[bin]]
 name = "radar-cli"
@@ -12,4 +12,5 @@ path = "src/main.rs"
 
 [dependencies]
 radar-types = { path = "../../crates/radar-types" }
+nexrad-level2 = { path = "../../crates/nexrad-level2" }
 clap = { version = "4", features = ["derive"] }
