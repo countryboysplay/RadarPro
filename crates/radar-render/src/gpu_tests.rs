@@ -154,10 +154,8 @@ fn render_pipeline_produces_a_non_uniform_image_when_a_gpu_is_available() {
 
     assert_eq!(pixels.len(), 128 * 128 * 4);
 
-    let distinct_colors: std::collections::HashSet<[u8; 4]> = pixels
-        .chunks_exact(4)
-        .map(|p| [p[0], p[1], p[2], p[3]])
-        .collect();
+    let distinct_colors: std::collections::HashSet<[u8; 4]> =
+        pixels.as_chunks::<4>().0.iter().copied().collect();
     println!(
         "radar-render GPU test: rendered {}x{} frame with {} distinct RGBA colors",
         target.width,
@@ -173,7 +171,7 @@ fn render_pipeline_produces_a_non_uniform_image_when_a_gpu_is_available() {
     // green/yellow band) should produce at least one fully-opaque pixel,
     // proving a "valid" branch of the shader was actually reached (not
     // just the transparent-clear background from missing radials/gates).
-    let has_opaque_pixel = pixels.chunks_exact(4).any(|p| p[3] == 255);
+    let has_opaque_pixel = pixels.as_chunks::<4>().0.iter().any(|p| p[3] == 255);
     assert!(
         has_opaque_pixel,
         "expected at least one fully-opaque (valid-gate) pixel in the rendered frame"
