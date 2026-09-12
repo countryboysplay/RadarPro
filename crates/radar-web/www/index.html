@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>radar-web S04 browser proof</title>
+<style>
+  body {
+    font-family: ui-monospace, Consolas, monospace;
+    background: #111;
+    color: #ddd;
+    margin: 2rem;
+  }
+  h1 {
+    font-size: 1.1rem;
+    font-weight: normal;
+    color: #9ad;
+  }
+  /* Fixed 512x512 CSS size matching the canvas's backing-buffer size 1:1
+     (no devicePixelRatio scaling) -- see radar-web/README.md. */
+  #radar-canvas {
+    width: 512px;
+    height: 512px;
+    background: #000;
+    border: 1px solid #444;
+    display: block;
+  }
+  #status {
+    margin-top: 1rem;
+    padding: 0.75rem 1rem;
+    background: #1a1a1a;
+    border: 1px solid #333;
+    max-width: 640px;
+    white-space: pre-wrap;
+  }
+  #status div {
+    padding: 0.1rem 0;
+  }
+  .ok { color: #7fd17f; }
+  .err { color: #ff6b6b; }
+</style>
+</head>
+<body>
+  <h1>radar-web -- S04 browser decode/render proof (KTLX fixture)</h1>
+  <canvas id="radar-canvas" width="512" height="512"></canvas>
+  <div id="status"></div>
+  <script type="module" src="./index.js"></script>
+</body>
+</html>

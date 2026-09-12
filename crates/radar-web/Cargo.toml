@@ -1,0 +1,57 @@
+[package]
+name = "radar-web"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "S04 proof-of-concept: browser/WebAssembly glue exposing nexrad-level2 decode + radar-render's wgpu pipeline to a <canvas>. An adapter crate (ARCHITECTURE.md: 'map integration is an adapter boundary, not a core dependency') -- it contains no decoding or rendering logic of its own, only wasm-bindgen plumbing and the one piece of wgpu code the native radar-render harness never needed: acquiring/presenting a Surface from a browser canvas."
+
+[lib]
+# `cdylib` is what `wasm-bindgen`/`wasm-pack` compile into the browser-loaded
+# `.wasm` module; `rlib` keeps this crate usable as an ordinary Rust
+# dependency too (e.g. `cargo test -p radar-web` on the host target, which
+# only exercises `sweep_select` -- see that module and `src/lib.rs`).
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# Needed unconditionally: `sweep_select` (pure sweep-picking logic, unit
+# tested on the host target) depends on `radar_types::{Volume, MomentKind}`.
+radar-types = { path = "../radar-types" }
+
+# Everything below is real browser/GPU glue and is wasm32-only: `wgpu`'s
+# `SurfaceTarget::Canvas` variant, and every `web-sys`/`wasm-bindgen` type,
+# are only *defined* under `cfg(target_arch = "wasm32")` in the first place
+# (wgpu's own `web` cfg alias requires it), so gating the dependencies
+# themselves keeps a native `cargo build --workspace` from ever needing to
+# resolve/build a browser GPU stack it cannot use.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+nexrad-level2 = { path = "../nexrad-level2" }
+radar-render = { path = "../radar-render" }
+
+# Same pin as `radar-render`, plus the `webgl` feature (not on by default)
+# so a browser without WebGPU still gets the WebGL2 fallback backend --
+# see `src/browser.rs` module docs for how the two are negotiated.
+wgpu = { version = "=30.0.1", default-features = true, features = ["webgl"] }
+
+# Pinned to the exact versions already resolved transitively by `wgpu`'s own
+# `web`/`webgpu` features in this workspace's `Cargo.lock`, so this crate's
+# `web_sys::HtmlCanvasElement`/`wasm_bindgen::JsValue` etc. are the *same*
+# types `wgpu`'s web backend expects at its public API boundary (mismatched
+# versions of these crates are not interchangeable, even with identical
+# names).
+wasm-bindgen = "=0.2.128"
+wasm-bindgen-futures = "=0.4.78"
+js-sys = "=0.3.105"
+
+# Only the browser APIs this crate actually calls: canvas handles (received
+# from JS, passed straight to `wgpu`) and `console.error` logging (the panic
+# hook). Not a blanket `features = ["*"]` enable.
+[target.'cfg(target_arch = "wasm32")'.dependencies.web-sys]
+version = "=0.3.105"
+features = ["HtmlCanvasElement", "console"]
+
+# Turns a Rust panic into a real, readable `console.error` message (with
+# location and message) instead of the opaque "unreachable executed" trap a
+# panicking wasm32 binary otherwise surfaces -- see `src/browser.rs`.
+[target.'cfg(target_arch = "wasm32")'.dependencies.console_error_panic_hook]
+version = "=0.1.7"
