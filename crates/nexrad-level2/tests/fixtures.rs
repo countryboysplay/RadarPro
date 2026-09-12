@@ -196,6 +196,37 @@ fn decodes_kftg_fixture_with_correct_ground_truth() {
     );
 }
 
+/// Real, live WSR-88D data downloaded 2026-09-12 specifically because it
+/// contains a Message Type 32 (RDA PRF Data) record — the exact gap that
+/// caused `decode_volume` to fail with "unsupported message type 32"
+/// against every live scan before that message type (and 33, RDA Log
+/// Data) were recognized as fixed-slot legacy metadata messages (see
+/// `fixtures/README.md` and `message.rs`'s
+/// `is_legacy_metadata_message_type` doc comment). Unlike the two 2024
+/// fixtures above, this asserts the same ground-truth ranges over a
+/// volume that specifically exercises the new framing path, confirming
+/// real REF/VEL/SW sweeps decode correctly end-to-end around it, not just
+/// that decoding doesn't error.
+#[test]
+fn decodes_ktlx_live_fixture_containing_message_type_32() {
+    let bytes = load_fixture("KTLX20260912_203032_V06");
+    let volume = decode_volume(&bytes)
+        .expect("KTLX live fixture (contains message type 32) should decode successfully");
+
+    check_volume_invariants(
+        &volume,
+        "KTLX",
+        ExpectedStartTime {
+            year: 2026,
+            month: 9,
+            day: 12,
+            hour: 20,
+            minute: 30,
+            second: 32,
+        },
+    );
+}
+
 /// Ground truth given in the S01 task brief: the first LDM Compressed
 /// Record in `KTLX20240601_000353_V06` decompresses to exactly 325,888
 /// bytes (134 x 2432-byte legacy message frames), per the Archive

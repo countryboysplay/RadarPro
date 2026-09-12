@@ -5,6 +5,12 @@
 //! Legacy metadata message types occupy a fixed 2432-byte frame that this
 //! stage does not semantically decode (see `GLOBAL_CONTRACT.md`/S01
 //! scope); Message 31 is decoded fully by [`crate::message31`].
+//!
+//! Message types 32 (RDA PRF Data) and 33 (RDA Log Data) — added to the
+//! Archive II Metadata Record in a later ICD build revision than the
+//! original six legacy types — share that exact same fixed-slot framing
+//! (see [`is_legacy_metadata_message_type`]) and are handled identically:
+//! recognized and skipped, never semantically decoded.
 
 use crate::cursor::Cursor;
 use crate::{message31, DecodeError, SiteLocation};
@@ -51,8 +57,8 @@ pub(crate) fn parse_generic_message_header(
 /// Legacy metadata message types that occupy a fixed 2432-byte frame and
 /// are only skipped, never semantically decoded, this stage: RDA status
 /// (2), performance/maintenance data (3), volume coverage pattern data
-/// (5), clutter filter bypass map (13), clutter map data (15), and
-/// clutter filter map (18).
+/// (5), clutter filter bypass map (13), clutter map data (15), clutter
+/// filter map (18), RDA PRF data (32), and RDA log data (33).
 ///
 /// Message type `0` is included deliberately: the Archive II Metadata
 /// Record reserves a *fixed* number of 2432-byte slots per legacy message
@@ -64,8 +70,70 @@ pub(crate) fn parse_generic_message_header(
 /// (`KTLX20240601_000353_V06`, `KFTG20240601_000116_V06`) byte-for-byte,
 /// where the reserved-but-unused slots between each real legacy message
 /// and the next are exactly these all-zero 2432-byte frames.
+///
+/// # Message types 32 and 33
+///
+/// Types 32 (RDA PRF Data, ICD Table XVIII) and 33 (RDA Log Data, Table
+/// XVIV) were added to the Metadata Record in a later ICD build revision
+/// than the original six. Both are documented as *variable-length*
+/// messages with their own internal fields (a repeated
+/// waveform/PRF-count/PRF-value table for 32; a compressed log blob with
+/// a declared compressed size for 33) that would, read literally, seem to
+/// require walking that internal structure to compute a skip length.
+///
+/// That is **not** how these messages are actually framed on the wire.
+/// Real bytes prove they are simply two more members of the *same*
+/// fixed-2432-byte-slot Metadata Record container the other six types
+/// already use, with their variable-length content zero-padded out to
+/// fill the reserved slot — exactly the same reservation scheme already
+/// documented above for type 0. This was confirmed empirically, not
+/// assumed from the ICD text: 17 real, live WSR-88D volumes were
+/// downloaded fresh from the public Unidata NEXRAD Level II S3 bucket on
+/// 2026-09-12, spanning 14 different sites (including KTLX, KFTG, KICT,
+/// KVNX, KDDC, KLBB, KAMA, KMBX, KABR, KUEX, KDVN, KILN, KJKL, KMHX,
+/// KEVX). Every one of them contained exactly one Message Type 32 (no
+/// Message Type 33 was observed in this sample — RDA log entries appear
+/// to be emitted only on specific RDA events, not routinely per volume),
+/// always at Metadata Record slot 125 (decompressed byte offset 304,000
+/// in the first LDM record), always reporting a Generic Message Header
+/// "Message Size" of 64 halfwords (128 bytes = the 16-byte header plus a
+/// 112-byte body). Walking that body field-by-field per Table XVIII (2
+/// header halfwords +, per waveform, 2 halfwords of
+/// type/count-plus-that-many-PRF-values) independently reproduced the
+/// exact same 112-byte content length, and the bytes from byte 112 up to
+/// the 2432-byte slot boundary were all zero padding in every sample.
+/// Treating message 32 as a plain fixed-2432-byte skip (ignoring its
+/// internal structure entirely, exactly like the other legacy types)
+/// was then verified end-to-end: a full message-by-message walk of the
+/// *entire* decompressed contents of all 17 files (every LDM record,
+/// every legacy metadata slot, and all 6,480-9,720 Message 31 radials
+/// per file) produced zero framing anomalies -- every subsequent message
+/// header, including the very next slot after each type-32 occurrence,
+/// decoded as a structurally valid, recognized message type.
+///
+/// Message 33 was not independently observed, so its exact wire framing
+/// is not itself confirmed against real bytes. It is included here based
+/// on structural analogy rather than direct observation: the ICD
+/// introduces both 32 and 33 together as the same Metadata Record
+/// extension, and the reserved-slot design that provably governs type 32
+/// (and the original six) is a property of the *container* -- the
+/// Metadata Record reserves a whole number of fixed-size slots for
+/// whichever auxiliary message types are configured to appear in it,
+/// independent of what any one message type's own content looks like --
+/// not a per-type framing quirk. A real type-33 fixture that contradicts
+/// this (e.g. one not zero-padded to a slot boundary) would mean this
+/// inference was wrong and this comment and implementation must be
+/// revisited.
+///
+/// Segmented occurrences (a logical message spanning more than one
+/// slot, `segment_count > 1`, as already seen for types 15 and 18) need
+/// no special handling either: each segment presents its own CTM prefix
+/// and Generic Message Header at the top of its own 2432-byte slot, so
+/// the same one-slot-at-a-time skip below walks through every segment
+/// correctly regardless of how many total slots the logical message
+/// occupies.
 fn is_legacy_metadata_message_type(message_type: u8) -> bool {
-    matches!(message_type, 0 | 2 | 3 | 5 | 13 | 15 | 18)
+    matches!(message_type, 0 | 2 | 3 | 5 | 13 | 15 | 18 | 32 | 33)
 }
 
 /// What a decompressed LDM record's Message 31 records (if any) revealed
@@ -150,8 +218,12 @@ mod tests {
     use super::*;
 
     fn header_bytes(message_type: u8) -> Vec<u8> {
+        header_bytes_sized(message_type, 1234)
+    }
+
+    fn header_bytes_sized(message_type: u8, size_halfwords: u16) -> Vec<u8> {
         let mut bytes = Vec::new();
-        bytes.extend_from_slice(&1234u16.to_be_bytes()); // size (halfwords)
+        bytes.extend_from_slice(&size_halfwords.to_be_bytes());
         bytes.push(0); // redundant channel
         bytes.push(message_type);
         bytes.extend_from_slice(&5u16.to_be_bytes()); // id sequence number
@@ -159,6 +231,76 @@ mod tests {
         bytes.extend_from_slice(&233_941u32.to_be_bytes()); // millis of day
         bytes.extend_from_slice(&1u16.to_be_bytes()); // segment count
         bytes.extend_from_slice(&1u16.to_be_bytes()); // segment number
+        bytes
+    }
+
+    /// Build a Table XVIII ("RDA PRF Data") message body: Number of
+    /// Waveforms, a spare halfword, then per waveform a Waveform Type, a
+    /// PRF Count, and that many 4-byte (2-halfword) PRF values — matching
+    /// the exact field layout confirmed against real bytes (see
+    /// [`is_legacy_metadata_message_type`]'s doc comment).
+    fn build_message32_body(waveforms: &[(u16, &[u32])]) -> Vec<u8> {
+        let mut body = Vec::new();
+        body.extend_from_slice(&(waveforms.len() as u16).to_be_bytes()); // Number of Waveforms
+        body.extend_from_slice(&0u16.to_be_bytes()); // spare
+        for &(waveform_type, prf_values) in waveforms {
+            body.extend_from_slice(&waveform_type.to_be_bytes());
+            body.extend_from_slice(&(prf_values.len() as u16).to_be_bytes()); // PRF Count
+            for &prf in prf_values {
+                body.extend_from_slice(&prf.to_be_bytes());
+            }
+        }
+        body
+    }
+
+    /// Build a Table XVIV ("RDA Log Data") message body: Version,
+    /// Identifier, Data Version, Compression Type, Compressed Size,
+    /// Decompressed Size, spare, then the (possibly odd-length,
+    /// pad-byte-completed) log data itself — matching the documented
+    /// field layout. Framing does not read any of these fields (this
+    /// crate never semantically decodes message 33 content), but building
+    /// realistic bytes documents the layout this test is standing in for.
+    fn build_message33_body(identifier: &str, compressed_log: &[u8]) -> Vec<u8> {
+        let mut body = Vec::new();
+        body.extend_from_slice(&1u32.to_be_bytes()); // Version
+        let mut identifier_field = identifier.as_bytes().to_vec();
+        identifier_field.resize(26, 0); // halfword 2-14: 13 halfwords
+        body.extend_from_slice(&identifier_field);
+        body.extend_from_slice(&1u32.to_be_bytes()); // Data Version
+        body.extend_from_slice(&0u32.to_be_bytes()); // Compression Type: 0 = uncompressed
+        body.extend_from_slice(&(compressed_log.len() as u32).to_be_bytes()); // Compressed Size
+        body.extend_from_slice(&(compressed_log.len() as u32).to_be_bytes()); // Decompressed Size
+        body.extend_from_slice(&[0u8; 22]); // spare: halfword 23-33, 11 halfwords
+        body.extend_from_slice(compressed_log);
+        if !compressed_log.len().is_multiple_of(2) {
+            // "a non-consequential NULL byte that is not part of the
+            // message, to fill out the ICD frame" (ICD 2620002AA).
+            body.push(0);
+        }
+        body
+    }
+
+    /// Wrap `body` (a whole number of halfwords) in a CTM prefix and
+    /// Generic Message Header reporting the true total size, then
+    /// zero-pad out to one full reserved 2432-byte Metadata Record slot —
+    /// the real on-wire layout confirmed for message type 32 (and, by
+    /// the structural-analogy argument in that doc comment, assumed for
+    /// 33) in [`is_legacy_metadata_message_type`].
+    fn build_legacy_slot(message_type: u8, body: &[u8]) -> Vec<u8> {
+        assert_eq!(
+            body.len() % 2,
+            0,
+            "body must be a whole number of halfwords"
+        );
+        let size_halfwords = ((MESSAGE_HEADER_LEN + body.len()) / 2) as u16;
+        let mut bytes = vec![0u8; CTM_PREFIX_LEN];
+        bytes.extend_from_slice(&header_bytes_sized(message_type, size_halfwords));
+        bytes.extend_from_slice(body);
+        assert!(
+            bytes.len() <= LEGACY_FRAME_LEN,
+            "synthetic content overflows one legacy frame slot"
+        );
+        bytes.resize(LEGACY_FRAME_LEN, 0);
         bytes
     }
 
@@ -220,6 +362,90 @@ mod tests {
         let outcome = process_record(&bytes, &mut Vec::new()).expect("zero-padded slot is valid");
         assert!(outcome.site_location.is_none());
         assert!(outcome.volume_coverage_pattern.is_none());
+    }
+
+    #[test]
+    fn message32_minimal_waveform_skips_one_fixed_frame() {
+        // Number of Waveforms = 1, a single waveform with one PRF value —
+        // matches the documented minimum (1 waveform, PRF Count 0-255).
+        let body = build_message32_body(&[(1u16, &[123_456u32])]);
+        let mut bytes = build_legacy_slot(32, &body);
+        // A trailing valid message 15 CTM prefix + header proves the skip
+        // lands exactly on the next message, not one byte early or late.
+        bytes.extend_from_slice(&[0u8; CTM_PREFIX_LEN]);
+        bytes.extend_from_slice(&header_bytes(15));
+        let outcome = process_record(&bytes, &mut Vec::new());
+        // Message 15 with a fabricated size will itself fail (its own
+        // fixed 2432-byte frame is truncated at end-of-buffer here), but
+        // that failure being `UnexpectedEnd` rather than
+        // `UnsupportedMessageType` proves message 32 was framed and
+        // skipped correctly and dispatch reached a *recognized*
+        // subsequent message type.
+        assert!(matches!(
+            outcome.unwrap_err(),
+            DecodeError::UnexpectedEnd { .. }
+        ));
+    }
+
+    #[test]
+    fn message32_multiple_waveforms_and_prf_counts_skips_one_fixed_frame() {
+        // Number of Waveforms = 3 with differing, non-minimal PRF counts
+        // per waveform — the same shape observed in the real fixture
+        // (waveforms of PRF Count 8, 8, 8) generalized to unequal counts
+        // to also cover the varying-PRF-Count-per-waveform case.
+        let prfs_a = [100u32, 200, 300];
+        let prfs_b = [400u32];
+        let prfs_c = [500u32, 600, 700, 800, 900];
+        let body = build_message32_body(&[(1u16, &prfs_a), (2u16, &prfs_b), (5u16, &prfs_c)]);
+        let bytes = build_legacy_slot(32, &body);
+        let outcome = process_record(&bytes, &mut Vec::new()).expect("valid type-32 legacy frame");
+        assert!(outcome.site_location.is_none());
+        assert!(outcome.volume_coverage_pattern.is_none());
+    }
+
+    #[test]
+    fn message32_rejects_truncated_frame() {
+        let body = build_message32_body(&[(1u16, &[123_456u32])]);
+        let full = build_legacy_slot(32, &body);
+        // Declares a full legacy frame but the buffer ends far short of
+        // it — same shape as `legacy_message_type_rejects_truncated_frame`.
+        let truncated = &full[..CTM_PREFIX_LEN + MESSAGE_HEADER_LEN + body.len()];
+        let err = process_record(truncated, &mut Vec::new()).unwrap_err();
+        assert!(matches!(err, DecodeError::UnexpectedEnd { .. }));
+    }
+
+    #[test]
+    fn message33_even_compressed_size_skips_one_fixed_frame() {
+        let body = build_message33_body("AzServoLog", &[0xAA, 0xBB, 0xCC, 0xDD]);
+        let bytes = build_legacy_slot(33, &body);
+        let outcome = process_record(&bytes, &mut Vec::new()).expect("valid type-33 legacy frame");
+        assert!(outcome.site_location.is_none());
+        assert!(outcome.volume_coverage_pattern.is_none());
+    }
+
+    #[test]
+    fn message33_odd_compressed_size_pad_byte_still_skips_one_fixed_frame() {
+        // An odd Compressed Size requires one pad byte to keep the
+        // message halfword-aligned (ICD 2620002AA's documented
+        // "non-consequential NULL byte" caveat). Framing does not depend
+        // on this field at all (the whole slot is always 2432 bytes
+        // regardless), but this confirms an odd-length payload doesn't
+        // break slot construction or the surrounding skip.
+        let body = build_message33_body("ElServoLog", &[0xAA, 0xBB, 0xCC]);
+        assert_eq!(body.len() % 2, 0, "builder must pad to a whole halfword");
+        let bytes = build_legacy_slot(33, &body);
+        let outcome = process_record(&bytes, &mut Vec::new()).expect("valid type-33 legacy frame");
+        assert!(outcome.site_location.is_none());
+        assert!(outcome.volume_coverage_pattern.is_none());
+    }
+
+    #[test]
+    fn message33_rejects_truncated_frame() {
+        let body = build_message33_body("AzServoLog", &[0xAA, 0xBB, 0xCC, 0xDD]);
+        let full = build_legacy_slot(33, &body);
+        let truncated = &full[..CTM_PREFIX_LEN + MESSAGE_HEADER_LEN + body.len()];
+        let err = process_record(truncated, &mut Vec::new()).unwrap_err();
+        assert!(matches!(err, DecodeError::UnexpectedEnd { .. }));
     }
 
     #[test]

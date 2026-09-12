@@ -4,9 +4,12 @@
 //! polar domain model in `radar-types` (`Volume -> Sweep -> Radial ->
 //! Moment`): the Volume Header Record, LDM Compressed Record framing
 //! (bzip2), legacy metadata message framing (skipped, not semantically
-//! decoded), and Message Type 31 ("Digital Radar Data Generic Format")
-//! decoded in full for the REF, VEL, SW, ZDR, PHI, and RHO (correlation
-//! coefficient) moments.
+//! decoded — including Message Types 32/RDA PRF Data and 33/RDA Log Data,
+//! which share the same fixed-slot Metadata Record framing as the
+//! original legacy types despite being documented as variable-length; see
+//! `message::is_legacy_metadata_message_type`), and Message Type 31
+//! ("Digital Radar Data Generic Format") decoded in full for the REF,
+//! VEL, SW, ZDR, PHI, and RHO (correlation coefficient) moments.
 //!
 //! # Threat model
 //!
@@ -26,7 +29,8 @@
 //! "CFP" (clutter filter power removed) or KDP (a derived product, not a
 //! wire moment at all), and it does not semantically decode legacy
 //! metadata message content (RDA status, VCP definition tables, clutter
-//! maps) — those frames are recognized by message type and skipped whole.
+//! maps, RDA PRF data, RDA log data) — those frames are recognized by
+//! message type and skipped whole.
 
 mod cursor;
 mod ldm;
@@ -86,7 +90,7 @@ pub enum DecodeError {
         available: usize,
     },
 
-    #[error("unsupported message type {message_type} at offset {offset} (only 2, 3, 5, 13, 15, 18, and 31 are supported)")]
+    #[error("unsupported message type {message_type} at offset {offset} (only 2, 3, 5, 13, 15, 18, 31, 32, and 33 are supported)")]
     UnsupportedMessageType { offset: usize, message_type: u8 },
 
     #[error("message 31 at offset {offset} declares an unsupported payload compression indicator {indicator} (only 0/uncompressed is supported)")]
