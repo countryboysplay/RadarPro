@@ -365,19 +365,37 @@ impl RadarWebRenderer {
         // shipped data; a future custom color table using a genuinely
         // partial alpha value now composites correctly too, instead of
         // silently looking wrong only in the browser.
-        if surface
-            .get_capabilities(&adapter)
-            .alpha_modes
-            .contains(&wgpu::CompositeAlphaMode::PreMultiplied)
-        {
-            surface_config.alpha_mode = wgpu::CompositeAlphaMode::PreMultiplied;
-        }
-        // Else: leave the backend's default (`Opaque` in practice). This
-        // degrades to the pre-fix "black square" look rather than failing
-        // to render at all -- no browser/backend combination encountered
-        // in this project's own verification lacked `PreMultiplied`
-        // support, but silently falling back rather than erroring keeps a
-        // GPU that genuinely can't do better still usable.
+        // NOTE: an earlier version of this fix gated `PreMultiplied` on
+        // `surface.get_capabilities(&adapter).alpha_modes.contains(...)`,
+        // believing that reflected what the browser actually supports. It
+        // does not: `wgpu` 30.0.1's WebGPU *web* backend hardcodes
+        // `get_capabilities` to always return `alpha_modes: vec![Opaque]`
+        // for a canvas surface (see `wgpu::backend::webgpu`'s
+        // `surface_get_capabilities`, around the `alpha_modes:
+        // vec![wgt::CompositeAlphaMode::Opaque]` line) -- it is a stub, not
+        // a real query, so that gate silently and permanently fell back to
+        // `Opaque` on every browser, making the fix a no-op. This was
+        // caught by direct pixel sampling after a user reported the "still
+        // black" symptom; a prior visual screenshot check had wrongly
+        // looked at map labels *outside* the canvas's bounding box rather
+        // than pixel values *inside* it, and missed this entirely.
+        //
+        // `PreMultiplied` IS correctly implemented by the same backend's
+        // `configure()` (it maps straight to the real, spec-defined
+        // `GPUCanvasAlphaMode::Premultiplied` and passes it to the actual
+        // browser `GPUCanvasContext.configure()` call) -- `"opaque" |
+        // "premultiplied"` are the WebGPU spec's only two canvas alpha
+        // modes, and every conformant implementation must support both, so
+        // requesting it unconditionally here (rather than gating on the
+        // capabilities stub) is correct, not merely "usually works."
+        surface_config.alpha_mode = wgpu::CompositeAlphaMode::PreMultiplied;
+        web_sys::console::log_1(
+            &format!(
+                "radar-web: surface alpha_mode = {:?}",
+                surface_config.alpha_mode
+            )
+            .into(),
+        );
         let surface_format = surface_config.format;
         surface.configure(&device, &surface_config);
 
