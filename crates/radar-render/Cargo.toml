@@ -1,0 +1,38 @@
+[package]
+name = "radar-render"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "S03 prototype: a wgpu polar-radar renderer proving a GPU representation (radial storage buffer + azimuth lookup texture) before it is committed to for later stages."
+
+[dependencies]
+radar-types = { path = "../radar-types" }
+radar-geo = { path = "../radar-geo" }
+# Only used by `src/bin/harness.rs`, to decode the real fixture volume the
+# harness measures against.
+nexrad-level2 = { path = "../nexrad-level2" }
+
+# `wgpu` is the GPU abstraction mandated by ADR-0002. Pinned to the current
+# stable release at the time this crate was written.
+wgpu = "=30.0.1"
+
+# GPU buffers/textures are populated by reinterpreting plain Rust structs as
+# byte slices; `bytemuck`'s `Pod`/`Zeroable` derives give that cast a
+# compile-time guarantee (no padding/alignment surprises) instead of hand
+# rolled `unsafe` transmutes.
+bytemuck = { version = "=1.25.2", features = ["derive"] }
+
+# `wgpu`'s device/adapter/buffer-mapping calls are `async`. The measurement
+# harness and the GPU-path test are synchronous entry points, so a tiny,
+# dependency-free executor is needed to block on those futures once; a full
+# async runtime (tokio/async-std) would be a much larger dependency for the
+# same single job.
+pollster = "=1.0.1"
+
+# Only used by `src/bin/harness.rs` to save one rendered frame as a PNG so a
+# human can visually confirm the render (this stage's exit criteria). Not
+# used by the library itself. `default-features = false` plus the single
+# `png` feature keeps this to just the PNG codec rather than the full
+# multi-format `image` build.
+image = { version = "=0.25.10", default-features = false, features = ["png"] }

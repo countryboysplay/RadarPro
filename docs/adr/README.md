@@ -10,3 +10,4 @@ This index lists RadarPro's ADRs in order. See `Agent Context/templates/ADR_TEMP
 | [0004](0004-provider-boundary-architecture.md) | Provider boundary architecture for observations, forecasts, and alerts | Accepted |
 | [0005](0005-cache-direction.md) | Cache sits between normalized providers and analysis/render, not inside providers or the UI | Accepted |
 | [0006](0006-earth-model-for-radar-geometry.md) | Spherical Earth + 4/3 effective-Earth-radius model for radar geometry | Accepted |
+| [0007](0007-radar-render-gpu-data-representation.md) | Storage-buffer + radial-index lookup-texture GPU representation for polar radar rendering | Accepted |
