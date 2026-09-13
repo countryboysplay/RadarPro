@@ -134,6 +134,64 @@ function drawAlerts(
   ctx.globalAlpha = 1;
 }
 
+const RAINBOW_SOURCE_ID = "rainbow-precip-source";
+const RAINBOW_LAYER_ID = "rainbow-precip-layer";
+
+/**
+ * Add/update/remove the Rainbow precip raster source+layer to match
+ * `tileUrlTemplate` (`null` removes it). MapLibre raster sources can't have
+ * their `tiles` array updated in place, so a changed template (a newly
+ * resolved snapshot) is handled the same way as turning the layer off: tear
+ * down and re-add.
+ *
+ * Layer order: inserted before the style's first `symbol` layer (if any) so
+ * basemap labels stay legible on top of the precip imagery, matching how
+ * most slippy-map weather overlays are conventionally stacked; falls back
+ * to "on top of everything" if the style has no symbol layer.
+ *
+ * # Why a native MapLibre layer is *not* the occlusion problem here
+ *
+ * `drawRangeRings`/`drawAlerts` above had to move off native MapLibre
+ * layers because those paint into the map's own canvas, which sits
+ * *underneath* the opaque radar sweep `<canvas>` (see their doc comments).
+ * A Rainbow raster layer added the normal MapLibre way would land in that
+ * same underneath-the-sweep-canvas layer -- so with the live radar visible,
+ * it would render but never be seen, exactly like an unfixed range ring.
+ * Rather than adding a *third* manual-canvas workaround for what is, unlike
+ * rings/alerts, a full-viewport raster image (no benefit to hand-drawing it
+ * pixel-by-pixel -- MapLibre's native raster source is exactly the tool for
+ * this, per this stage's brief), this is handled at the call site
+ * (`MapView`'s render below) by hiding the radar sweep canvas whenever the
+ * Rainbow toggle is on. See that comment for the full mutual-exclusivity
+ * rationale.
+ */
+function syncRainbowLayer(map: MapLibreMap, tileUrlTemplate: string | null, appliedRef: { current: string | null }) {
+  if (appliedRef.current === tileUrlTemplate) return; // already in the desired state.
+
+  if (map.getLayer(RAINBOW_LAYER_ID)) map.removeLayer(RAINBOW_LAYER_ID);
+  if (map.getSource(RAINBOW_SOURCE_ID)) map.removeSource(RAINBOW_SOURCE_ID);
+  appliedRef.current = null;
+
+  if (!tileUrlTemplate) return;
+
+  map.addSource(RAINBOW_SOURCE_ID, {
+    type: "raster",
+    tiles: [tileUrlTemplate],
+    tileSize: 256,
+  });
+  const firstSymbolLayerId = map.getStyle()?.layers?.find((l) => l.type === "symbol")?.id;
+  map.addLayer(
+    {
+      id: RAINBOW_LAYER_ID,
+      type: "raster",
+      source: RAINBOW_SOURCE_ID,
+      paint: { "raster-opacity": 0.75 },
+    },
+    firstSymbolLayerId,
+  );
+  appliedRef.current = tileUrlTemplate;
+}
+
 /**
  * OpenFreeMap's "Liberty" style (https://openfreemap.org) -- a full
  * OpenStreetMap-derived vector basemap (streets, cities/labels, land
@@ -212,6 +270,16 @@ export interface MapViewProps {
   /** Fired when the user clicks an alert polygon (or clicks empty map
    * space while an alert is selected, with `key: null`, to deselect). */
   onAlertClick?: (key: string | null) => void;
+  /** S09b: resolved Rainbow precip tile URL template (`{z}/{x}/{y}` still
+   * literal, `{snapshot}`/`{forecast_time}` already substituted by
+   * `useRainbowOverlay`), or `null` whenever the layer should not be on the
+   * map (off, unconfigured, still resolving, or errored). */
+  rainbowTileUrlTemplate?: string | null;
+  /** S09b: the user's Rainbow toggle *intent* (`useRainbowOverlay`'s
+   * `enabled`) -- distinct from `rainbowTileUrlTemplate` being non-null,
+   * and what actually drives hiding the live radar canvas (see the render
+   * comment below for why). */
+  rainbowEnabled?: boolean;
 }
 
 /**
@@ -243,6 +311,8 @@ export function MapView({
   alerts = null,
   selectedAlertKey = null,
   onAlertClick,
+  rainbowTileUrlTemplate = null,
+  rainbowEnabled = false,
 }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
@@ -254,6 +324,7 @@ export function MapView({
   alertsRef.current = alerts;
   const selectedAlertKeyRef = useRef<string | null>(selectedAlertKey);
   selectedAlertKeyRef.current = selectedAlertKey;
+  const appliedRainbowUrlRef = useRef<string | null>(null);
 
   // Create the map once.
   useEffect(() => {
@@ -273,6 +344,27 @@ export function MapView({
     // only used as the map's starting center); site changes are handled by
     // the effect below via `easeTo`, not by recreating the map instance.
   }, []);
+
+  // S09b: keep the Rainbow raster layer in sync with the resolved tile URL
+  // template (add/remove/replace via `syncRainbowLayer`). Needs the style
+  // loaded before touching sources/layers, so waits for `load` if the map
+  // isn't there yet (the toggle can flip -- and this effect can run --
+  // before the initial style finishes loading).
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    function apply() {
+      syncRainbowLayer(map!, rainbowTileUrlTemplate, appliedRainbowUrlRef);
+    }
+    if (map.isStyleLoaded()) {
+      apply();
+    } else {
+      map.once("load", apply);
+      return () => {
+        map.off("load", apply);
+      };
+    }
+  }, [rainbowTileUrlTemplate]);
 
   // Recenter on the selected site, and keep the radar canvas's on-screen
   // position/size synchronized to the map viewport (pan/zoom/resize).
@@ -460,6 +552,22 @@ export function MapView({
           top: 0,
           left: 0,
           pointerEvents: "none",
+          // S09b mutual-exclusivity decision: hidden whenever the user has
+          // the Rainbow toggle on. This canvas is opaque and sits above
+          // MapLibre's own canvas (see this component's other doc comments
+          // on why range rings/alerts had to move to overlay canvases for
+          // exactly that reason) -- a Rainbow raster layer, added the
+          // normal native-MapLibre way per this stage's brief, paints
+          // *underneath* it and would be completely invisible with the
+          // live sweep still showing. Rather than adding a third bespoke
+          // overlay-canvas workaround for what's just a full-frame raster
+          // image (no benefit over MapLibre's own raster source for that),
+          // the two are made mutually exclusive: turning Rainbow on hides
+          // the radar canvas, turning it off restores it. Driven by
+          // `rainbowEnabled` (the toggle's intent) rather than by whether a
+          // tile URL has actually resolved yet, so the switch feels
+          // immediate rather than lagging a network round trip.
+          opacity: rainbowEnabled ? 0 : 1,
         }}
       />
       {/* Range rings, one z-index above the (opaque) radar sweep canvas --

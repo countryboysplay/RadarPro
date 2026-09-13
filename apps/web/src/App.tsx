@@ -25,6 +25,10 @@ import { AlertDetail } from "./ui/AlertDetail";
 import { useAlertPoller } from "./alerts/useAlertPoller";
 import type { AlertJson } from "./alerts/types";
 import { ForecastPanel } from "./forecast/ForecastPanel";
+import { useRainbowOverlay } from "./rainbow/useRainbowOverlay";
+import { RainbowToggle } from "./ui/RainbowToggle";
+import { Sidebar } from "./ui/Sidebar";
+import { SidebarSection } from "./ui/SidebarSection";
 
 /** Fixed reference radii (km) for the range rings drawn around the
  * selected site -- a documented, reasonable default (not derived from any
@@ -91,8 +95,24 @@ export default function App() {
   // set/geojson and tracks which one (if any) is selected for the details
   // panel -- see that hook's module docs for the nationwide-poll-scope and
   // never-second-guess-the-store rationale.
+  // S09b: Rainbow Weather precip nowcast overlay -- optional/keyed, config-
+  // gated. Owns its own toggle state + snapshot resolution; see the hook's
+  // doc comment and `RainbowToggle`/`MapView`'s mutual-exclusivity comment.
+  const rainbow = useRainbowOverlay();
+
   const alerts = useAlertPoller();
   const [selectedAlertKey, setSelectedAlertKey] = useState<string | null>(null);
+
+  // S09c UI shell: one collapsible sidebar replaces the always-on floating
+  // hud-panel-* boxes -- closed by default so the map is the unobstructed
+  // default view (see the stage file). `alertsSectionOpen` is controlled
+  // (rather than left to `SidebarSection`'s own internal state) so
+  // selecting an alert -- from the map click handled below, or from the
+  // list inside the section itself -- can force both the sidebar and the
+  // Alerts section open, matching this panel's old behavior of appearing
+  // immediately as a floating box the instant an alert was selected.
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [alertsSectionOpen, setAlertsSectionOpen] = useState(false);
   // Last-known content for every key ever seen active, kept only so a
   // still-open details panel can keep showing an alert's final content
   // (with a "no longer active" banner) after `AlertStore` removes it from
@@ -108,6 +128,18 @@ export default function App() {
   const handleAlertClick = useCallback((key: string | null) => {
     setSelectedAlertKey(key);
   }, []);
+
+  // Auto-reveal the Alerts section (and sidebar) whenever an alert becomes
+  // selected -- including via a map click, which happens with no sidebar
+  // DOM in view at all. Without this, selecting an alert while the
+  // sidebar is closed would have no visible effect, a regression from the
+  // old always-on floating `AlertDetail` panel.
+  useEffect(() => {
+    if (selectedAlertKey) {
+      setSidebarOpen(true);
+      setAlertsSectionOpen(true);
+    }
+  }, [selectedAlertKey]);
 
   // Decoded-volume/selection state. Kept small and derived -- the raw
   // bytes themselves never enter React state (GLOBAL_CONTRACT).
@@ -351,70 +383,149 @@ export default function App() {
         alerts={alerts.geojson}
         selectedAlertKey={selectedAlertKey}
         onAlertClick={handleAlertClick}
+        rainbowTileUrlTemplate={rainbow.tileUrlTemplate}
+        rainbowEnabled={rainbow.enabled}
       />
 
-      <div className="hud-panel hud-panel-left">
-        <h1>RadarPro — workstation (S05)</h1>
-
-        <label>
-          Site{" "}
-          <select value={icao} onChange={(e) => setIcao(e.target.value)}>
-            {RADAR_SITES.map((s) => (
-              <option key={s.icao} value={s.icao}>
-                {s.icao} — {s.name}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label>
-          Elevation{" "}
-          <select
-            value={sweepIndex ?? ""}
-            disabled={!volumeMeta}
-            onChange={(e) => changeSweep(Number(e.target.value))}
+      {/* S09c UI shell: slim always-visible top/bottom chrome for the most
+          glanceable controls (GPU/scan-feed status, playback), modeled on
+          RadarScope's own minimal top/bottom bars -- everything else lives
+          behind the sidebar toggle below. */}
+      <header className="top-bar">
+        <div className="top-bar-left">
+          <button
+            type="button"
+            className="sidebar-toggle"
+            onClick={() => setSidebarOpen((v) => !v)}
+            aria-expanded={sidebarOpen}
+            aria-controls="radarpro-sidebar"
+            title={sidebarOpen ? "Close sidebar" : "Open sidebar"}
           >
-            {volumeMeta?.elevationDegs.map((deg, i) => (
-              <option key={i} value={i}>
-                {i}: {deg.toFixed(2)}°
-              </option>
-            ))}
-          </select>
-        </label>
+            {sidebarOpen ? "✕" : "☰"}
+          </button>
+          <span className="top-bar-title">RadarPro</span>
+        </div>
+        <div className="top-bar-status">
+          <span
+            className={`top-bar-status-item${status === "error" ? " top-bar-status-error" : ""}`}
+            title="GPU renderer status"
+          >
+            {status === "loading" && "GPU: initializing…"}
+            {status === "error" && `GPU error: ${error}`}
+            {status === "ready" && `GPU: ${adapterName || "(adapter name withheld)"} (${backend})`}
+          </span>
+          <span className="top-bar-status-item" title="Scan feed status">
+            {describePollEvent(history.pollEvent)}
+          </span>
+        </div>
+      </header>
 
-        <label>
-          Moment{" "}
-          <select value={momentCode ?? ""} disabled={sweepMoments.length === 0} onChange={(e) => changeMoment(e.target.value)}>
-            {sweepMoments.map((code) => (
-              <option key={code} value={code}>
-                {code}
-              </option>
-            ))}
-          </select>
-        </label>
+      <Sidebar id="radarpro-sidebar" open={sidebarOpen}>
+        <h1>RadarPro — workstation</h1>
 
-        <dl>
-          <dt>GPU</dt>
-          <dd>
-            {status === "loading" && "initializing…"}
-            {status === "error" && `error: ${error}`}
-            {status === "ready" && `${adapterName || "(adapter name withheld)"} (${backend})`}
-          </dd>
-          <dt>Scan feed</dt>
-          <dd>{describePollEvent(history.pollEvent)}</dd>
-        </dl>
+        <SidebarSection title="Radar" defaultOpen>
+          <label>
+            Site{" "}
+            <select value={icao} onChange={(e) => setIcao(e.target.value)}>
+              {RADAR_SITES.map((s) => (
+                <option key={s.icao} value={s.icao}>
+                  {s.icao} — {s.name}
+                </option>
+              ))}
+            </select>
+          </label>
 
-        <InfoPanel
-          siteIcao={site.icao}
-          siteName={site.name}
-          volumeStartTimeMillis={currentEntry?.startTimeMillis ?? null}
-          elevationDeg={elevationDeg}
-          sweepIndex={sweepIndex}
-          sweepCount={volumeMeta?.sweepCount ?? null}
-          momentCode={momentCode}
-          units={activeTableParsedUnits}
-        />
+          <label>
+            Elevation{" "}
+            <select
+              value={sweepIndex ?? ""}
+              disabled={!volumeMeta}
+              onChange={(e) => changeSweep(Number(e.target.value))}
+            >
+              {volumeMeta?.elevationDegs.map((deg, i) => (
+                <option key={i} value={i}>
+                  {i}: {deg.toFixed(2)}°
+                </option>
+              ))}
+            </select>
+          </label>
 
+          <label>
+            Moment{" "}
+            <select
+              value={momentCode ?? ""}
+              disabled={sweepMoments.length === 0}
+              onChange={(e) => changeMoment(e.target.value)}
+            >
+              {sweepMoments.map((code) => (
+                <option key={code} value={code}>
+                  {code}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <InfoPanel
+            siteIcao={site.icao}
+            siteName={site.name}
+            volumeStartTimeMillis={currentEntry?.startTimeMillis ?? null}
+            elevationDeg={elevationDeg}
+            sweepIndex={sweepIndex}
+            sweepCount={volumeMeta?.sweepCount ?? null}
+            momentCode={momentCode}
+            units={activeTableParsedUnits}
+          />
+
+          <Legend activeColorTableJson={activeTableJson} momentCode={momentCode ?? "—"} />
+          <ProbePanel cursor={cursor} probe={probe} />
+          {momentCode && (
+            <ColorTableEditor
+              momentCode={momentCode}
+              activeColorTableJson={activeTableJson}
+              onApply={handleApplyColorTable}
+              onResetToBuiltinDefault={handleResetColorTable}
+            />
+          )}
+        </SidebarSection>
+
+        <SidebarSection title="Alerts" open={alertsSectionOpen} onToggle={setAlertsSectionOpen}>
+          <AlertsPanel
+            status={alerts.status}
+            error={alerts.error}
+            alerts={alerts.activeAlerts}
+            selectedKey={selectedAlertKey}
+            onSelect={handleAlertClick}
+            lastPolledAt={alerts.lastPolledAt}
+            heldCount={alerts.heldCount}
+          />
+          {selectedAlert && (
+            <AlertDetail
+              alert={selectedAlert}
+              isActive={selectedActiveEntry !== null}
+              onClose={() => setSelectedAlertKey(null)}
+            />
+          )}
+        </SidebarSection>
+
+        {/* S08 follow-up: GEFS/HRRR forecast provider switcher + shared
+            render path -- see `ForecastPanel`'s doc comment for why this is
+            a dedicated panel rather than a MapView overlay in this stage. */}
+        <SidebarSection title="Forecast">
+          <ForecastPanel />
+        </SidebarSection>
+
+        <SidebarSection title="Rainbow">
+          <RainbowToggle
+            configured={rainbow.configured}
+            enabled={rainbow.enabled}
+            status={rainbow.status}
+            error={rainbow.error}
+            onToggle={rainbow.toggle}
+          />
+        </SidebarSection>
+      </Sidebar>
+
+      <footer className="bottom-bar">
         <PlaybackControls
           playMode={history.playMode}
           currentIndex={history.currentIndex}
@@ -426,49 +537,10 @@ export default function App() {
           onJumpLatest={history.jumpToLatest}
           onFrameMsChange={history.setFrameMs}
         />
-
         <div className="keyboard-hint">
           ← / → prev/next scan · Space play/pause · ↑ / ↓ elevation · L latest
         </div>
-      </div>
-
-      <div className="hud-panel hud-panel-right">
-        <Legend activeColorTableJson={activeTableJson} momentCode={momentCode ?? "—"} />
-        <ProbePanel cursor={cursor} probe={probe} />
-        {momentCode && (
-          <ColorTableEditor
-            momentCode={momentCode}
-            activeColorTableJson={activeTableJson}
-            onApply={handleApplyColorTable}
-            onResetToBuiltinDefault={handleResetColorTable}
-          />
-        )}
-      </div>
-
-      <div className="hud-panel hud-panel-alerts">
-        <AlertsPanel
-          status={alerts.status}
-          error={alerts.error}
-          alerts={alerts.activeAlerts}
-          selectedKey={selectedAlertKey}
-          onSelect={handleAlertClick}
-          lastPolledAt={alerts.lastPolledAt}
-          heldCount={alerts.heldCount}
-        />
-      </div>
-
-      {selectedAlert && (
-        <div className="hud-panel hud-panel-alert-detail">
-          <AlertDetail alert={selectedAlert} isActive={selectedActiveEntry !== null} onClose={() => setSelectedAlertKey(null)} />
-        </div>
-      )}
-
-      {/* S08 follow-up: GEFS/HRRR forecast provider switcher + shared
-          render path -- see `ForecastPanel`'s doc comment for why this is
-          a dedicated panel rather than a MapView overlay in this stage. */}
-      <div className="hud-panel hud-panel-forecast">
-        <ForecastPanel />
-      </div>
+      </footer>
     </div>
   );
 }
