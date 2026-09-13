@@ -109,6 +109,12 @@ export function useRadarRenderer(canvasRef: RefObject<HTMLCanvasElement>) {
           adapterName: renderer.adapterName,
           backend: renderer.backend,
         }));
+        // Diagnostic breadcrumb (not user-facing UI, which already shows
+        // this in the top bar) -- on desktop this is forwarded into the
+        // native log file via `attachDesktopLogging`, giving S10's
+        // "GPU/backend reporting" requirement a real on-disk record, not
+        // just a transient status line. Harmless in a browser tab.
+        console.info(`[radar] GPU ready: adapter="${renderer.adapterName}" backend="${renderer.backend}"`);
       } catch (err) {
         if (cancelled) return;
         setState((s) => ({ ...s, status: "error", error: errMessage(err) }));

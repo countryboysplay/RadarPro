@@ -1,5 +1,51 @@
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { useRainbowApiKey } from "../rainbow/useRainbowApiKey";
+import { getDesktopDiagnostics, isDesktop, type DesktopDiagnostics } from "../platform/desktop";
+
+/**
+ * S10 desktop shell: read-only diagnostics (app/Tauri version, OS/arch,
+ * on-disk log file location) fetched from the native side's `get_diagnostics`
+ * command -- see `apps/desktop/src-tauri/src/lib.rs`. Renders nothing at
+ * all in a browser tab (`isDesktop()` false), so this is purely additive.
+ */
+function DesktopDiagnosticsPanel() {
+  const [diagnostics, setDiagnostics] = useState<DesktopDiagnostics | null>(null);
+
+  useEffect(() => {
+    if (!isDesktop()) return;
+    let cancelled = false;
+    getDesktopDiagnostics().then((d) => {
+      if (!cancelled) setDiagnostics(d);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (!isDesktop()) return null;
+
+  return (
+    <div className="settings-field" style={{ marginTop: "1em" }}>
+      <label>Desktop diagnostics</label>
+      {diagnostics ? (
+        <dl className="settings-field-note" style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "0.15em 0.6em", margin: 0 }}>
+          <dt>App version</dt>
+          <dd>{diagnostics.appVersion}</dd>
+          <dt>Tauri version</dt>
+          <dd>{diagnostics.tauriVersion}</dd>
+          <dt>OS / arch</dt>
+          <dd>
+            {diagnostics.os} / {diagnostics.arch}
+          </dd>
+          <dt>Log file</dt>
+          <dd>{diagnostics.logDir ? `${diagnostics.logDir}\\radarpro.log` : "(unavailable)"}</dd>
+        </dl>
+      ) : (
+        <p className="settings-field-note">loading…</p>
+      )}
+    </div>
+  );
+}
 
 /**
  * S09c Settings section: currently just the Rainbow API key field (the
@@ -56,6 +102,8 @@ export function SettingsPanel() {
         to remove it. A <code>VITE_RAINBOW_API_KEY</code> build-time env var, if set, is used as a fallback whenever
         this field is empty -- handy for a self-hosted/Docker setup.
       </p>
+
+      <DesktopDiagnosticsPanel />
     </div>
   );
 }

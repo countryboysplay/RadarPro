@@ -13,6 +13,7 @@ import "./App.css";
 import { MapView } from "./map/MapView";
 import { RADAR_CANVAS_SIZE, useRadarRenderer, type ProbeResult } from "./radar/useRadarRenderer";
 import { DEFAULT_SITE_ICAO, findSite, RADAR_SITES } from "./sites";
+import { loadPersistedDefaultSite, persistDefaultSite } from "./platform/desktop";
 import { type PollEvent } from "./scan/useScanPoller";
 import { useScanHistory } from "./scan/useScanHistory";
 import { InfoPanel } from "./ui/InfoPanel";
@@ -76,6 +77,38 @@ function describePollEvent(event: PollEvent): string {
 export default function App() {
   const [icao, setIcao] = useState(DEFAULT_SITE_ICAO);
   const site = findSite(icao) ?? RADAR_SITES[0];
+
+  // S10 desktop shell: restore the last-selected default radar site on
+  // launch. Resolves to `null` (no-op) in a plain browser tab -- see
+  // `platform/desktop.ts`'s doc comment -- so this has no effect on the
+  // standalone web app. Only overrides the built-in `DEFAULT_SITE_ICAO`
+  // if a persisted, still-valid site was actually found. `siteHydrated`
+  // gates the persist effect below so a slow initial load can never race
+  // with (and get clobbered by) an eager write of the just-mounted
+  // built-in default -- see this effect pair's combined doc comment.
+  const [siteHydrated, setSiteHydrated] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    loadPersistedDefaultSite().then((savedIcao) => {
+      if (cancelled) return;
+      if (savedIcao && findSite(savedIcao)) {
+        setIcao(savedIcao);
+      }
+      setSiteHydrated(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Persist every site change as the new default -- but only once the
+  // effect above has finished trying to load a previous one, so we never
+  // overwrite a saved site with the built-in default before we've had a
+  // chance to read it. No-op in a browser tab regardless.
+  useEffect(() => {
+    if (!siteHydrated) return;
+    persistDefaultSite(icao);
+  }, [icao, siteHydrated]);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const {

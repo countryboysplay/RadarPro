@@ -9,8 +9,19 @@ import react from "@vitejs/plugin-react";
 // configuration -- see `README.md` "Wasm build pipeline" for the full
 // explanation and where that generated output lives (`src/wasm/`, gitignored,
 // produced by `npm run build:wasm`).
+// `apps/desktop` (Tauri) proxies this dev server for `tauri dev` -- see
+// `apps/desktop/src-tauri/tauri.conf.json`'s `devUrl`. `server.port` +
+// `strictPort` pin the port Tauri expects instead of Vite silently picking
+// the next free one if 5173 is busy; `clearScreen: false` keeps Vite from
+// wiping Tauri's own CLI/Rust build output from the shared terminal. Both
+// are no-ops for the standalone `npm run dev` browser workflow.
 export default defineConfig({
   plugins: [react()],
+  clearScreen: false,
+  server: {
+    port: 5173,
+    strictPort: true,
+  },
   // MapLibre GL JS loads its tile-parsing code in a module Web Worker,
   // constructed internally via `new Worker(new URL(..., import.meta.url))`.
   // Vite's dev-server dependency pre-bundling (`optimizeDeps`) rewrites

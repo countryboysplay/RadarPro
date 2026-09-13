@@ -1,0 +1,40 @@
+[package]
+name = "radarpro-desktop"
+version = "0.1.0"
+description = "RadarPro desktop shell (Tauri) -- wraps apps/web's existing frontend in a native window. See Agent Context/context/stages/S10-desktop-beta.md."
+authors = ["RadarPro contributors"]
+license = "Apache-2.0"
+repository = ""
+edition = "2021"
+rust-version = "1.77.2"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+# This crate is intentionally its OWN Cargo workspace (empty `[workspace]`
+# below), not a member of the root RadarPro workspace's `Cargo.toml`. Tauri
+# pulls in a large, platform-specific dependency graph (WebView2 bindings on
+# Windows, GTK/WebKitGTK on Linux, etc.) that has nothing to do with the
+# core radar/forecast crates and must not affect their build, clippy, or CI
+# behavior -- see GLOBAL_CONTRACT's architecture rules and this stage's
+# "Windows only for this task" scope note. Without this empty table, Cargo
+# would walk up from here and silently fold this crate into the root
+# workspace the first time anyone ran a workspace-wide command from
+# `C:\RadarPro`.
+[workspace]
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+name = "app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.6.3", features = [] }
+
+[dependencies]
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+log = "0.4"
+tauri = { version = "2.11.3", features = [] }
+tauri-plugin-log = "2"
+tauri-plugin-store = "2"
