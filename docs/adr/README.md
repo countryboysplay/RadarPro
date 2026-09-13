@@ -14,3 +14,4 @@ This index lists RadarPro's ADRs in order. See `Agent Context/templates/ADR_TEMP
 | [0008](0008-live-data-pipeline-architecture.md) | Live NEXRAD Level II data pipeline architecture (`crates/radar-cache`) | Accepted |
 | [0009](0009-original-color-table-format.md) | An original, documented, user-editable color-table format | Accepted |
 | [0010](0010-nws-alert-lifecycle-reconciliation.md) | Poll-race-safe NWS alert lifecycle reconciliation (`crates/weather-alerts`) | Accepted |
+| [0011](0011-gefs-grib2-crate-selection-and-limitations.md) | `grib` crate selection for GEFS GRIB2 decoding, and its documented limitations | Accepted |
