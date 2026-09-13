@@ -149,6 +149,23 @@ pub enum GefsError {
 
     #[error("operation was cancelled")]
     Cancelled,
+
+    /// GEFS is an ensemble provider (`ModelMetadata::is_ensemble == true`);
+    /// a [`forecast_core::request::FieldRequest`] with no ensemble
+    /// statistic named is a caller error, not something this provider can
+    /// silently default.
+    #[error(
+        "provider-gefs is an ensemble provider; a FieldRequest must name a specific \
+         EnsembleStatistic (control, a member, or the mean)"
+    )]
+    EnsembleStatisticRequired,
+
+    /// GEFS does not publish this ensemble statistic (e.g. a named
+    /// percentile -- S08 stage file: "GEFS does not natively provide
+    /// percentiles like p10/p25/p50/p75/p90; do not invent an
+    /// interpolation scheme to fake them").
+    #[error("provider-gefs does not publish the requested ensemble statistic: {requested}")]
+    UnsupportedEnsembleStatistic { requested: String },
 }
 
 impl GefsError {

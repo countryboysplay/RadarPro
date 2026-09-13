@@ -151,11 +151,11 @@ impl GefsClient {
         forecast_hour: ForecastHour,
         lookback_days: u32,
     ) -> Result<RunReference, GefsError> {
-        let (mut year, mut month, mut day) = crate::time::today_utc_date();
+        let (mut year, mut month, mut day) = forecast_core::time::today_utc_date();
 
         for day_offset in 0..=lookback_days {
             if day_offset > 0 {
-                let (y, m, d) = crate::time::civil_date_minus_days(year, month, day, 1);
+                let (y, m, d) = forecast_core::time::civil_date_minus_days(year, month, day, 1);
                 year = y;
                 month = m;
                 day = d;

@@ -16,75 +16,24 @@
 //! test's own assertions (i.e. discovery *did* succeed) is a genuine
 //! correctness bug, not a flake, if it then fails.
 
-use provider_gefs::client::GefsClient;
-use provider_gefs::decode::decode_field;
-use provider_gefs::ensemble::EnsembleIdentity;
-use provider_gefs::field::CanonicalField;
-use provider_gefs::idx;
-use provider_gefs::keys::{ForecastHour, MemberKey, ProductGroup, RunReference};
-
-async fn fetch_and_decode(
-    client: &GefsClient,
-    run: RunReference,
-    member: MemberKey,
-) -> Result<provider_gefs::field::GriddedField, String> {
-    let field = CanonicalField::Temperature2m;
-    let key =
-        provider_gefs::keys::object_key(run, member, ProductGroup::PGRB2S_P25, ForecastHour(0));
-    let idx_key =
-        provider_gefs::keys::idx_key(run, member, ProductGroup::PGRB2S_P25, ForecastHour(0));
-
-    let idx_text = client
-        .fetch_idx_text(&idx_key)
-        .await
-        .map_err(|e| format!("fetch .idx for {member}: {e}"))?;
-    let entries = idx::parse_idx(&idx_key, &idx_text).map_err(|e| format!("parse .idx: {e}"))?;
-    let position = entries
-        .iter()
-        .position(|e| e.variable == field.idx_variable() && e.level == field.idx_level())
-        .ok_or_else(|| {
-            format!(
-                "{} / {} not found in .idx for {member}",
-                field.idx_variable(),
-                field.idx_level()
-            )
-        })?;
-
-    let content_length = if position + 1 == entries.len() {
-        Some(
-            client
-                .content_length(&key)
-                .await
-                .map_err(|e| format!("HEAD {member}: {e}"))?,
-        )
-    } else {
-        None
-    };
-    let (start, end) = idx::byte_range(&key, &entries, position, content_length)
-        .map_err(|e| format!("byte_range: {e}"))?;
-
-    let bytes = client
-        .fetch_byte_range(&key, start, end)
-        .await
-        .map_err(|e| format!("range GET {member}: {e}"))?;
-
-    decode_field(&key, &bytes, field).map_err(|e| format!("decode {member}: {e}"))
-}
+use forecast_core::ensemble::EnsembleStatistic;
+use forecast_core::provider::ForecastProvider;
+use forecast_core::request::FieldRequest;
+use forecast_core::variable::ForecastVariable;
+use provider_gefs::keys::{ForecastHour, MemberKey, ProductGroup};
+use provider_gefs::GefsProvider;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn discovers_fetches_and_decodes_real_control_member_perturbed_member_and_mean() {
-    let client = match GefsClient::default_bucket() {
-        Ok(c) => c,
+    let provider = match GefsProvider::default_bucket() {
+        Ok(p) => p,
         Err(e) => {
             println!("SKIP live_network test: failed to build HTTP client: {e}");
             return;
         }
     };
 
-    let Ok(run) = client
-        .find_recent_run(ProductGroup::PGRB2S_P25, ForecastHour(0), 2)
-        .await
-    else {
+    let Ok(run) = provider.discover_latest_run(2).await else {
         println!(
             "SKIP live_network test: could not find any published GEFS run in the last two \
              days -- no network access, NOAA's service unavailable, or a genuine bucket-layout \
@@ -95,13 +44,15 @@ async fn discovers_fetches_and_decodes_real_control_member_perturbed_member_and_
     println!("Using real published run: {run}");
 
     // --- Control member ---
-    match fetch_and_decode(&client, run, MemberKey::Control).await {
+    let control_request = FieldRequest::new(ForecastVariable::Temperature2m, 0)
+        .with_ensemble(EnsembleStatistic::Control);
+    match provider.fetch_field(&run, &control_request).await {
         Ok(field) => {
-            assert_eq!(field.ensemble, EnsembleIdentity::Control);
+            assert_eq!(field.ensemble, Some(EnsembleStatistic::Control));
             assert_eq!(field.forecast_lead_hours, 0);
             assert_eq!(field.valid_time, field.run_time);
-            assert_eq!(field.geometry.width, 1440);
-            assert_eq!(field.geometry.height, 721);
+            assert_eq!(field.geometry.width(), 1440);
+            assert_eq!(field.geometry.height(), 721);
             let min = field.values.iter().cloned().fold(f32::INFINITY, f32::min);
             let max = field
                 .values
@@ -120,21 +71,25 @@ async fn discovers_fetches_and_decodes_real_control_member_perturbed_member_and_
     }
 
     // --- A perturbed member ---
-    match fetch_and_decode(&client, run, MemberKey::Perturbed(1)).await {
-        Ok(field) => assert_eq!(field.ensemble, EnsembleIdentity::Member(1)),
+    let member1_request = FieldRequest::new(ForecastVariable::Temperature2m, 0)
+        .with_ensemble(EnsembleStatistic::Member(1));
+    match provider.fetch_field(&run, &member1_request).await {
+        Ok(field) => assert_eq!(field.ensemble, Some(EnsembleStatistic::Member(1))),
         Err(e) => println!("SKIP perturbed-member assertions: {e}"),
     }
 
     // --- Ensemble mean ---
-    match fetch_and_decode(&client, run, MemberKey::Mean).await {
-        Ok(field) => assert_eq!(field.ensemble, EnsembleIdentity::Mean),
+    let mean_request = FieldRequest::new(ForecastVariable::Temperature2m, 0)
+        .with_ensemble(EnsembleStatistic::Mean);
+    match provider.fetch_field(&run, &mean_request).await {
+        Ok(field) => assert_eq!(field.ensemble, Some(EnsembleStatistic::Mean)),
         Err(e) => println!("SKIP ensemble-mean assertions: {e}"),
     }
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_known_absent_member_fails_clearly_never_panics() {
-    let client = match GefsClient::default_bucket() {
+    let client = match provider_gefs::client::GefsClient::default_bucket() {
         Ok(c) => c,
         Err(e) => {
             println!("SKIP live_network test: failed to build HTTP client: {e}");
@@ -174,4 +129,31 @@ async fn a_known_absent_member_fails_clearly_never_panics() {
              assumption both need revisiting"
         ),
     }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_request_with_no_ensemble_statistic_fails_clearly_never_panics() {
+    let provider = match GefsProvider::default_bucket() {
+        Ok(p) => p,
+        Err(e) => {
+            println!("SKIP live_network test: failed to build HTTP client: {e}");
+            return;
+        }
+    };
+    let Ok(run) = provider.discover_latest_run(2).await else {
+        println!("SKIP live_network test: could not find any published GEFS run.");
+        return;
+    };
+
+    // GEFS is an ensemble provider -- a request naming no statistic at all
+    // must be rejected, not silently defaulted to some member.
+    let request = FieldRequest::new(ForecastVariable::Temperature2m, 0);
+    let err = provider
+        .fetch_field(&run, &request)
+        .await
+        .expect_err("an ensemble provider must reject a request naming no ensemble statistic");
+    assert!(matches!(
+        err,
+        provider_gefs::GefsError::EnsembleStatisticRequired
+    ));
 }

@@ -4,9 +4,15 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
-description = "S07: NOAA GEFS ensemble forecast proof of concept -- moves one real field (2m temperature) end-to-end from the anonymous noaa-gefs-pds S3 bucket to a rendered GPU image, proving the GRIB2/ensemble pipeline works. Not a general forecast framework (see the S07 stage file's Critical rule)."
+description = "S07/S08: NOAA GEFS ensemble forecast provider -- moves real fields end-to-end from the anonymous noaa-gefs-pds S3 bucket to a rendered GPU image. Implements forecast-core's ForecastProvider trait (S08); keeps everything genuinely GEFS-specific (bucket/key layout, .idx parsing, the ensemble-identity byte-offset extraction, GRIB2 decode wiring) here."
 
 [dependencies]
+# The shared, provider-agnostic forecast vocabulary and GPU grid renderer
+# (S08) -- this crate no longer defines its own `GriddedField`/`GridGeometry`/
+# `EnsembleIdentity`/GPU pipeline; see `docs/adr/0012-hrrr-lambert-conformal-grid.md`
+# and `forecast-core`'s own module docs for why those moved.
+forecast-core = { path = "../forecast-core" }
+
 # GRIB2 decode. `default-features = false`: the `grib` crate's default
 # features (`jpeg2000-unpack-with-openjpeg`, `ccsds-unpack-with-libaec`,
 # `gridpoints-proj`) each pull in a *C/C++* dependency (openjpeg-sys,
@@ -48,17 +54,9 @@ tokio = { version = "=1.47.1", features = ["rt", "time", "macros"] }
 # version `radar-cache` already uses for the same job.
 quick-xml = "=0.42.0"
 
-# GPU rendering: the regular lat/lon grid gets its own simple textured-quad
-# pipeline (see `src/shaders/gefs_grid.wgsl`) rather than being forced
-# through `radar-render`'s polar-radial lookup-texture machinery (per
-# `ARCHITECTURE.md`: "Do not force polar radar and gridded model data into
-# the same geometry representation"). `radar-render`'s palette LUT
-# machinery (a generic value->RGBA8 ramp, nothing polar-specific) *is*
-# reused directly through its public API rather than duplicated.
+# Only used by `src/bin/harness.rs`, for `clip_to_world` (the camera math
+# `forecast_core::gpu::render_forecast_grid` itself needs as an argument).
 radar-render = { path = "../radar-render" }
-wgpu = "=30.0.1"
-bytemuck = { version = "=1.25.2", features = ["derive"] }
-pollster = "=1.0.1"
 
 # Only used by `src/bin/harness.rs`, to save one rendered frame as a PNG so
 # a human (or this task's own verification) can confirm the render is

@@ -1,19 +1,18 @@
-//! A small, dependency-free UTC timestamp, local to this crate.
+//! A small, dependency-free UTC timestamp shared by every forecast provider.
 //!
-//! `radar-types::Timestamp` already does something similar for NEXRAD, but
-//! is documented as part of that crate's polar radar domain model and this
-//! crate is explicitly not allowed to reach into `radar-types`
-//! (GLOBAL_CONTRACT: "provider-specific names and formats stop at provider
-//! boundaries"; this task's own constraints: do not modify
-//! `nexrad-level2`/`radar-types`/`weather-alerts`, and CLAUDE.md's "prefer a
-//! second concrete implementation before generalizing" -- a shared
-//! timestamp utility crate can be extracted later if a third caller ever
-//! needs one). Duplicating this well-known, ~15-line, public-domain
-//! calendar algorithm is cheaper and cleaner than an unwanted cross-crate
-//! dependency for one utility type.
+//! Originally written for `provider-gefs` alone (S07), which documented it
+//! as "a shared timestamp utility crate can be extracted later if a third
+//! caller ever needs one" -- S08's `provider-hrrr` is that third caller
+//! (`forecast-core` itself is the second), so this is moved here verbatim
+//! rather than duplicated again. `radar-types::Timestamp` does something
+//! similar for NEXRAD but is documented as part of that crate's polar radar
+//! domain model, and GLOBAL_CONTRACT's "provider-specific names and formats
+//! stop at provider boundaries" argues for keeping the forecast domain's own
+//! timestamp type separate from the polar radar one regardless.
 //!
-//! GEFS's own time fields (`Section1::ref_time_unchecked` reference/run
-//! time, `ProdDefinition::forecast_time` lead time) are already whole
+//! Every real GRIB2 time field this crate's providers decode (GEFS's
+//! `Section1::ref_time_unchecked` reference/run time, `ProdDefinition::
+//! forecast_time` lead time; HRRR's identical shape) is already whole
 //! calendar fields (year/month/day/hour/minute/second) plus a whole-hour
 //! lead time -- there is never a sub-second or fractional-day quantity to
 //! represent, so this type stores civil UTC fields directly rather than
@@ -84,10 +83,9 @@ impl UtcTimestamp {
 }
 
 /// Today's UTC calendar date (year, month, day), from the system clock.
-/// Used only by run discovery (`client::GefsClient::find_recent_run`) to
-/// know which dates to try -- never used to compute or validate a
-/// decoded field's own metadata, which always comes from the GRIB2
-/// message itself.
+/// Used only by a provider's own "find the most recently published run"
+/// discovery logic -- never used to compute or validate a decoded field's
+/// own metadata, which always comes from the decoded message itself.
 pub fn today_utc_date() -> (u16, u8, u8) {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -114,9 +112,7 @@ impl fmt::Display for UtcTimestamp {
 
 /// Howard Hinnant's `days_from_civil`/`civil_from_days` algorithms
 /// (<http://howardhinnant.github.io/date_algorithms.html>), public-domain,
-/// well-tested proleptic-Gregorian calendar arithmetic -- the same
-/// algorithm `radar-types::civil_from_days` uses (see this module's doc
-/// comment for why it is duplicated here rather than shared).
+/// well-tested proleptic-Gregorian calendar arithmetic.
 fn days_from_civil(y: i64, m: u32, d: u32) -> i64 {
     let y = if m <= 2 { y - 1 } else { y };
     let era = if y >= 0 { y } else { y - 399 } / 400;
@@ -171,7 +167,7 @@ mod tests {
 
     #[test]
     fn plus_hours_handles_a_real_gefs_extended_lead_time() {
-        // A real forecast hour seen in the live bucket (f240 = 10 days).
+        // A real forecast hour seen in the live GEFS bucket (f240 = 10 days).
         let run = UtcTimestamp::new(2026, 9, 12, 12, 0, 0);
         let valid = run.plus_hours(240);
         assert_eq!(valid, UtcTimestamp::new(2026, 9, 22, 12, 0, 0));

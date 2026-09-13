@@ -1,0 +1,59 @@
+[package]
+name = "provider-hrrr"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "S08: NOAA HRRR forecast provider -- the second concrete ForecastProvider implementation, validating forecast-core's abstraction against a real deterministic, ~3km CONUS, Lambert-conformal-grid model (as opposed to GEFS's ensemble, global, regular-lat-lon one)."
+
+[dependencies]
+forecast-core = { path = "../forecast-core" }
+
+# Same GRIB2 decode approach as `provider-gefs` (ADR-0011), `default-features
+# = false` for the same C/C++-toolchain-avoidance reason. HRRR's real grid
+# (WMO GRIB2 Grid Definition Template 3.30, Lambert Conformal Conic --
+# confirmed empirically, see `docs/adr/0012-hrrr-lambert-conformal-grid.md`)
+# is handled by `grib`'s own built-in, pure-Rust Lambert Conformal
+# implementation (`src/grid/lambert.rs`'s `#[cfg(not(feature =
+# "gridpoints-proj"))]` path) -- confirmed by reading `grib` 0.18.5's own
+# source and by compiling and running this crate's decode path against a
+# real, live-fetched HRRR message with `default-features = false`, with no
+# PROJ/CMake/C-toolchain dependency pulled in.
+grib = { version = "=0.18.5", default-features = false }
+
+thiserror = "=2.0.20"
+
+# Same pinned versions/features `provider-gefs` already uses for the same
+# jobs (anonymous S3 HTTP access, async runtime, XML listing parsing).
+reqwest = { version = "=0.13.5", default-features = false, features = [
+    "rustls-no-provider",
+] }
+rustls = { version = "=0.23.35", default-features = false, features = [
+    "ring",
+    "std",
+    "tls12",
+] }
+tokio = { version = "=1.47.1", features = ["rt", "time", "macros"] }
+quick-xml = "=0.42.0"
+
+# Only used by `src/bin/harness.rs`, to save one rendered frame as a PNG.
+image = { version = "=0.25.10", default-features = false, features = ["png"] }
+
+# Only used by `src/bin/harness.rs`, for `clip_to_world` (the camera math
+# `forecast_core::gpu::render_forecast_grid` itself needs as an argument).
+radar-render = { path = "../radar-render" }
+
+[dev-dependencies]
+tokio = { version = "=1.47.1", features = ["rt-multi-thread"] }
+
+# Dev-only: S08 Part D's cross-provider proof (`tests/cross_provider_render.rs`)
+# decodes one real field from each provider and renders both through the
+# exact same `forecast-core` call path -- this is the only place in the
+# workspace that depends on both provider crates at once, and it is
+# deliberately a dev-dependency (test-only), not a normal one: neither
+# provider crate depends on the other for anything it actually does.
+provider-gefs = { path = "../provider-gefs" }
+
+[[bin]]
+name = "provider-hrrr-harness"
+path = "src/bin/harness.rs"

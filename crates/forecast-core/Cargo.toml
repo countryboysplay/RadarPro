@@ -1,0 +1,25 @@
+[package]
+name = "forecast-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "S08: generic gridded-forecast-field abstraction (ForecastProvider/ForecastGrid/EnsembleStatistic/etc.) extracted from S07's provider-gefs, validated by a second concrete provider (provider-hrrr). Owns the provider-agnostic GPU grid renderer; provider-specific bucket/key/.idx/GRIB2-decode wiring stays in each provider crate."
+
+[dependencies]
+# The provider-agnostic GPU grid-render pipeline (moved here from
+# provider-gefs's own `gpu.rs`/`render.rs`/`shaders/gefs_grid.wgsl`, S08).
+# `radar-render`'s palette LUT machinery and generic GPU plumbing
+# (`GpuContext`, `RenderTarget`, `render_frame`, `read_rgba8`, palette
+# texture upload) are reused directly through its public API rather than
+# duplicated a third time (once for `radar-render` itself, once here) --
+# see `src/gpu.rs`'s module doc.
+radar-render = { path = "../radar-render" }
+wgpu = "=30.0.1"
+bytemuck = { version = "=1.25.2", features = ["derive"] }
+
+# Used only by `src/gpu_tests.rs` (`#[cfg(test)]`) to block on
+# `GpuContext::request()` -- listed as a normal dependency rather than a
+# dev-dependency to match `provider-gefs`'s own established pattern for the
+# exact same use.
+pollster = "=1.0.1"

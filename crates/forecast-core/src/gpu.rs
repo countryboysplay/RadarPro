@@ -1,31 +1,35 @@
 //! `wgpu`-dependent code for this crate's grid renderer: GPU resource
-//! upload, the render pipeline for `shaders/gefs_grid.wgsl`, and building
-//! this crate's own bind group.
+//! upload, the render pipeline for `shaders/forecast_grid.wgsl`, and
+//! building this crate's own bind group. Moved here from S07's
+//! `provider-gefs::gpu` and generalized: this module knows nothing about
+//! any specific provider, only about [`crate::grid::GridGeometry`]'s two
+//! projection kinds (see `shaders/forecast_grid.wgsl`'s module doc for why
+//! that is a projection-kind branch, not a provider-identity branch).
 //!
 //! Everything genuinely generic is reused directly from `radar-render`'s
 //! public API rather than duplicated: [`radar_render::gpu::GpuContext`]
 //! (adapter/device acquisition), [`radar_render::gpu::upload_palette`]/
 //! [`radar_render::gpu::PaletteGpuResources`]/[`radar_render::gpu::update_palette`]
-//! (the palette LUT texture -- nothing about it is polar-radar-specific),
-//! and [`radar_render::gpu::create_render_target`]/
+//! (the palette LUT texture), and [`radar_render::gpu::create_render_target`]/
 //! [`radar_render::gpu::render_frame`]/[`radar_render::gpu::wait_for_gpu`]/
 //! [`radar_render::gpu::read_rgba8`]/[`radar_render::gpu::RENDER_TARGET_FORMAT`]
 //! (off-screen target + draw + readback -- generic over any pipeline/bind
 //! group). Only the grid *value* texture, this crate's own `Uniforms`
 //! layout, and the pipeline/bind-group-layout tied to
-//! `shaders/gefs_grid.wgsl`'s specific bindings are new here -- per
-//! ARCHITECTURE.md, a regular lat/lon grid is not forced through
-//! `radar-render`'s polar-radial lookup-texture machinery.
+//! `shaders/forecast_grid.wgsl`'s specific bindings are defined here.
 
+use crate::grid::{ForecastGrid, GridGeometry};
 use radar_render::camera::Mat4;
 use wgpu::util::DeviceExt;
 
-const SHADER_SOURCE: &str = include_str!("shaders/gefs_grid.wgsl");
+const SHADER_SOURCE: &str = include_str!("shaders/forecast_grid.wgsl");
+
+const PROJECTION_KIND_REGULAR_LAT_LON: u32 = 0;
+const PROJECTION_KIND_LAMBERT_CONFORMAL: u32 = 1;
 
 /// GPU-resident form of a decoded grid's values: a single-channel 32-bit
 /// float 2D texture, `width` x `height`, row-major (matching
-/// [`crate::field::GriddedField::values`]'s own layout exactly -- no
-/// reshaping beyond the flat-`Vec` -> 2D-texture reinterpretation).
+/// [`crate::grid::ForecastGrid::values`]'s own layout exactly).
 pub struct GridGpuResources {
     pub texture: wgpu::Texture,
     pub view: wgpu::TextureView,
@@ -34,8 +38,7 @@ pub struct GridGpuResources {
 
 /// Upload a display-unit value array (e.g. [`crate::render::to_display_celsius`]'s
 /// output) as an `R32Float` 2D texture. `values.len()` must equal
-/// `width * height` (the same invariant [`crate::decode::decode_field`]
-/// already guarantees for a [`crate::field::GriddedField`]).
+/// `width * height`.
 pub fn upload_grid(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
@@ -50,7 +53,7 @@ pub fn upload_grid(
     );
 
     let texture = device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("provider-gefs grid value texture"),
+        label: Some("forecast-core grid value texture"),
         size: wgpu::Extent3d {
             width,
             height,
@@ -91,26 +94,92 @@ pub fn upload_grid(
     }
 }
 
-/// Mirrors `shaders/gefs_grid.wgsl`'s `Uniforms` struct field-for-field.
-/// `#[repr(C)]` with only 4-byte-aligned fields after the matrix keeps
-/// this struct's Rust layout identical to WGSL's; the total size (96
-/// bytes) is already a multiple of 16, so no explicit tail padding is
-/// needed (verified against `wgpu`'s validation: a uniform buffer struct
-/// whose size is not a multiple of its largest member's alignment is
-/// rejected at pipeline-creation time, which would fail this crate's own
-/// tests/harness immediately rather than silently misrendering).
+/// Mirrors `shaders/forecast_grid.wgsl`'s `Uniforms` struct field-for-field.
+/// `#[repr(C)]` with only 4-byte-aligned fields after the matrix keeps this
+/// struct's Rust layout identical to WGSL's; the total size (144 bytes) is
+/// already a multiple of 16.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct GpuUniforms {
     pub clip_to_world: Mat4,
+    pub projection_kind: u32,
+    pub grid_width: u32,
+    pub grid_height: u32,
+    pub _pad0: u32,
     pub origin_lon_deg: f32,
     pub origin_lat_deg: f32,
     pub lon_step_deg: f32,
     pub lat_step_deg: f32,
-    pub grid_width: u32,
-    pub grid_height: u32,
+    pub lcc_lam0_rad: f32,
+    pub lcc_n: f32,
+    pub lcc_f_times_r: f32,
+    pub lcc_rho0: f32,
+    pub lcc_origin_x_m: f32,
+    pub lcc_origin_y_m: f32,
+    pub lcc_dx_m: f32,
+    pub lcc_dy_m: f32,
     pub palette_min: f32,
     pub palette_max: f32,
+    pub _pad1: [f32; 2],
+}
+
+impl GpuUniforms {
+    /// Build the uniform payload for `geometry`, filling in only the
+    /// fields that matter for its actual projection kind (the other
+    /// branch's fields are left zeroed) -- this is the one place that
+    /// translates a provider-agnostic [`GridGeometry`] into the shader's
+    /// flat, data-driven uniform layout, used identically regardless of
+    /// which provider produced the grid.
+    pub fn for_geometry(
+        clip_to_world: Mat4,
+        geometry: &GridGeometry,
+        palette_min: f32,
+        palette_max: f32,
+    ) -> Self {
+        let mut uniforms = GpuUniforms {
+            clip_to_world,
+            projection_kind: PROJECTION_KIND_REGULAR_LAT_LON,
+            grid_width: geometry.width(),
+            grid_height: geometry.height(),
+            _pad0: 0,
+            origin_lon_deg: 0.0,
+            origin_lat_deg: 0.0,
+            lon_step_deg: 0.0,
+            lat_step_deg: 0.0,
+            lcc_lam0_rad: 0.0,
+            lcc_n: 0.0,
+            lcc_f_times_r: 0.0,
+            lcc_rho0: 0.0,
+            lcc_origin_x_m: 0.0,
+            lcc_origin_y_m: 0.0,
+            lcc_dx_m: 0.0,
+            lcc_dy_m: 0.0,
+            palette_min,
+            palette_max,
+            _pad1: [0.0, 0.0],
+        };
+        match geometry {
+            GridGeometry::RegularLatLon(g) => {
+                uniforms.projection_kind = PROJECTION_KIND_REGULAR_LAT_LON;
+                uniforms.origin_lon_deg = g.origin_lon_deg as f32;
+                uniforms.origin_lat_deg = g.origin_lat_deg as f32;
+                uniforms.lon_step_deg = g.lon_step_deg as f32;
+                uniforms.lat_step_deg = g.lat_step_deg as f32;
+            }
+            GridGeometry::LambertConformal(g) => {
+                uniforms.projection_kind = PROJECTION_KIND_LAMBERT_CONFORMAL;
+                uniforms.lcc_lam0_rad = g.projection.lam0_rad() as f32;
+                uniforms.lcc_n = g.projection.n() as f32;
+                uniforms.lcc_f_times_r = g.projection.f_times_r() as f32;
+                uniforms.lcc_rho0 = g.projection.rho0() as f32;
+                uniforms.lcc_origin_x_m = g.origin_x_m as f32;
+                uniforms.lcc_origin_y_m = g.origin_y_m as f32;
+                uniforms.lcc_dx_m = g.dx_m as f32;
+                uniforms.lcc_dy_m = g.dy_m as f32;
+            }
+        }
+        uniforms
+    }
 }
 
 pub struct UniformsGpu {
@@ -120,7 +189,7 @@ pub struct UniformsGpu {
 impl UniformsGpu {
     pub fn new(device: &wgpu::Device, initial: GpuUniforms) -> Self {
         let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("provider-gefs uniforms"),
+            label: Some("forecast-core uniforms"),
             contents: bytemuck::bytes_of(&initial),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
@@ -132,8 +201,8 @@ impl UniformsGpu {
     }
 }
 
-/// The render pipeline for `shaders/gefs_grid.wgsl`, plus the bind group
-/// layout it expects: uniforms, grid value texture, palette texture,
+/// The render pipeline for `shaders/forecast_grid.wgsl`, plus the bind
+/// group layout it expects: uniforms, grid value texture, palette texture,
 /// palette sampler -- bindings 0-3 in that order.
 pub struct GridPipeline {
     pub pipeline: wgpu::RenderPipeline,
@@ -142,12 +211,12 @@ pub struct GridPipeline {
 
 pub fn create_pipeline(device: &wgpu::Device, target_format: wgpu::TextureFormat) -> GridPipeline {
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some("provider-gefs grid shader"),
+        label: Some("forecast-core grid shader"),
         source: wgpu::ShaderSource::Wgsl(SHADER_SOURCE.into()),
     });
 
     let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-        label: Some("provider-gefs grid bind group layout"),
+        label: Some("forecast-core grid bind group layout"),
         entries: &[
             wgpu::BindGroupLayoutEntry {
                 binding: 0,
@@ -164,9 +233,7 @@ pub fn create_pipeline(device: &wgpu::Device, target_format: wgpu::TextureFormat
                 visibility: wgpu::ShaderStages::FRAGMENT,
                 // R32Float is not filterable on every backend without an
                 // extra feature; this shader only ever uses `textureLoad`
-                // (nearest, integer-indexed -- no interpolation between
-                // grid cells), so `filterable: false` is both correct and
-                // requires no extra `wgpu::Features`.
+                // (nearest, integer-indexed).
                 ty: wgpu::BindingType::Texture {
                     sample_type: wgpu::TextureSampleType::Float { filterable: false },
                     view_dimension: wgpu::TextureViewDimension::D2,
@@ -194,13 +261,13 @@ pub fn create_pipeline(device: &wgpu::Device, target_format: wgpu::TextureFormat
     });
 
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-        label: Some("provider-gefs grid pipeline layout"),
+        label: Some("forecast-core grid pipeline layout"),
         bind_group_layouts: &[Some(&bind_group_layout)],
         immediate_size: 0,
     });
 
     let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some("provider-gefs grid pipeline"),
+        label: Some("forecast-core grid pipeline"),
         layout: Some(&pipeline_layout),
         vertex: wgpu::VertexState {
             module: &shader,
@@ -239,7 +306,7 @@ pub fn create_bind_group(
     palette: &radar_render::gpu::PaletteGpuResources,
 ) -> wgpu::BindGroup {
     device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: Some("provider-gefs grid bind group"),
+        label: Some("forecast-core grid bind group"),
         layout,
         entries: &[
             wgpu::BindGroupEntry {
@@ -262,6 +329,68 @@ pub fn create_bind_group(
     })
 }
 
+/// The single, provider-agnostic render call path: upload `grid`'s already
+/// unit-converted `display_values` and `palette_lut`, build the pipeline
+/// and bind group from `grid.geometry` alone (no branch on `grid.provider_id`
+/// or `grid.variable` anywhere in this function), draw one full-screen
+/// frame, and read it back as RGBA8. Returns `None` if no GPU adapter is
+/// available.
+///
+/// This is the literal shared call path the S08 stage's exit criteria and
+/// this crate's own cross-provider test (`tests/cross_provider_render.rs`
+/// equivalent, see `provider-hrrr`'s and `provider-gefs`'s harnesses) rely
+/// on: called once for a GEFS-decoded [`ForecastGrid`] and once for an
+/// HRRR-decoded one, with the exact same code.
+#[allow(clippy::too_many_arguments)]
+pub async fn render_forecast_grid(
+    grid: &ForecastGrid,
+    display_values: &[f32],
+    palette_lut: &[[u8; 4]],
+    palette_min: f32,
+    palette_max: f32,
+    clip_to_world: Mat4,
+    render_width: u32,
+    render_height: u32,
+) -> Option<Vec<u8>> {
+    let ctx = radar_render::gpu::GpuContext::request().await?;
+
+    let grid_gpu = upload_grid(
+        &ctx.device,
+        &ctx.queue,
+        grid.geometry.width(),
+        grid.geometry.height(),
+        display_values,
+    );
+    let palette_gpu = radar_render::gpu::upload_palette(&ctx.device, &ctx.queue, palette_lut);
+    let pipeline = create_pipeline(&ctx.device, radar_render::gpu::RENDER_TARGET_FORMAT);
+    let uniforms_gpu = UniformsGpu::new(
+        &ctx.device,
+        GpuUniforms::for_geometry(clip_to_world, &grid.geometry, palette_min, palette_max),
+    );
+    let bind_group = create_bind_group(
+        &ctx.device,
+        &pipeline.bind_group_layout,
+        &uniforms_gpu,
+        &grid_gpu,
+        &palette_gpu,
+    );
+    let target = radar_render::gpu::create_render_target(&ctx.device, render_width, render_height);
+
+    radar_render::gpu::render_frame(
+        &ctx.device,
+        &ctx.queue,
+        &pipeline.pipeline,
+        &bind_group,
+        &target,
+    );
+    radar_render::gpu::wait_for_gpu(&ctx.device);
+    Some(radar_render::gpu::read_rgba8(
+        &ctx.device,
+        &ctx.queue,
+        &target,
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -270,9 +399,7 @@ mod tests {
     fn gpu_uniforms_size_is_a_multiple_of_16() {
         // WGSL uniform-buffer struct layout requires the total size be a
         // multiple of the largest member's alignment (16, from
-        // `mat4x4<f32>`) -- checked here so a future field addition that
-        // breaks this is caught by `cargo test` (no GPU needed) rather
-        // than only at pipeline-creation time on a machine with a GPU.
+        // `mat4x4<f32>`).
         assert_eq!(std::mem::size_of::<GpuUniforms>() % 16, 0);
     }
 }

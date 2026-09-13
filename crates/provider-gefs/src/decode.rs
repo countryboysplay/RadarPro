@@ -1,6 +1,6 @@
 //! Decode one fetched GRIB2 message (already sparse-fetched down to a
-//! single field via [`crate::idx`]/[`crate::client`]) into this crate's
-//! canonical [`GriddedField`].
+//! single field via [`crate::idx`]/[`crate::client`]) into
+//! `forecast_core::grid::ForecastGrid`.
 //!
 //! # Cross-checking, not trusting, the filename
 //!
@@ -25,8 +25,9 @@
 
 use crate::ensemble;
 use crate::error::GefsError;
-use crate::field::{CanonicalField, GridGeometry, GriddedField};
-use crate::time::UtcTimestamp;
+use forecast_core::grid::{ForecastGrid, GridGeometry, NativeVariableMetadata, RegularLatLonGrid};
+use forecast_core::time::UtcTimestamp;
+use forecast_core::variable::ForecastVariable;
 use grib::{Code::Name, GridDefinitionTemplateValues};
 
 /// GRIB2 Grid Definition Template 3.0 ("Latitude/Longitude (or equidistant
@@ -42,14 +43,35 @@ const GRID_TEMPLATE_REGULAR_LAT_LON: u16 = 0;
 /// every real message decoded during this stage's verification).
 const COORD_SCALE: f64 = 1e-6;
 
+/// This crate's own mapping from a canonical [`ForecastVariable`] to the
+/// exact `.idx` `VARNAME`/`LEVEL` and GRIB2 native unit GEFS's real `.idx`
+/// files use for it. Only `Temperature2m` is supported as of this stage
+/// (S07's own "avoid premature abstractions" rule -- a second decoded
+/// variable is future work, not this stage's).
+pub fn idx_names(variable: ForecastVariable) -> Option<(&'static str, &'static str, &'static str)> {
+    match variable {
+        // (idx VARNAME, idx LEVEL, native unit)
+        ForecastVariable::Temperature2m => Some(("TMP", "2 m above ground", "K")),
+        _ => None,
+    }
+}
+
 /// Decode `bytes` (the exact byte range of one GRIB2 message, as fetched
-/// via [`crate::idx`]'s byte-range computation) into a [`GriddedField`] for
-/// `field`.
+/// via [`crate::idx`]'s byte-range computation) into a [`ForecastGrid`] for
+/// `variable`.
 pub fn decode_field(
     url: &str,
     bytes: &[u8],
-    field: CanonicalField,
-) -> Result<GriddedField, GefsError> {
+    variable: ForecastVariable,
+) -> Result<ForecastGrid, GefsError> {
+    let (idx_variable, idx_level, native_unit) =
+        idx_names(variable).ok_or_else(|| GefsError::UnexpectedField {
+            url: url.to_string(),
+            category: 0,
+            number: 0,
+            expected_field: variable.canonical_name().to_string(),
+        })?;
+
     let grib2 = grib::from_bytes(bytes.to_vec()).map_err(|e| GefsError::Grib2Parse {
         url: url.to_string(),
         message: e.to_string(),
@@ -64,7 +86,7 @@ pub fn decode_field(
     // (further down) consumes `submessage` by value. ---
 
     let prod_def = submessage.prod_def();
-    let (want_category, want_number) = field.grib2_parameter();
+    let (want_category, want_number) = variable.grib2_parameter();
     let category = prod_def
         .parameter_category()
         .ok_or_else(|| GefsError::Grib2Parse {
@@ -84,7 +106,7 @@ pub fn decode_field(
             url: url.to_string(),
             category,
             number,
-            expected_field: field.canonical_name().to_string(),
+            expected_field: variable.canonical_name().to_string(),
         });
     }
 
@@ -166,14 +188,14 @@ pub fn decode_field(
         lat_step_magnitude
     };
 
-    let geometry = GridGeometry {
+    let geometry = GridGeometry::RegularLatLon(RegularLatLonGrid {
         width: ni,
         height: nj,
         origin_lat_deg: la1,
         origin_lon_deg: lo1,
         lat_step_deg,
         lon_step_deg: lon_step_magnitude,
-    };
+    });
 
     // `ij()` yields each decoded value's (i, j) = (column, row) grid index
     // in the same order `dispatch()` below yields values, correctly
@@ -226,13 +248,19 @@ pub fn decode_field(
         });
     }
 
-    Ok(GriddedField {
-        field,
-        unit: field.native_unit(),
+    Ok(ForecastGrid {
+        variable,
+        native: NativeVariableMetadata {
+            provider_variable_name: idx_variable.to_string(),
+            provider_level_name: idx_level.to_string(),
+            native_unit,
+        },
+        provider_id: "gefs",
+        unit: native_unit,
         run_time,
         forecast_lead_hours: lead_hours,
         valid_time,
-        ensemble: ensemble_identity,
+        ensemble: Some(ensemble_identity),
         geometry,
         values,
     })
@@ -241,7 +269,7 @@ pub fn decode_field(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ensemble::EnsembleIdentity;
+    use forecast_core::ensemble::EnsembleStatistic;
 
     fn fixture(name: &str) -> Vec<u8> {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -254,20 +282,24 @@ mod tests {
     #[test]
     fn decodes_a_real_captured_control_member_message() {
         let bytes = fixture("gec00_t12z_f000_tmp2m.grib2");
-        let decoded = decode_field("u", &bytes, CanonicalField::Temperature2m).unwrap();
+        let decoded = decode_field("u", &bytes, ForecastVariable::Temperature2m).unwrap();
 
-        assert_eq!(decoded.field, CanonicalField::Temperature2m);
+        assert_eq!(decoded.variable, ForecastVariable::Temperature2m);
         assert_eq!(decoded.unit, "K");
-        assert_eq!(decoded.ensemble, EnsembleIdentity::Control);
+        assert_eq!(decoded.provider_id, "gefs");
+        assert_eq!(decoded.ensemble, Some(EnsembleStatistic::Control));
         assert_eq!(decoded.run_time, UtcTimestamp::new(2026, 9, 12, 12, 0, 0));
         assert_eq!(decoded.forecast_lead_hours, 0);
         assert_eq!(decoded.valid_time, decoded.run_time);
-        assert_eq!(decoded.geometry.width, 1440);
-        assert_eq!(decoded.geometry.height, 721);
-        assert_eq!(decoded.geometry.origin_lat_deg, 90.0);
-        assert_eq!(decoded.geometry.origin_lon_deg, 0.0);
-        assert_eq!(decoded.geometry.lat_step_deg, -0.25);
-        assert_eq!(decoded.geometry.lon_step_deg, 0.25);
+        assert_eq!(decoded.geometry.width(), 1440);
+        assert_eq!(decoded.geometry.height(), 721);
+        let GridGeometry::RegularLatLon(g) = &decoded.geometry else {
+            panic!("expected a regular lat/lon grid");
+        };
+        assert_eq!(g.origin_lat_deg, 90.0);
+        assert_eq!(g.origin_lon_deg, 0.0);
+        assert_eq!(g.lat_step_deg, -0.25);
+        assert_eq!(g.lon_step_deg, 0.25);
         assert_eq!(decoded.values.len(), 1440 * 721);
 
         // Physical sanity + cross-reference: real 2m temperature in Kelvin
@@ -287,15 +319,15 @@ mod tests {
     #[test]
     fn decodes_a_real_captured_perturbed_member_message() {
         let bytes = fixture("gep01_t12z_f000_tmp2m.grib2");
-        let decoded = decode_field("u", &bytes, CanonicalField::Temperature2m).unwrap();
-        assert_eq!(decoded.ensemble, EnsembleIdentity::Member(1));
+        let decoded = decode_field("u", &bytes, ForecastVariable::Temperature2m).unwrap();
+        assert_eq!(decoded.ensemble, Some(EnsembleStatistic::Member(1)));
     }
 
     #[test]
     fn decodes_a_real_captured_ensemble_mean_message() {
         let bytes = fixture("geavg_t12z_f000_tmp2m.grib2");
-        let decoded = decode_field("u", &bytes, CanonicalField::Temperature2m).unwrap();
-        assert_eq!(decoded.ensemble, EnsembleIdentity::Mean);
+        let decoded = decode_field("u", &bytes, ForecastVariable::Temperature2m).unwrap();
+        assert_eq!(decoded.ensemble, Some(EnsembleStatistic::Mean));
     }
 
     #[test]
@@ -308,7 +340,7 @@ mod tests {
         // wide enough to be a real physical sanity check, not a
         // coincidence-prone exact match).
         let bytes = fixture("gec00_t12z_f000_tmp2m.grib2");
-        let decoded = decode_field("u", &bytes, CanonicalField::Temperature2m).unwrap();
+        let decoded = decode_field("u", &bytes, ForecastVariable::Temperature2m).unwrap();
         let north_pole_kelvin = decoded.value_at(0, 0);
         assert!(
             (213.15..283.15).contains(&north_pole_kelvin),
@@ -318,13 +350,13 @@ mod tests {
 
     #[test]
     fn rejects_garbage_bytes_cleanly() {
-        let err = decode_field("u", &[0u8; 100], CanonicalField::Temperature2m).unwrap_err();
+        let err = decode_field("u", &[0u8; 100], ForecastVariable::Temperature2m).unwrap_err();
         assert!(matches!(err, GefsError::NoGrib2Submessage { .. }));
     }
 
     #[test]
     fn rejects_empty_bytes_cleanly() {
-        let err = decode_field("u", &[], CanonicalField::Temperature2m).unwrap_err();
+        let err = decode_field("u", &[], ForecastVariable::Temperature2m).unwrap_err();
         assert!(matches!(err, GefsError::NoGrib2Submessage { .. }));
     }
 
@@ -335,6 +367,13 @@ mod tests {
         // Must return a structured error (most likely at the `dispatch()`
         // step, since GRIB2's outer sections are small and near the
         // front) -- never panic.
-        let _ = decode_field("u", truncated, CanonicalField::Temperature2m);
+        let _ = decode_field("u", truncated, ForecastVariable::Temperature2m);
+    }
+
+    #[test]
+    fn rejects_an_unsupported_variable_cleanly() {
+        let bytes = fixture("gec00_t12z_f000_tmp2m.grib2");
+        let err = decode_field("u", &bytes, ForecastVariable::Dewpoint2m).unwrap_err();
+        assert!(matches!(err, GefsError::UnexpectedField { .. }));
     }
 }

@@ -1,21 +1,28 @@
-//! `provider-gefs` -- S07 GEFS ensemble forecast proof of concept.
+//! `provider-gefs` -- S07/S08: NOAA GEFS ensemble forecast provider.
 //!
-//! Moves **one** real field (2-meter temperature) end-to-end from NOAA's
-//! public, anonymous `noaa-gefs-pds` S3 bucket to a rendered, color-mapped,
-//! geographically correct GPU image, proving the GRIB2/ensemble pipeline
-//! works. Per the S07 stage file's "Critical rule", this is deliberately
-//! **not** a general forecast framework: no generic multi-field/
-//! multi-provider abstraction, no `forecast-core` crate. A second real
-//! field and provider (wind, precipitation, MSLP; HRRR, MRMS) are future
-//! stages' work to generalize from.
+//! S07 moved **one** real field (2-meter temperature) end-to-end from
+//! NOAA's public, anonymous `noaa-gefs-pds` S3 bucket to a rendered,
+//! color-mapped, geographically correct GPU image, proving the GRIB2/
+//! ensemble pipeline works -- deliberately not a general forecast
+//! framework at the time.
+//!
+//! S08 generalizes *from* that real, working provider: this crate now
+//! implements `forecast_core::provider::ForecastProvider` ([`GefsProvider`])
+//! and depends on `forecast-core` for the shared canonical types
+//! (`ForecastGrid`, `EnsembleStatistic`, `ForecastVariable`, `UtcTimestamp`)
+//! and the shared GPU grid renderer, instead of defining its own parallel
+//! copies. What stays here is everything genuinely GEFS-specific: the
+//! `noaa-gefs-pds` bucket/key layout ([`keys`]), `.idx` parsing ([`idx`]),
+//! the ensemble-identity byte-offset extraction ([`ensemble`], ADR-0011),
+//! and GRIB2 decode wiring ([`decode`]).
 //!
 //! # This is forecast guidance, never observed radar
 //!
 //! GLOBAL_CONTRACT.md: "Never call model precipitation 'future radar'" /
-//! "Observations and forecasts must always be distinguishable." Every type
-//! in this crate ([`field::GriddedField`]) is explicitly a *forecast*
-//! field carrying its own run/init time, forecast lead, and valid time --
-//! nothing in this crate is, or is ever labeled as, an observation.
+//! "Observations and forecasts must always be distinguishable." Every
+//! [`forecast_core::grid::ForecastGrid`] this crate produces carries its
+//! own run/init time, forecast lead, and valid time explicitly -- nothing
+//! in this crate is, or is ever labeled as, an observation.
 //!
 //! # Pipeline
 //!
@@ -26,11 +33,14 @@
 //!   -> idx          -- parse .idx, find one field's message, compute its
 //!                      exact byte range
 //!   -> decode        -- GRIB2 decode (via the `grib` crate) + ensemble
-//!                      identity extraction -> field::GriddedField
-//!   -> render/gpu    -- CPU-side grid buffer + GPU upload/pipeline for a
-//!                      simple lat/lon textured quad (reusing
-//!                      `radar-render`'s palette LUT machinery)
+//!                      identity extraction -> forecast_core::grid::ForecastGrid
+//!   -> provider      -- this crate's `ForecastProvider` implementation,
+//!                      tying the above together
 //! ```
+//!
+//! Rendering (the GPU grid pipeline) is `forecast-core`'s job, not this
+//! crate's -- see `forecast_core::gpu::render_forecast_grid`, called
+//! identically for a GEFS- or HRRR-decoded `ForecastGrid`.
 //!
 //! See `src/bin/harness.rs` for a native, non-wasm end-to-end proof (real
 //! bucket fetch -> decode -> render -> PNG), and
@@ -42,15 +52,10 @@ pub mod client;
 pub mod decode;
 pub mod ensemble;
 pub mod error;
-pub mod field;
-pub mod gpu;
 pub mod idx;
 pub mod keys;
-pub mod render;
-pub mod time;
+pub mod provider;
 mod xml;
 
-#[cfg(test)]
-mod gpu_tests;
-
 pub use error::GefsError;
+pub use provider::GefsProvider;

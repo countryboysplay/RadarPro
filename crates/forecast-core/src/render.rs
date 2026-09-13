@@ -1,15 +1,18 @@
 //! CPU-side, GPU-free preparation for [`crate::gpu`]: turns a decoded
-//! [`crate::field::GriddedField`] into a display-unit value array plus a
-//! palette lookup table -- fully unit-testable without a GPU, mirroring
-//! `radar-render`'s `palette.rs`/`gpu.rs` split (everything CPU-testable
-//! lives outside the `wgpu`-dependent module).
+//! [`crate::grid::ForecastGrid`] into a display-unit value array plus a
+//! palette lookup table -- fully unit-testable without a GPU. Moved here
+//! from S07's `provider-gefs::render` (generalized to any provider's
+//! [`ForecastGrid`], not just GEFS's) so both `provider-gefs` and
+//! `provider-hrrr` call the exact same conversion/palette code rather than
+//! each defining their own copy (the S08 stage brief: "reuse `radar-render`'s
+//! palette LUT machinery... exactly as `provider-gefs` already does; don't
+//! duplicate it a third time").
 //!
-//! [`crate::field::GriddedField::values`] itself is Kelvin (this field's
-//! native unit) and is never touched here: [`to_display_celsius`] builds a
-//! brand new `Vec`, so a display-unit choice never mutates source data
-//! (GLOBAL_CONTRACT).
+//! [`crate::grid::ForecastGrid::values`] itself is never touched here:
+//! [`to_display_celsius`] builds a brand new `Vec`, so a display-unit
+//! choice never mutates source data (GLOBAL_CONTRACT).
 
-use crate::field::GriddedField;
+use crate::grid::ForecastGrid;
 use radar_render::palette::{build_palette_lut, PaletteStop};
 
 /// Default palette domain, in Celsius, for 2m temperature. An informed UI
@@ -25,7 +28,9 @@ pub const PALETTE_TEXEL_COUNT: usize = 256;
 /// RadarPro's own 2m-temperature color ramp: blue (cold) -> near-white
 /// (around freezing) -> red (hot). This project's own original palette
 /// choice (GLOBAL_CONTRACT: "its own branding... defaults... algorithms"),
-/// deliberately distinct from any third-party tool's temperature ramp.
+/// deliberately distinct from any third-party tool's temperature ramp, and
+/// shared by every provider's temperature field -- one palette, not one per
+/// provider.
 pub fn default_temperature_palette_stops() -> Vec<PaletteStop> {
     vec![
         PaletteStop::new(DEFAULT_MIN_CELSIUS, [40, 30, 120, 255]),
@@ -37,7 +42,7 @@ pub fn default_temperature_palette_stops() -> Vec<PaletteStop> {
 }
 
 /// Build the default temperature palette's LUT, ready for
-/// [`crate::gpu::upload_palette`] (re-exported from `radar-render`).
+/// [`radar_render::gpu::upload_palette`].
 pub fn build_default_palette_lut() -> Vec<[u8; 4]> {
     build_palette_lut(
         &default_temperature_palette_stops(),
@@ -48,14 +53,14 @@ pub fn build_default_palette_lut() -> Vec<[u8; 4]> {
 }
 
 /// Convert a decoded field's native-unit (Kelvin) values into a *new*
-/// Celsius array for display. Panics only on the [`CanonicalField`] this
-/// crate does not yet decode as temperature (unreachable today: the only
-/// variant is `Temperature2m`) -- kept as a `debug_assert` rather than a
-/// silent wrong conversion, since applying a Kelvin->Celsius offset to a
-/// future non-temperature field would silently corrupt it.
-///
-/// [`CanonicalField`]: crate::field::CanonicalField
-pub fn to_display_celsius(field: &GriddedField) -> Vec<f32> {
+/// Celsius array for display. Kept as a `debug_assert` (not a hard error)
+/// on the unit, matching S07's own precedent -- applying a Kelvin->Celsius
+/// offset to a future non-Kelvin field would silently corrupt it, so this
+/// is intentionally not silently permissive, just not a `Result` for a
+/// condition every caller in this workspace already only invokes on a
+/// known-Kelvin field (`temperature_2m`, the only variable any provider
+/// decodes as of this stage).
+pub fn to_display_celsius(field: &ForecastGrid) -> Vec<f32> {
     debug_assert_eq!(
         field.unit, "K",
         "to_display_celsius assumes a Kelvin-native field"
@@ -63,33 +68,40 @@ pub fn to_display_celsius(field: &GriddedField) -> Vec<f32> {
     field
         .values
         .iter()
-        .map(|&kelvin| GriddedField::kelvin_to_celsius(kelvin))
+        .map(|&kelvin| ForecastGrid::kelvin_to_celsius(kelvin))
         .collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ensemble::EnsembleIdentity;
-    use crate::field::{CanonicalField, GridGeometry};
+    use crate::ensemble::EnsembleStatistic;
+    use crate::grid::{GridGeometry, NativeVariableMetadata, RegularLatLonGrid};
     use crate::time::UtcTimestamp;
+    use crate::variable::ForecastVariable;
 
-    fn sample_field(values: Vec<f32>) -> GriddedField {
-        GriddedField {
-            field: CanonicalField::Temperature2m,
+    fn sample_field(values: Vec<f32>) -> ForecastGrid {
+        ForecastGrid {
+            variable: ForecastVariable::Temperature2m,
+            native: NativeVariableMetadata {
+                provider_variable_name: "TMP".to_string(),
+                provider_level_name: "2 m above ground".to_string(),
+                native_unit: "K",
+            },
+            provider_id: "gefs",
             unit: "K",
             run_time: UtcTimestamp::new(2026, 9, 12, 12, 0, 0),
             forecast_lead_hours: 0,
             valid_time: UtcTimestamp::new(2026, 9, 12, 12, 0, 0),
-            ensemble: EnsembleIdentity::Control,
-            geometry: GridGeometry {
+            ensemble: Some(EnsembleStatistic::Control),
+            geometry: GridGeometry::RegularLatLon(RegularLatLonGrid {
                 width: 2,
                 height: 2,
                 origin_lat_deg: 10.0,
                 origin_lon_deg: 100.0,
                 lat_step_deg: -1.0,
                 lon_step_deg: 1.0,
-            },
+            }),
             values,
         }
     }

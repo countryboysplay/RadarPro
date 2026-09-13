@@ -3,11 +3,13 @@
 //! This is the whole reason GEFS replaced WeatherNext 3 for this stage
 //! (S07 stage file: "ensemble statistics: mean, spread, and member access
 //! -- this is the probabilistic angle WeatherNext 3 would have provided").
-//! [`EnsembleIdentity`] is this crate's canonical representation of "which
-//! ensemble statistic or member does this decoded field represent", read
-//! from the *decoded GRIB2 Product Definition Section* -- never from the
-//! object key's filename alone (`decode::decode_field` cross-checks the
-//! two agree, see its module docs).
+//! [`identity_from_prod_def`] extracts `forecast_core::ensemble::EnsembleStatistic`
+//! (S08: generalized from this crate's own S07 `EnsembleIdentity`, moved to
+//! `forecast-core` so a deterministic provider like HRRR is not forced to
+//! define a matching enum it has no use for) from the *decoded GRIB2
+//! Product Definition Section* -- never from the object key's filename
+//! alone (`decode::decode_field` cross-checks the two agree, see its
+//! module docs).
 //!
 //! # A real gap in `grib` 0.18.5's public API
 //!
@@ -35,25 +37,7 @@
 //! messages (`gec00`, `gep01`, `geavg`) in this module's tests.
 
 use crate::error::GefsError;
-
-/// Which ensemble statistic or member a decoded field represents.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum EnsembleIdentity {
-    /// The unperturbed control forecast (WMO Code Table 4.6 values 0 or 1
-    /// -- "unperturbed high-resolution control" or "unperturbed
-    /// low-resolution control"; GEFS's `gec00` has always been observed
-    /// using value 1).
-    Control,
-    /// A perturbed ensemble member, carrying its perturbation number
-    /// (WMO Code Table 4.6 values 2 "negatively perturbed" or 3
-    /// "positively perturbed" -- both map to this variant, since a
-    /// member's *number* is the identity that matters for spread/member
-    /// access, not the sign of its perturbation).
-    Member(u8),
-    /// The ensemble mean (WMO Code Table 4.7 value 0, "unweighted mean of
-    /// all members").
-    Mean,
-}
+use forecast_core::ensemble::EnsembleStatistic;
 
 /// Byte offset **into `ProdDefinition::iter()`'s full raw payload**
 /// (`grib`'s `ProdDefinition` stores the 2-byte "number of coordinate
@@ -77,13 +61,13 @@ const TEMPLATE_4_1_PERTURBATION_NUMBER_OFFSET: usize = 30;
 /// "unweighted mean of all members".
 const TEMPLATE_4_2_DERIVED_TYPE_OFFSET: usize = 29;
 
-/// Extract [`EnsembleIdentity`] from a decoded submessage's Product
+/// Extract [`EnsembleStatistic`] from a decoded submessage's Product
 /// Definition Section. `url` is used only to attribute a returned error to
 /// the message it came from.
 pub fn identity_from_prod_def(
     url: &str,
     prod_def: &grib::ProdDefinition,
-) -> Result<EnsembleIdentity, GefsError> {
+) -> Result<EnsembleStatistic, GefsError> {
     let template_number = prod_def.prod_tmpl_num();
     let raw: Vec<u8> = prod_def.iter().copied().collect();
 
@@ -104,8 +88,8 @@ pub fn identity_from_prod_def(
                     actual: raw.len(),
                 })?;
             match ensemble_type {
-                0 | 1 => Ok(EnsembleIdentity::Control),
-                2 | 3 => Ok(EnsembleIdentity::Member(perturbation_number)),
+                0 | 1 => Ok(EnsembleStatistic::Control),
+                2 | 3 => Ok(EnsembleStatistic::Member(perturbation_number)),
                 other => Err(GefsError::UnrecognizedEnsembleType {
                     url: url.to_string(),
                     ensemble_type: other,
@@ -121,7 +105,7 @@ pub fn identity_from_prod_def(
                 }
             })?;
             match derived_type {
-                0 => Ok(EnsembleIdentity::Mean),
+                0 => Ok(EnsembleStatistic::Mean),
                 other => Err(GefsError::UnrecognizedDerivedForecastType {
                     url: url.to_string(),
                     derived_type: other,
@@ -173,7 +157,7 @@ mod tests {
         let prod_def = prod_def_from_raw(0, 1, REAL_GEC00_TEMPLATE_4_1);
         assert_eq!(
             identity_from_prod_def("u", &prod_def).unwrap(),
-            EnsembleIdentity::Control
+            EnsembleStatistic::Control
         );
     }
 
@@ -182,7 +166,7 @@ mod tests {
         let prod_def = prod_def_from_raw(0, 1, REAL_GEP01_TEMPLATE_4_1);
         assert_eq!(
             identity_from_prod_def("u", &prod_def).unwrap(),
-            EnsembleIdentity::Member(1)
+            EnsembleStatistic::Member(1)
         );
     }
 
@@ -191,7 +175,7 @@ mod tests {
         let prod_def = prod_def_from_raw(0, 2, REAL_GEAVG_TEMPLATE_4_2);
         assert_eq!(
             identity_from_prod_def("u", &prod_def).unwrap(),
-            EnsembleIdentity::Mean
+            EnsembleStatistic::Mean
         );
     }
 
