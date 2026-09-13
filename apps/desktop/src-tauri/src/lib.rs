@@ -51,6 +51,27 @@ fn get_diagnostics(app: tauri::AppHandle) -> DesktopDiagnostics {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // S10 Phase 2 crash-handling strategy (see `apps/desktop/CRASH_HANDLING.md`):
+    // log a structured "about to crash" entry via the same `log::` macros
+    // `tauri_plugin_log` below is already wired to (stdout + the on-disk
+    // log file), then still run the previous/default hook (Rust's own
+    // stderr backtrace printer) so nothing about the existing panic
+    // behavior is lost. Installed before `tauri::Builder::default()` runs
+    // so it is active for this thread's whole lifetime, including any
+    // panic during setup, not just after the window is up.
+    //
+    // This only covers a Rust panic in this crate's own (currently very
+    // small) native code -- it cannot and does not catch a WebView2/
+    // renderer-side crash (already handled by WebView2's own Crashpad
+    // dumps, see CRASH_HANDLING.md) or a wasm trap inside the webview
+    // (surfaces as a JS exception in that process, not a native panic
+    // here).
+    let default_panic_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        log::error!("PANIC (native shell about to crash): {info}");
+        default_panic_hook(info);
+    }));
+
     tauri::Builder::default()
         // Structured logging to a real file in the OS app-data/log
         // directory (Windows: `%LOCALAPPDATA%/org.radarpro.desktop/logs`),

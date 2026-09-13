@@ -1,6 +1,10 @@
 import { useEffect, useId, useState } from "react";
 import { useRainbowApiKey } from "../rainbow/useRainbowApiKey";
 import { getDesktopDiagnostics, isDesktop, type DesktopDiagnostics } from "../platform/desktop";
+import type { PollEvent } from "../scan/useScanPoller";
+import { MIN_HISTORY_SCANS, MAX_HISTORY_SCANS_LIMIT } from "../scan/useScanHistory";
+import type { AlertPollStatus } from "../alerts/useAlertPoller";
+import { overallNetworkStatus, useNetworkDiagnostics } from "../diagnostics/useNetworkDiagnostics";
 
 /**
  * S10 desktop shell: read-only diagnostics (app/Tauri version, OS/arch,
@@ -47,21 +51,166 @@ function DesktopDiagnosticsPanel() {
   );
 }
 
+/** Round a relative-time label out of an epoch-ms timestamp against a
+ * live-ticking `now` (see `NetworkDiagnosticsPanel`'s own 1s timer) -- so
+ * "3s ago" doesn't silently go stale between poll events, which can be
+ * tens of seconds apart. */
+function relativeTime(ms: number | null, now: number): string {
+  if (ms === null) return "never";
+  const deltaSec = Math.max(0, Math.round((now - ms) / 1000));
+  if (deltaSec < 5) return "just now";
+  if (deltaSec < 60) return `${deltaSec}s ago`;
+  const min = Math.round(deltaSec / 60);
+  if (min < 60) return `${min}m ago`;
+  return `${Math.round(min / 60)}h ago`;
+}
+
 /**
- * S09c Settings section: currently just the Rainbow API key field (the
- * addendum's whole scope), but its own top-level sidebar section --
- * distinct from "Rainbow" -- so it reads as app configuration rather than
- * a Rainbow-specific control, leaving room for other settings later.
- *
- * The field is a credential, so it defaults to `type="password"` with a
- * show/hide toggle, even though (per `useRainbowApiKey`'s doc comment) it
- * never leaves this browser except in a request straight to Rainbow's own
- * API. Saves on every change (no separate Save button/blur handler
- * needed): `setSettingsKey` just writes `localStorage` and notifies every
- * subscriber, so this stays cheap and keeps the Rainbow section's
- * "configured" state in lockstep with what's typed here, live.
+ * S10 Phase 2 network diagnostics -- see `useNetworkDiagnostics`'s doc
+ * comment for what this derives and why (no synthetic pings; reuses the
+ * scan/alert pollers' own real outcomes, plus `navigator.onLine` as a
+ * second, independently-tracked signal since the two can legitimately
+ * disagree). Renders in both the browser and desktop builds -- unlike
+ * `DesktopDiagnosticsPanel` below, nothing here depends on a Tauri API.
  */
-export function SettingsPanel() {
+function NetworkDiagnosticsPanel({
+  scanPollEvent,
+  alertStatus,
+  alertError,
+  alertLastPolledAt,
+}: {
+  scanPollEvent: PollEvent;
+  alertStatus: AlertPollStatus;
+  alertError: string | null;
+  alertLastPolledAt: number | null;
+}) {
+  const diagnostics = useNetworkDiagnostics(scanPollEvent, alertStatus, alertError, alertLastPolledAt);
+  const overall = overallNetworkStatus(diagnostics);
+
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const overallLabel: Record<typeof overall, string> = {
+    online: "online",
+    degraded: "degraded — recent requests failing",
+    offline: "offline (browser reports no network)",
+    checking: "checking…",
+  };
+  const overallClass =
+    overall === "online" ? " settings-field-status-active" : overall === "checking" ? "" : " settings-field-status-none";
+
+  function pollLine(o: (typeof diagnostics)["scan"]): string {
+    if (o.lastFailureAt !== null && (o.lastSuccessAt === null || o.lastFailureAt > o.lastSuccessAt)) {
+      return `failing, ${relativeTime(o.lastFailureAt, now)}: ${o.lastFailureDetail}`;
+    }
+    if (o.lastSuccessAt !== null) return `ok, ${relativeTime(o.lastSuccessAt, now)}`;
+    return "no poll yet";
+  }
+
+  return (
+    <div className="settings-field" style={{ marginTop: "1em" }}>
+      <label>Network diagnostics</label>
+      <div className={`settings-field-status${overallClass}`}>{overallLabel[overall]}</div>
+      <dl className="settings-field-note" style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "0.15em 0.6em", margin: "0.4em 0 0" }}>
+        <dt>Browser reports</dt>
+        <dd>{diagnostics.browserOnline ? "online" : "offline"}</dd>
+        <dt>Radar scan poll</dt>
+        <dd>{pollLine(diagnostics.scan)}</dd>
+        <dt>Alerts poll</dt>
+        <dd>{pollLine(diagnostics.alerts)}</dd>
+      </dl>
+      <p className="settings-field-note">
+        "Browser reports" is only <code>navigator.onLine</code>, which is unreliable alone -- a captive portal or a
+        DNS-only outage can still report "online". The poll rows above reflect the real outcome of this app's own
+        most recent live requests instead.
+      </p>
+    </div>
+  );
+}
+
+/**
+ * S10 Phase 2 cache-size control: a real, persisted, user-adjustable cap
+ * on how many recently-downloaded scans `useScanHistory` keeps in memory
+ * (see that module's `MIN_HISTORY_SCANS`/`MAX_HISTORY_SCANS_LIMIT`) --
+ * replacing the previously hard-coded `MAX_HISTORY_SCANS` constant as the
+ * *default*, not as the only possible value.
+ */
+function CacheControls({
+  cacheLimit,
+  entriesCount,
+  onCacheLimitChange,
+}: {
+  cacheLimit: number;
+  entriesCount: number;
+  onCacheLimitChange: (limit: number) => void;
+}) {
+  const inputId = useId();
+  return (
+    <div className="settings-field" style={{ marginTop: "1em" }}>
+      <label htmlFor={inputId}>Scan history cache size</label>
+      <div className="settings-field-row">
+        <input
+          id={inputId}
+          type="number"
+          min={MIN_HISTORY_SCANS}
+          max={MAX_HISTORY_SCANS_LIMIT}
+          step={1}
+          value={cacheLimit}
+          onChange={(e) => {
+            const parsed = Number(e.target.value);
+            if (Number.isFinite(parsed)) onCacheLimitChange(parsed);
+          }}
+        />
+        <span className="settings-field-note">scans ({entriesCount} currently held)</span>
+      </div>
+      <p className="settings-field-note">
+        How many recently-downloaded radar volumes stay held in memory for previous/next/loop playback (min{" "}
+        {MIN_HISTORY_SCANS}, max {MAX_HISTORY_SCANS_LIMIT}). Higher values give a longer loop history at the cost of
+        more memory (a WSR-88D volume is typically a few MB); lowering it below the current count evicts the oldest
+        held scans immediately.
+      </p>
+    </div>
+  );
+}
+
+/**
+ * S09c Settings section: the Rainbow API key field (the S09c addendum's
+ * original whole scope), plus S10 Phase 2's cache-size control and network
+ * diagnostics, plus the Phase 1 desktop diagnostics panel -- its own
+ * top-level sidebar section, distinct from "Rainbow", so it reads as app
+ * configuration rather than a Rainbow-specific control.
+ *
+ * The Rainbow key field is a credential, so it defaults to
+ * `type="password"` with a show/hide toggle, even though (per
+ * `useRainbowApiKey`'s doc comment) it never leaves this browser except in
+ * a request straight to Rainbow's own API. Saves on every change (no
+ * separate Save button/blur handler needed): `setSettingsKey` just writes
+ * `localStorage` and notifies every subscriber, so this stays cheap and
+ * keeps the Rainbow section's "configured" state in lockstep with what's
+ * typed here, live.
+ */
+export interface SettingsPanelProps {
+  scanPollEvent: PollEvent;
+  alertStatus: AlertPollStatus;
+  alertError: string | null;
+  alertLastPolledAt: number | null;
+  cacheLimit: number;
+  cacheEntriesCount: number;
+  onCacheLimitChange: (limit: number) => void;
+}
+
+export function SettingsPanel({
+  scanPollEvent,
+  alertStatus,
+  alertError,
+  alertLastPolledAt,
+  cacheLimit,
+  cacheEntriesCount,
+  onCacheLimitChange,
+}: SettingsPanelProps) {
   const { settingsKey, setSettingsKey, source, envKeyPresent } = useRainbowApiKey();
   const [reveal, setReveal] = useState(false);
   const inputId = useId();
@@ -103,6 +252,13 @@ export function SettingsPanel() {
         this field is empty -- handy for a self-hosted/Docker setup.
       </p>
 
+      <CacheControls cacheLimit={cacheLimit} entriesCount={cacheEntriesCount} onCacheLimitChange={onCacheLimitChange} />
+      <NetworkDiagnosticsPanel
+        scanPollEvent={scanPollEvent}
+        alertStatus={alertStatus}
+        alertError={alertError}
+        alertLastPolledAt={alertLastPolledAt}
+      />
       <DesktopDiagnosticsPanel />
     </div>
   );

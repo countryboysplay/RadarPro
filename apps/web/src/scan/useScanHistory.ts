@@ -15,6 +15,29 @@ import { type PollEvent, useScanPoller } from "./useScanPoller";
 export const MAX_HISTORY_SCANS = 15;
 
 /**
+ * S10 Phase 2: sane bounds for the user-adjustable cache size setting
+ * (Settings sidebar section, backed by `platform/desktop.ts`'s
+ * `loadPersistedCacheLimit`/`persistCacheLimit`). `MIN_HISTORY_SCANS` keeps
+ * enough held frames for previous/next/loop to still mean something;
+ * `MAX_HISTORY_SCANS_LIMIT` (4x the {@link MAX_HISTORY_SCANS} default) keeps
+ * worst-case memory bounded -- the same "a handful of MB each" volumes
+ * `MAX_HISTORY_SCANS`'s own doc comment reasons about, at 4x the cap, stay
+ * in the "well under a GB" range rather than becoming unbounded.
+ */
+export const MIN_HISTORY_SCANS = 5;
+export const MAX_HISTORY_SCANS_LIMIT = 60;
+
+/** Clamp any candidate cache-size value (e.g. read back from a
+ * hand-editable `settings.json`, or typed into the Settings field) into
+ * `[MIN_HISTORY_SCANS, MAX_HISTORY_SCANS_LIMIT]`, defensively falling back
+ * to the default for a non-finite input. Never trust a raw number from
+ * disk or a text input directly against the eviction loop below. */
+export function clampHistoryLimit(candidate: number): number {
+  if (!Number.isFinite(candidate)) return MAX_HISTORY_SCANS;
+  return Math.max(MIN_HISTORY_SCANS, Math.min(MAX_HISTORY_SCANS_LIMIT, Math.round(candidate)));
+}
+
+/**
  * - `"live"`: always shows the most recently downloaded scan; a new scan
  *   landing in the background immediately becomes the displayed frame.
  * - `"paused"`: holds whatever frame is currently displayed; new scans
@@ -39,6 +62,11 @@ interface HistoryState {
   currentIndex: number;
   playMode: PlayMode;
   frameMs: number;
+  /** Current cache cap (see `MIN_HISTORY_SCANS`/`MAX_HISTORY_SCANS_LIMIT`
+   * above) -- carried in state, not read from the module-level
+   * `MAX_HISTORY_SCANS` constant, so the Settings panel's live value drives
+   * eviction directly. */
+  maxEntries: number;
 }
 
 type HistoryAction =
@@ -49,14 +77,28 @@ type HistoryAction =
   | { type: "ADVANCE_FRAME" }
   | { type: "SET_FRAME_MS"; ms: number }
   | { type: "JUMP_LATEST" }
-  | { type: "JUMP_TO_TIME"; millis: number };
+  | { type: "JUMP_TO_TIME"; millis: number }
+  | { type: "SET_MAX_ENTRIES"; maxEntries: number };
 
 const MIN_FRAME_MS = 100;
 const MAX_FRAME_MS = 4000;
 export const DEFAULT_FRAME_MS = 700;
 
-function initialState(): HistoryState {
-  return { entries: [], currentIndex: -1, playMode: "live", frameMs: DEFAULT_FRAME_MS };
+function initialState(maxEntries: number = MAX_HISTORY_SCANS): HistoryState {
+  return { entries: [], currentIndex: -1, playMode: "live", frameMs: DEFAULT_FRAME_MS, maxEntries: clampHistoryLimit(maxEntries) };
+}
+
+/** Shared FIFO-eviction trim used by both `SCAN_ADDED` (a new scan pushed
+ * the count over the cap) and `SET_MAX_ENTRIES` (the cap itself shrank
+ * below the currently-held count) -- same "evict oldest first, shift
+ * `currentIndex` down to keep pointing at the same logical frame" rule
+ * either way. */
+function trimToCap(entries: HistoryEntryMeta[], currentIndex: number, cap: number): { entries: HistoryEntryMeta[]; currentIndex: number } {
+  while (entries.length > cap) {
+    entries = entries.slice(1);
+    currentIndex -= 1;
+  }
+  return { entries, currentIndex: clampIndex(currentIndex, entries.length) };
 }
 
 function clampIndex(index: number, length: number): number {
@@ -67,19 +109,16 @@ function clampIndex(index: number, length: number): number {
 function historyReducer(state: HistoryState, action: HistoryAction): HistoryState {
   switch (action.type) {
     case "RESET":
-      return { ...initialState(), frameMs: state.frameMs };
+      return { ...initialState(state.maxEntries), frameMs: state.frameMs };
 
     case "SCAN_ADDED": {
-      let entries = [...state.entries, { key: action.key, startTimeMillis: action.startTimeMillis }];
-      let currentIndex = state.currentIndex;
+      const grown = [...state.entries, { key: action.key, startTimeMillis: action.startTimeMillis }];
       // Evict oldest first (FIFO) once over the cap -- shift every held
       // index down to match, so "previous/next" and "playing" keep
       // pointing at the same logical frame across an eviction.
-      while (entries.length > MAX_HISTORY_SCANS) {
-        entries = entries.slice(1);
-        currentIndex -= 1;
-      }
-      currentIndex = clampIndex(currentIndex, entries.length);
+      const trimmed = trimToCap(grown, state.currentIndex, state.maxEntries);
+      const entries = trimmed.entries;
+      let currentIndex = trimmed.currentIndex;
       // "Live" mode always tracks the newest held frame -- this is the
       // *only* path that auto-jumps the displayed frame forward; paused/
       // playing modes leave `currentIndex` untouched so a new background
@@ -109,6 +148,16 @@ function historyReducer(state: HistoryState, action: HistoryAction): HistoryStat
 
     case "SET_FRAME_MS":
       return { ...state, frameMs: Math.max(MIN_FRAME_MS, Math.min(MAX_FRAME_MS, action.ms)) };
+
+    case "SET_MAX_ENTRIES": {
+      const maxEntries = clampHistoryLimit(action.maxEntries);
+      if (maxEntries === state.maxEntries) return state;
+      // Shrinking the cap below the currently-held count evicts the
+      // oldest entries immediately (not lazily on the next scan) -- the
+      // Settings field's own note promises this.
+      const { entries, currentIndex } = trimToCap(state.entries, state.currentIndex, maxEntries);
+      return { ...state, entries, currentIndex, maxEntries };
+    }
 
     case "JUMP_LATEST": {
       if (state.entries.length === 0) return { ...state, playMode: "live" };
@@ -178,8 +227,8 @@ export interface ScanHistory {
  * downloaded scan *changes what's displayed* depends on `playMode` (see
  * `historyReducer`'s `SCAN_ADDED` case).
  */
-export function useScanHistory(icao: string): ScanHistory {
-  const [state, dispatch] = useReducer(historyReducer, undefined, initialState);
+export function useScanHistory(icao: string, maxEntries: number = MAX_HISTORY_SCANS): ScanHistory {
+  const [state, dispatch] = useReducer(historyReducer, maxEntries, initialState);
   const bytesRef = useRef<Map<string, Uint8Array>>(new Map());
 
   // Reset history (metadata + cached bytes) whenever the selected site
@@ -188,6 +237,16 @@ export function useScanHistory(icao: string): ScanHistory {
     dispatch({ type: "RESET" });
     bytesRef.current.clear();
   }, [icao]);
+
+  // S10 Phase 2: live-adjust the cache cap when the Settings panel's value
+  // changes, without needing a full site reset -- trims from the oldest
+  // end immediately if the new cap is smaller (see `historyReducer`'s
+  // `SET_MAX_ENTRIES` case / `trimToCap`). A no-op dispatch (same value)
+  // short-circuits inside the reducer, so this is cheap on every render
+  // where `maxEntries` hasn't actually changed.
+  useEffect(() => {
+    dispatch({ type: "SET_MAX_ENTRIES", maxEntries });
+  }, [maxEntries]);
 
   const onVolumeBytes = useCallback((bytes: Uint8Array, volume: DiscoveredVolume) => {
     bytesRef.current.set(volume.key, bytes);

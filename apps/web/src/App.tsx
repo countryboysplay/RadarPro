@@ -13,9 +13,16 @@ import "./App.css";
 import { MapView } from "./map/MapView";
 import { RADAR_CANVAS_SIZE, useRadarRenderer, type ProbeResult } from "./radar/useRadarRenderer";
 import { DEFAULT_SITE_ICAO, findSite, RADAR_SITES } from "./sites";
-import { loadPersistedDefaultSite, persistDefaultSite } from "./platform/desktop";
+import {
+  loadPersistedDefaultSite,
+  persistDefaultSite,
+  loadPersistedFavoriteMoments,
+  persistFavoriteMoments,
+  loadPersistedCacheLimit,
+  persistCacheLimit,
+} from "./platform/desktop";
 import { type PollEvent } from "./scan/useScanPoller";
-import { useScanHistory } from "./scan/useScanHistory";
+import { MAX_HISTORY_SCANS, useScanHistory } from "./scan/useScanHistory";
 import { InfoPanel } from "./ui/InfoPanel";
 import { PlaybackControls } from "./ui/PlaybackControls";
 import { ProbePanel } from "./ui/ProbePanel";
@@ -110,6 +117,56 @@ export default function App() {
     persistDefaultSite(icao);
   }, [icao, siteHydrated]);
 
+  // S10 Phase 2: user-adjustable scan-history cache size, persisted the
+  // same way as the default site above -- desktop-only persistence
+  // (`loadPersistedCacheLimit`/`persistCacheLimit` are no-ops in a plain
+  // browser tab), but the in-session state itself works everywhere.
+  // `cacheLimitHydrated` gates the persist effect for the same reason
+  // `siteHydrated` does above: never overwrite a saved value with the
+  // built-in default before we've had a chance to read it.
+  const [cacheLimit, setCacheLimit] = useState(MAX_HISTORY_SCANS);
+  const [cacheLimitHydrated, setCacheLimitHydrated] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    loadPersistedCacheLimit().then((saved) => {
+      if (cancelled) return;
+      if (saved !== null) setCacheLimit(saved);
+      setCacheLimitHydrated(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  useEffect(() => {
+    if (!cacheLimitHydrated) return;
+    persistCacheLimit(cacheLimit);
+  }, [cacheLimit, cacheLimitHydrated]);
+
+  // S10 Phase 2: favorited/starred moment codes (e.g. "REF", "VEL"),
+  // surfaced as a star toggle + quick-select row next to the Moment picker
+  // below. Same hydrate-then-persist pattern as the default site/cache
+  // size above.
+  const [favoriteMoments, setFavoriteMoments] = useState<string[]>([]);
+  const [favoritesHydrated, setFavoritesHydrated] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    loadPersistedFavoriteMoments().then((saved) => {
+      if (cancelled) return;
+      if (saved) setFavoriteMoments(saved);
+      setFavoritesHydrated(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  useEffect(() => {
+    if (!favoritesHydrated) return;
+    persistFavoriteMoments(favoriteMoments);
+  }, [favoriteMoments, favoritesHydrated]);
+  const toggleFavoriteMoment = useCallback((code: string) => {
+    setFavoriteMoments((prev) => (prev.includes(code) ? prev.filter((c) => c !== code) : [...prev, code]));
+  }, []);
+
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const {
     status,
@@ -127,7 +184,7 @@ export default function App() {
     rangeRings,
   } = useRadarRenderer(canvasRef);
 
-  const history = useScanHistory(icao);
+  const history = useScanHistory(icao, cacheLimit);
 
   // S09: forecast state lifted here (out of `ForecastPanel`, which used to
   // own this hook entirely internally) so the unified timeline below can
@@ -566,8 +623,47 @@ export default function App() {
                   {code}
                 </option>
               ))}
-            </select>
+            </select>{" "}
+            {momentCode && (
+              <button
+                type="button"
+                onClick={() => toggleFavoriteMoment(momentCode)}
+                aria-pressed={favoriteMoments.includes(momentCode)}
+                title={favoriteMoments.includes(momentCode) ? `Remove ${momentCode} from favorites` : `Favorite ${momentCode}`}
+                style={{ background: "none", border: "none", cursor: "pointer", fontSize: "1.1em", lineHeight: 1, padding: "0 0.2em" }}
+              >
+                {favoriteMoments.includes(momentCode) ? "★" : "☆"}
+              </button>
+            )}
           </label>
+
+          {/* S10 Phase 2: quick-select row for favorited moments that are
+              actually available on the current sweep -- a favorite for a
+              moment this sweep doesn't carry (e.g. VEL favorited while
+              looking at a surveillance-only sweep) is simply omitted rather
+              than shown disabled, keeping this a minimal proof of concept
+              rather than a speculative framework. */}
+          {favoriteMoments.filter((code) => sweepMoments.includes(code)).length > 0 && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "0.3em", margin: "0.3em 0" }}>
+              {favoriteMoments
+                .filter((code) => sweepMoments.includes(code))
+                .map((code) => (
+                  <button
+                    key={code}
+                    type="button"
+                    onClick={() => changeMoment(code)}
+                    aria-pressed={code === momentCode}
+                    style={{
+                      fontSize: "0.85em",
+                      padding: "0.1em 0.5em",
+                      fontWeight: code === momentCode ? "bold" : "normal",
+                    }}
+                  >
+                    ★ {code}
+                  </button>
+                ))}
+            </div>
+          )}
 
           <InfoPanel
             siteIcao={site.icao}
@@ -647,7 +743,15 @@ export default function App() {
         </SidebarSection>
 
         <SidebarSection title="Settings">
-          <SettingsPanel />
+          <SettingsPanel
+            scanPollEvent={history.pollEvent}
+            alertStatus={alerts.status}
+            alertError={alerts.error}
+            alertLastPolledAt={alerts.lastPolledAt}
+            cacheLimit={cacheLimit}
+            cacheEntriesCount={history.entries.length}
+            onCacheLimitChange={setCacheLimit}
+          />
         </SidebarSection>
       </Sidebar>
 

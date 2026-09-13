@@ -14,6 +14,13 @@
 // bridge, not a speculative generic settings/IPC framework.
 import { isTauri } from "@tauri-apps/api/core";
 import { LazyStore } from "@tauri-apps/plugin-store";
+// `useScanHistory` is this setting's real domain owner (it defines the
+// bounds the cache-limit setting must respect and the eviction logic that
+// consumes it) -- reusing its exported bound/clamp here instead of
+// redefining a second copy of the same magic numbers, per this stage's
+// "don't invent a second settings mechanism" instruction extended to "don't
+// invent a second copy of the same validation" too.
+import { clampHistoryLimit } from "../scan/useScanHistory";
 
 /** True only when this bundle is actually running inside the Tauri
  * desktop shell's webview -- always false in a plain browser tab, checked
@@ -62,6 +69,88 @@ export function persistDefaultSite(icao: string): void {
     .then(() => settingsStore.save())
     .catch((err: unknown) => {
       console.error("[desktop] failed to persist default site:", err);
+    });
+}
+
+const FAVORITE_MOMENTS_KEY = "favoriteMoments";
+const CACHE_LIMIT_KEY = "cacheLimitScans";
+
+/** Loose but real validation for a wire moment code (e.g. `"REF"`,
+ * `"VEL"`, `"ZDR"`, `"SW"`, `"CC"`, `"KDP"`, `"PHI"`) -- short
+ * alphanumeric/underscore tokens, matching what `radar-web`'s
+ * `momentWireCodesForSweep` actually hands back. A hand-edited or
+ * corrupted `settings.json` must never inject something weird into
+ * `<option>`/button labels or `changeMoment` calls. */
+const MOMENT_CODE_RE = /^[A-Za-z0-9_]{1,8}$/;
+/** Arbitrary but generous cap on persisted favorites -- there are only a
+ * handful of real WSR-88D moments per sweep, so this is purely a defensive
+ * bound against a corrupted settings file, not a meaningful product limit. */
+const MAX_FAVORITE_MOMENTS = 20;
+
+function sanitizeFavoriteMoments(candidate: unknown): string[] {
+  if (!Array.isArray(candidate)) return [];
+  return candidate.filter((v): v is string => typeof v === "string" && MOMENT_CODE_RE.test(v)).slice(0, MAX_FAVORITE_MOMENTS);
+}
+
+/**
+ * Load the persisted set of favorited/starred moment codes (e.g.
+ * `["REF", "VEL"]`), if any. Resolves to `null` in a browser tab or on
+ * first run -- callers should fall back to an empty list, exactly like
+ * {@link loadPersistedDefaultSite}'s `null` convention.
+ */
+export async function loadPersistedFavoriteMoments(): Promise<string[] | null> {
+  if (!isDesktop()) return null;
+  try {
+    const value = await settingsStore.get<unknown>(FAVORITE_MOMENTS_KEY);
+    if (value === undefined) return null;
+    return sanitizeFavoriteMoments(value);
+  } catch (err) {
+    console.error("[desktop] failed to load persisted favorite moments:", err);
+    return null;
+  }
+}
+
+/** Persist the given favorited moment codes for next launch. No-op in a
+ * browser tab. Same fire-and-forget-but-logged shape as
+ * {@link persistDefaultSite}. */
+export function persistFavoriteMoments(moments: string[]): void {
+  if (!isDesktop()) return;
+  settingsStore
+    .set(FAVORITE_MOMENTS_KEY, sanitizeFavoriteMoments(moments))
+    .then(() => settingsStore.save())
+    .catch((err: unknown) => {
+      console.error("[desktop] failed to persist favorite moments:", err);
+    });
+}
+
+/**
+ * Load the persisted scan-history cache-size limit (see
+ * `useScanHistory`'s `MIN_HISTORY_SCANS`/`MAX_HISTORY_SCANS_LIMIT`), if
+ * any. Resolves to `null` in a browser tab, on first run, or for a
+ * malformed stored value -- callers fall back to `MAX_HISTORY_SCANS`
+ * (the built-in default), exactly like the default-site convention.
+ */
+export async function loadPersistedCacheLimit(): Promise<number | null> {
+  if (!isDesktop()) return null;
+  try {
+    const value = await settingsStore.get<unknown>(CACHE_LIMIT_KEY);
+    if (typeof value !== "number" || !Number.isFinite(value)) return null;
+    return clampHistoryLimit(value);
+  } catch (err) {
+    console.error("[desktop] failed to load persisted cache limit:", err);
+    return null;
+  }
+}
+
+/** Persist `limit` (clamped into bounds) as the scan-history cache size
+ * for next launch. No-op in a browser tab. */
+export function persistCacheLimit(limit: number): void {
+  if (!isDesktop()) return;
+  settingsStore
+    .set(CACHE_LIMIT_KEY, clampHistoryLimit(limit))
+    .then(() => settingsStore.save())
+    .catch((err: unknown) => {
+      console.error("[desktop] failed to persist cache limit:", err);
     });
 }
 

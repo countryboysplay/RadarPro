@@ -20,18 +20,28 @@ work" below.
   - `tauri build`: runs `apps/web`'s production build
     (`beforeBuildCommand`) and loads the built `apps/web/dist` output
     directly (`frontendDist`) -- no dev server involved.
-- One real persisted setting: the default radar site (`icao`), via
-  `tauri-plugin-store`, surviving an app restart. See
+- Three real persisted settings, all via `tauri-plugin-store`, surviving an
+  app restart: the default radar site (`icao`), favorited/starred moment
+  codes (surfaced as a star toggle + quick-select row next to the Moment
+  picker), and the scan-history cache-size limit (Settings sidebar
+  section, wired through to `useScanHistory`'s actual eviction cap). See
   `apps/web/src/platform/desktop.ts`.
 - Structured logging to a real file in the OS log directory
   (`%LOCALAPPDATA%\org.radarpro.desktop\logs\radarpro.log` on Windows) via
   `tauri-plugin-log`, fed both by native-side log lines and the webview's
   own `console.*` calls (forwarded manually -- see the doc comment on
   `attachDesktopLogging` for why `tauri-plugin-log`'s own `attachConsole()`
-  does *not* do this).
+  does *not* do this). A native panic hook logs a structured
+  "about to crash" entry to this same file before unwinding -- see
+  `CRASH_HANDLING.md`.
 - A small `get_diagnostics` command (app/Tauri version, OS/arch, log file
   location) surfaced in the app's own Settings sidebar section
   ("Desktop diagnostics") -- native-shell-only, invisible in a browser tab.
+- A network diagnostics panel (Settings sidebar section) showing
+  `navigator.onLine` plus the real outcome (success/failure + when) of the
+  radar scan and alerts pollers' own most recent live requests -- works in
+  both the desktop shell and a plain browser tab, since it needs no Tauri
+  API.
 
 ## Tauri version
 
@@ -84,12 +94,16 @@ crate (verified via `cargo metadata` during this stage).
 
 Backed by `tauri-plugin-store`, writing plain JSON to
 `%APPDATA%\org.radarpro.desktop\settings.json` (Windows' roaming app-data
-directory). Currently stores exactly one key, `defaultSiteIcao`. See
+directory). Currently stores three keys: `defaultSiteIcao`,
+`favoriteMoments` (a string array, e.g. `["REF","VEL"]`), and
+`cacheLimitScans` (an integer, bounded to
+`useScanHistory`'s `MIN_HISTORY_SCANS`/`MAX_HISTORY_SCANS_LIMIT`). See
 `apps/web/src/platform/desktop.ts` (`loadPersistedDefaultSite`/
-`persistDefaultSite`) and its use in `apps/web/src/App.tsx`. Deliberately
-not a generic settings framework -- one real setting, per this project's
-"avoid premature abstraction" rule; add more keys to the same store the
-same way if/when a second real setting is needed.
+`persistDefaultSite` and the `FavoriteMoments`/`CacheLimit` equivalents)
+and their use in `apps/web/src/App.tsx`. Deliberately not a generic
+settings framework -- add more keys to the same store the same way
+if/when a new real setting is needed, rather than inventing a second
+mechanism.
 
 ## Deferred work (explicitly out of scope for this phase)
 
@@ -113,7 +127,9 @@ before they can be implemented -- not skipped silently, not faked:
   notarization setup; Linux needs its own packaging/dependency story
   (GTK/WebKitGTK version spread across distros).
 - **Crash-reporting service**: no third-party crash SaaS (Sentry, etc.) is
-  wired up. A local crash-handling strategy (Tauri/WebView2 crash dumps
-  already land under the app's `EBWebView/Crashpad` directory) is a
-  reasonable starting point for a future phase, but integrating a hosted
-  service is a separate decision (data-handling/cost implications).
+  wired up. See `CRASH_HANDLING.md` for the concrete strategy: what
+  already exists today (WebView2's own Crashpad dumps under
+  `EBWebView\Crashpad\reports\`, a native panic hook logging to the same
+  file `tauri-plugin-log` writes to) and what a future signed/distributed
+  build should add (opt-in only, per this project's no-telemetry-without-
+  consent rule).
