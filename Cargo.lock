@@ -1106,6 +1106,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "mrms-web"
+version = "0.1.0"
+dependencies = [
+ "console_error_panic_hook",
+ "forecast-core",
+ "js-sys",
+ "mrms",
+ "radar-render",
+ "serde",
+ "serde_json",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+]
+
+[[package]]
 name = "naga"
 version = "30.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

@@ -12,6 +12,7 @@ members = [
     "crates/provider-gefs",
     "crates/provider-hrrr",
     "crates/mrms",
+    "crates/mrms-web",
     "crates/forecast-web",
     "apps/radar-cli",
 ]

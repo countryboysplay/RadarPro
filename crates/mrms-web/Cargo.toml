@@ -1,0 +1,73 @@
+[package]
+name = "mrms-web"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "S09 Phase 2: browser/wasm-bindgen glue exposing crates/mrms (national MRMS radar-mosaic OBSERVATION products -- reflectivity and precip-rate) to apps/web. Mirrors forecast-web's wasm_api.rs conventions (JSON strings for structured data, Result<String, JsValue> for fallible calls, future_to_promise for async), but never borrows forecast-flavored naming (run/lead/ensemble) -- mrms is an observation, not a forecast."
+
+[lib]
+# Same split forecast-web/radar-web/weather-alerts use: `cdylib` is what
+# `wasm-bindgen` compiles into the browser-loaded `.wasm` module (see
+# `src/wasm_api.rs`); `rlib` keeps this crate usable as an ordinary Rust
+# dependency on the host target too (`cargo build --workspace`/`cargo test
+# -p mrms-web`, even though today there is nothing to test natively -- see
+# `src/lib.rs`'s `#[cfg(target_arch = "wasm32")]` gate on the glue module
+# itself).
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# The crate this glue adapts -- already wasm32-buildable unmodified (see
+# `crates/mrms/Cargo.toml`'s own target-gating, verified against a real
+# `cargo build --target wasm32-unknown-unknown -p mrms --lib`).
+mrms = { path = "../mrms" }
+
+# `mrms::grid::MrmsGrid::geometry` is a `forecast_core::grid::GridGeometry`
+# (MRMS reuses that shared, provider-agnostic geometry type rather than
+# defining its own -- see `crates/mrms/src/grid.rs`'s module doc); this
+# crate's own JSON metadata conversion (`src/wasm_api.rs`) matches on it
+# directly, the same way `forecast-web::wasm_api`'s `GeometryJson` does, so
+# it needs this dependency directly too (not just transitively through
+# `mrms`).
+forecast-core = { path = "../forecast-core" }
+
+# For `radar_render::camera::clip_to_world`/`Mat4` -- the same camera-math
+# call `forecast-web`'s `render_current_grid` and every native harness in
+# this workspace already uses to build
+# `forecast_core::gpu::render_forecast_grid`'s (here, via
+# `mrms::palette::render_mrms_grid`'s identical) `clip_to_world` argument.
+# Already proven wasm32-compatible (pure CPU matrix math, no `wgpu`
+# dependency of its own), same as `forecast-core`/`forecast-web`'s own
+# unconditional `radar-render` dependency.
+radar-render = { path = "../radar-render" }
+
+# Structured data crosses to JS as JSON strings (JS does `JSON.parse`), not
+# hand-built `js_sys` objects -- same convention `forecast-web`/
+# `weather-alerts`'s `wasm_api` modules already established. Same pinned
+# versions already used throughout this workspace.
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.151"
+
+# Real browser/wasm-bindgen glue is wasm32-only, the same split every other
+# wasm-facing crate in this workspace uses: a native `cargo build
+# --workspace`/`cargo test -p mrms-web` never needs to resolve any of these.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+# Pinned to the exact same versions `forecast-web`/`radar-web`/
+# `weather-alerts` already resolve for the same job (`wasm-bindgen-cli`'s
+# installed version in CI must match this exactly -- see
+# `apps/web/README.md`/`.github/workflows/ci.yml`).
+wasm-bindgen = "=0.2.128"
+# `discoverLatestSnapshot`/`fetchSnapshot`/`renderCurrentGrid` are all
+# genuinely async (network fetch, GPU readback); `future_to_promise` is the
+# standard wasm-bindgen bridge from a Rust future to a JS `Promise` -- its
+# return type (`js_sys::Promise`) is named directly in `src/wasm_api.rs`'s
+# exported method signatures, hence the direct `js-sys` dependency below too
+# (same pin `forecast-web`/`radar-web` already resolve).
+wasm-bindgen-futures = "=0.4.78"
+js-sys = "=0.3.105"
+
+# Turns a Rust panic into a readable `console.error` message instead of an
+# opaque wasm trap -- same pin, same rationale, as
+# `forecast-web`/`radar-web`/`weather-alerts`.
+[target.'cfg(target_arch = "wasm32")'.dependencies.console_error_panic_hook]
+version = "=0.1.7"
