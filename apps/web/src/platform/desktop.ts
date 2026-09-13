@@ -154,6 +154,47 @@ export function persistCacheLimit(limit: number): void {
     });
 }
 
+const RADAR_OPACITY_KEY = "radarOpacityPercent";
+
+/** `0`..`100` integer -- this setting's own domain (unlike the cache-limit
+ * bound above, there's no other module that already owns "radar opacity
+ * percent", so the clamp lives here rather than being imported). */
+function clampRadarOpacityPercent(value: number): number {
+  return Math.round(Math.min(100, Math.max(0, value)));
+}
+
+/**
+ * Load the persisted live-radar-canvas opacity (`0`..`100`, a percentage --
+ * see `MapView`'s `radarOpacity` prop, which this feeds as `/100`), if any.
+ * Resolves to `null` in a browser tab, on first run, or for a malformed
+ * stored value -- callers fall back to `100` (fully opaque, this feature's
+ * documented "unchanged until the user touches it" default), same
+ * hydrate-then-persist convention as {@link loadPersistedCacheLimit}.
+ */
+export async function loadPersistedRadarOpacity(): Promise<number | null> {
+  if (!isDesktop()) return null;
+  try {
+    const value = await settingsStore.get<unknown>(RADAR_OPACITY_KEY);
+    if (typeof value !== "number" || !Number.isFinite(value)) return null;
+    return clampRadarOpacityPercent(value);
+  } catch (err) {
+    console.error("[desktop] failed to load persisted radar opacity:", err);
+    return null;
+  }
+}
+
+/** Persist `percent` (clamped to `0`..`100`) as the live-radar opacity for
+ * next launch. No-op in a browser tab. */
+export function persistRadarOpacity(percent: number): void {
+  if (!isDesktop()) return;
+  settingsStore
+    .set(RADAR_OPACITY_KEY, clampRadarOpacityPercent(percent))
+    .then(() => settingsStore.save())
+    .catch((err: unknown) => {
+      console.error("[desktop] failed to persist radar opacity:", err);
+    });
+}
+
 function formatConsoleArg(arg: unknown): string {
   if (typeof arg === "string") return arg;
   if (arg instanceof Error) return `${arg.name}: ${arg.message}`;

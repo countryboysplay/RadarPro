@@ -179,8 +179,24 @@ const RAINBOW_LAYER_ID = "rainbow-precip-layer";
  * (`MapView`'s render below) by hiding the radar sweep canvas whenever the
  * Rainbow toggle is on. See that comment for the full mutual-exclusivity
  * rationale.
+ *
+ * `maxZoom` (S09d Part A) caps the raster source at the currently selected
+ * layer's documented zoom ceiling (`precip`/`precip-global` 0-12,
+ * `clouds`/`radars` 0-7 -- KB §4.4/§4.5): MapLibre's own `maxzoom` on a
+ * raster source stops requesting new tiles past that zoom and instead
+ * upscales the last fetched one, which is the standard, correct way to
+ * respect a tile source's documented ceiling rather than requesting tiles
+ * the API would reject. Whenever the layer selection itself changes,
+ * `tileUrlTemplate`'s own path segment changes too (it embeds the layer
+ * name), so the identity check below already forces a rebuild with the new
+ * `maxZoom` in the same pass -- no separate dedupe needed for this alone.
  */
-function syncRainbowLayer(map: MapLibreMap, tileUrlTemplate: string | null, appliedRef: { current: string | null }) {
+function syncRainbowLayer(
+  map: MapLibreMap,
+  tileUrlTemplate: string | null,
+  maxZoom: number,
+  appliedRef: { current: string | null },
+) {
   if (appliedRef.current === tileUrlTemplate) return; // already in the desired state.
 
   if (map.getLayer(RAINBOW_LAYER_ID)) map.removeLayer(RAINBOW_LAYER_ID);
@@ -193,6 +209,7 @@ function syncRainbowLayer(map: MapLibreMap, tileUrlTemplate: string | null, appl
     type: "raster",
     tiles: [tileUrlTemplate],
     tileSize: 256,
+    maxzoom: maxZoom,
   });
   const firstSymbolLayerId = map.getStyle()?.layers?.find((l) => l.type === "symbol")?.id;
   map.addLayer(
@@ -310,6 +327,18 @@ export interface MapViewProps {
   /** Fired when the user clicks an alert polygon (or clicks empty map
    * space while an alert is selected, with `key: null`, to deselect). */
   onAlertClick?: (key: string | null) => void;
+  /** S09d follow-up ("click the map to set the point"): whether a Rainbow
+   * Nowcast/Forecast point-pick is currently armed (`App.tsx`'s
+   * `rainbowPointPickTarget !== null`). While true, the map cursor reads as
+   * a crosshair instead of the default/alert-hover cursor, and the next
+   * click is routed to `onPointPick` instead of alert click/select --
+   * picking a point isn't trying to open an alert. */
+  pointPickActive?: boolean;
+  /** Fired with the clicked point's `{lat, lon}` when `pointPickActive` is
+   * true and the map is clicked -- one-shot; the caller is responsible for
+   * disarming `pointPickActive` afterward (this component never decides
+   * *which* panel a pick was for, only that one happened). */
+  onPointPick?: (lat: number, lon: number) => void;
   /** S09b: resolved Rainbow precip tile URL template (`{z}/{x}/{y}` still
    * literal, `{snapshot}`/`{forecast_time}` already substituted by
    * `useRainbowOverlay`), or `null` whenever the layer should not be on the
@@ -320,6 +349,14 @@ export interface MapViewProps {
    * and what actually drives hiding the live radar canvas (see the render
    * comment below for why). */
   rainbowEnabled?: boolean;
+  /** S09d Part A: the currently selected Rainbow layer's documented zoom
+   * ceiling (`useRainbowOverlay`'s `layerInfo.maxZoom` -- 12 for
+   * precip/precip-global, 7 for clouds/radars, KB §4.4/§4.5), applied to
+   * the MapLibre raster source's own `maxzoom` in `syncRainbowLayer`.
+   * Defaults to 12 (this app's default layer, `precip`'s, own ceiling) so
+   * a caller that hasn't wired this up yet still gets a sane cap rather
+   * than an unbounded one. */
+  rainbowMaxZoom?: number;
   /** S09 Phase 3: canvas `useMrmsOverlay` paints its rendered MRMS frame
    * onto -- owned by the caller (`App.tsx`), same "hook owns the render
    * pipeline, `MapView` owns the DOM element's position/size" split
@@ -331,6 +368,15 @@ export interface MapViewProps {
    * live radar canvas (see the render comment below), same shape as
    * `rainbowEnabled`. */
   mrmsEnabled?: boolean;
+  /** UI polish pass: user-controlled opacity (`0`..`1`) for the live radar
+   * sweep canvas, applied only in the "radar is the active layer" case --
+   * see the render comment below for why this is combined with, not a
+   * replacement for, the `rainbowEnabled`/`mrmsEnabled` mutual-exclusivity
+   * gate. Lifted to `App.tsx` (`SidebarSection title="Radar"`'s opacity
+   * slider) and threaded down the same way `rainbowEnabled`/`elevationDeg`-
+   * style controls already are. Defaults to `1` (fully opaque) so behavior
+   * is unchanged for a caller that hasn't wired this up. */
+  radarOpacity?: number;
   /** Fired on every map `move`/`zoom`/`resize`/`load`, with the map's
    * current viewport already resolved to the plain center/half-extent
    * camera `useMrmsOverlay` consumes (see `viewportFromMapBounds`) --
@@ -369,10 +415,14 @@ export function MapView({
   alerts = null,
   selectedAlertKey = null,
   onAlertClick,
+  pointPickActive = false,
+  onPointPick,
   rainbowTileUrlTemplate = null,
   rainbowEnabled = false,
+  rainbowMaxZoom = 12,
   mrmsCanvasRef,
   mrmsEnabled = false,
+  radarOpacity = 1,
   onMrmsViewportChange,
 }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -388,6 +438,14 @@ export function MapView({
   const appliedRainbowUrlRef = useRef<string | null>(null);
   const onMrmsViewportChangeRef = useRef(onMrmsViewportChange);
   onMrmsViewportChangeRef.current = onMrmsViewportChange;
+  // S09d follow-up: read inside the click/hover handlers below via refs
+  // (rather than as effect dependencies) so a new `onPointPick` identity or
+  // a `pointPickActive` flip doesn't tear down and re-attach the map click
+  // listener -- same idiom `onMrmsViewportChangeRef` above already uses.
+  const pointPickActiveRef = useRef(pointPickActive);
+  pointPickActiveRef.current = pointPickActive;
+  const onPointPickRef = useRef(onPointPick);
+  onPointPickRef.current = onPointPick;
 
   // Create the map once.
   useEffect(() => {
@@ -417,7 +475,7 @@ export function MapView({
     const map = mapRef.current;
     if (!map) return;
     function apply() {
-      syncRainbowLayer(map!, rainbowTileUrlTemplate, appliedRainbowUrlRef);
+      syncRainbowLayer(map!, rainbowTileUrlTemplate, rainbowMaxZoom, appliedRainbowUrlRef);
     }
     if (map.isStyleLoaded()) {
       apply();
@@ -427,7 +485,7 @@ export function MapView({
         map.off("load", apply);
       };
     }
-  }, [rainbowTileUrlTemplate]);
+  }, [rainbowTileUrlTemplate, rainbowMaxZoom]);
 
   // Recenter on the selected site, and keep the radar canvas's on-screen
   // position/size synchronized to the map viewport (pan/zoom/resize).
@@ -574,9 +632,20 @@ export function MapView({
     }
 
     function handleClick(e: { lngLat: { lat: number; lng: number } }) {
+      // S09d follow-up: a point-pick in progress consumes this click
+      // entirely -- a user picking a Rainbow point isn't trying to open an
+      // alert, so alert click/select must not also fire for it.
+      if (pointPickActiveRef.current) {
+        onPointPickRef.current?.(e.lngLat.lat, e.lngLat.lng);
+        return;
+      }
       onAlertClick?.(alertAtPoint(e.lngLat));
     }
     function handleHoverMove(e: { lngLat: { lat: number; lng: number } }) {
+      if (pointPickActiveRef.current) {
+        map!.getCanvas().style.cursor = "crosshair";
+        return;
+      }
       map!.getCanvas().style.cursor = alertAtPoint(e.lngLat) ? "pointer" : "";
     }
 
@@ -588,6 +657,17 @@ export function MapView({
       map.getCanvas().style.cursor = "";
     };
   }, [onAlertClick]);
+
+  // S09d follow-up: set the crosshair cursor immediately when pick mode
+  // arms/disarms, rather than waiting for the next `mousemove` (which
+  // `handleHoverMove` above keeps in sync with while the mouse does move) --
+  // otherwise the cursor would only change once the user starts moving the
+  // mouse after clicking "Pick on map".
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    map.getCanvas().style.cursor = pointPickActive ? "crosshair" : "";
+  }, [pointPickActive]);
 
   // Geographic cursor readout: MapLibre's own `mousemove`/`mouseout`
   // events already carry the cursor resolved to a map lat/lon via
@@ -661,7 +741,14 @@ export function MapView({
           // `mrmsEnabled` (the toggles' intent) rather than by whether
           // their data has actually resolved yet, so a switch feels
           // immediate rather than lagging a network/render round trip.
-          opacity: rainbowEnabled || mrmsEnabled ? 0 : 1,
+          //
+          // UI polish pass: when the radar sweep *is* the active layer (the
+          // `0` branch above unaffected -- Rainbow/MRMS still force full
+          // invisibility), `radarOpacity` lets the user dial it down instead
+          // of always fully opaque, e.g. to see map labels/city names
+          // through it. Purely a display preference layered on top of the
+          // same mutual-exclusivity gate, never a way to defeat it.
+          opacity: rainbowEnabled || mrmsEnabled ? 0 : radarOpacity,
         }}
       />
       {/* S09 Phase 3: MRMS national-mosaic overlay -- a full-viewport raster

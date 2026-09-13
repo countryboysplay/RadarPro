@@ -20,6 +20,8 @@ import {
   persistFavoriteMoments,
   loadPersistedCacheLimit,
   persistCacheLimit,
+  loadPersistedRadarOpacity,
+  persistRadarOpacity,
 } from "./platform/desktop";
 import { type PollEvent } from "./scan/useScanPoller";
 import { MAX_HISTORY_SCANS, useScanHistory } from "./scan/useScanHistory";
@@ -36,6 +38,11 @@ import { ForecastPanel } from "./forecast/ForecastPanel";
 import { useForecastProvider } from "./forecast/useForecastProvider";
 import { useRainbowOverlay } from "./rainbow/useRainbowOverlay";
 import { RainbowToggle } from "./ui/RainbowToggle";
+import { useRainbowNowcast } from "./rainbow/useRainbowNowcast";
+import { RainbowNowcastPanel, RainbowNowcastResults, nowcastHasContent } from "./ui/RainbowNowcastPanel";
+import { useRainbowWeather } from "./rainbow/useRainbowWeather";
+import { RainbowWeatherPanel, RainbowWeatherResults, weatherHasContent } from "./ui/RainbowWeatherPanel";
+import { RightPanel, type RightPanelSection } from "./ui/RightPanel";
 import { useMrmsOverlay, type MrmsViewport } from "./mrms/useMrmsOverlay";
 import type { MrmsProductId } from "./mrms/types";
 import { MrmsPanel } from "./ui/MrmsPanel";
@@ -142,6 +149,30 @@ export default function App() {
     persistCacheLimit(cacheLimit);
   }, [cacheLimit, cacheLimitHydrated]);
 
+  // UI polish pass: user-adjustable live-radar opacity (0..100%, default
+  // 100 -- unchanged behavior until the user touches the slider), persisted
+  // the same hydrate-then-persist way as `cacheLimit` just above (desktop-
+  // only; a no-op in a plain browser tab, but the in-session state itself
+  // works everywhere). See `MapView`'s `radarOpacity` prop doc comment for
+  // why this only ever affects the "radar is the active layer" case.
+  const [radarOpacityPercent, setRadarOpacityPercent] = useState(100);
+  const [radarOpacityHydrated, setRadarOpacityHydrated] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    loadPersistedRadarOpacity().then((saved) => {
+      if (cancelled) return;
+      if (saved !== null) setRadarOpacityPercent(saved);
+      setRadarOpacityHydrated(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  useEffect(() => {
+    if (!radarOpacityHydrated) return;
+    persistRadarOpacity(radarOpacityPercent);
+  }, [radarOpacityPercent, radarOpacityHydrated]);
+
   // S10 Phase 2: favorited/starred moment codes (e.g. "REF", "VEL"),
   // surfaced as a star toggle + quick-select row next to the Moment picker
   // below. Same hydrate-then-persist pattern as the default site/cache
@@ -229,6 +260,60 @@ export default function App() {
   // gated. Owns its own toggle state + snapshot resolution; see the hook's
   // doc comment and `RainbowToggle`/`MapView`'s mutual-exclusivity comment.
   const rainbow = useRainbowOverlay(site);
+
+  // S09d Parts B/C: Rainbow Nowcast + Weather (Forecast) point APIs --
+  // distinct from the tile overlay above (`rainbow`) and from each other;
+  // each owns its own fetch-on-demand phase machine (see the hooks' doc
+  // comments). Both default their point inputs to the currently selected
+  // radar site's lat/lon (`site`) -- this app's stand-in for "map center"
+  // (the same value `useRainbowOverlay`'s snapshot probe already keys off
+  // of) -- passed down as a plain prop, never read from MapLibre directly.
+  const rainbowNowcast = useRainbowNowcast({ lon: site.lon, lat: site.lat });
+  const rainbowWeather = useRainbowWeather({ lon: site.lon, lat: site.lat });
+
+  // User feedback: once a result appears in the right-hand dock there was no
+  // way to get it back off the screen. A plain "dismissed" flag per result
+  // (not a third hook phase) -- cleared automatically the moment a fresh
+  // fetch starts, so pressing "Get" again always brings the dock back even
+  // if the previous result was dismissed.
+  const [nowcastDismissed, setNowcastDismissed] = useState(false);
+  const [weatherDismissed, setWeatherDismissed] = useState(false);
+  useEffect(() => {
+    if (rainbowNowcast.phase === "loading") setNowcastDismissed(false);
+  }, [rainbowNowcast.phase]);
+  useEffect(() => {
+    if (rainbowWeather.phase === "loading") setWeatherDismissed(false);
+  }, [rainbowWeather.phase]);
+
+  // S09d follow-up ("click the map to set the point"): which panel's point
+  // a map click should go to, or `null` when no pick is armed. At most one
+  // of {nowcast, weather} can be armed at a time -- only one map click can
+  // go to one target -- so this is a single tri-state value, not two
+  // independent booleans that could both end up true.
+  const [rainbowPointPickTarget, setRainbowPointPickTarget] = useState<"nowcast" | "weather" | null>(null);
+
+  const handleToggleNowcastPick = useCallback(() => {
+    setRainbowPointPickTarget((prev) => (prev === "nowcast" ? null : "nowcast"));
+  }, []);
+  const handleToggleWeatherPick = useCallback(() => {
+    setRainbowPointPickTarget((prev) => (prev === "weather" ? null : "weather"));
+  }, []);
+
+  // The actual map click, routed to whichever panel is armed -- MapView
+  // reports it as plain lat/lon (see its `onPointPick` doc comment), never
+  // reaching into either hook's point state itself. One-shot: the pick
+  // disarms itself the moment a click lands, and setting the point here
+  // never triggers a fetch (S09d's "nothing calls the network until the
+  // user presses Get" applies just as much to a map-click-filled point as
+  // a hand-typed one).
+  const handleRainbowMapPointPick = useCallback(
+    (lat: number, lon: number) => {
+      if (rainbowPointPickTarget === "nowcast") rainbowNowcast.setPoint(lon, lat);
+      else if (rainbowPointPickTarget === "weather") rainbowWeather.setPoint(lon, lat);
+      setRainbowPointPickTarget(null);
+    },
+    [rainbowPointPickTarget, rainbowNowcast, rainbowWeather],
+  );
 
   // S09 Phase 3: MRMS national-mosaic overlay -- `enabled`/`productId`
   // (unlike Rainbow's own hook, which owns its toggle state internally)
@@ -514,11 +599,44 @@ export default function App() {
           e.preventDefault();
           history.jumpToLatest();
           break;
+        case "Escape":
+          // S09d follow-up: a way to cancel "Pick on map" without clicking
+          // the map at all, alongside re-clicking the same panel button.
+          if (rainbowPointPickTarget) {
+            e.preventDefault();
+            setRainbowPointPickTarget(null);
+          }
+          break;
       }
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [history, stepElevation]);
+  }, [history, stepElevation, rainbowPointPickTarget]);
+
+  // UI polish pass on S09d: Rainbow Nowcast/Forecast result tables moved
+  // out of the left sidebar into this right-docked panel -- see
+  // `RightPanel.tsx`'s doc comment. Built fresh each render from each
+  // hook's own phase (never a separate "should the dock show" state of its
+  // own to keep in sync) -- `nowcastHasContent`/`weatherHasContent` gate
+  // each entry so the dock never appears before the user has pressed "Get
+  // Nowcast"/"Get Forecast" at least once.
+  const rightPanelSections: RightPanelSection[] = [];
+  if (nowcastHasContent(rainbowNowcast) && !nowcastDismissed) {
+    rightPanelSections.push({
+      key: "rainbow-nowcast",
+      title: "Rainbow Nowcast",
+      onDismiss: () => setNowcastDismissed(true),
+      children: <RainbowNowcastResults nowcast={rainbowNowcast} />,
+    });
+  }
+  if (weatherHasContent(rainbowWeather) && !weatherDismissed) {
+    rightPanelSections.push({
+      key: "rainbow-weather",
+      title: "Rainbow Forecast",
+      onDismiss: () => setWeatherDismissed(true),
+      children: <RainbowWeatherResults weather={rainbowWeather} />,
+    });
+  }
 
   const elevationDeg = sweepIndex !== null ? (volumeMeta?.elevationDegs[sweepIndex] ?? null) : null;
   const activeTableParsedUnits = useMemo(() => {
@@ -542,12 +660,18 @@ export default function App() {
         alerts={alerts.geojson}
         selectedAlertKey={selectedAlertKey}
         onAlertClick={handleAlertClick}
+        pointPickActive={rainbowPointPickTarget !== null}
+        onPointPick={handleRainbowMapPointPick}
         rainbowTileUrlTemplate={rainbow.tileUrlTemplate}
         rainbowEnabled={rainbow.enabled}
+        rainbowMaxZoom={rainbow.layerInfo.maxZoom}
         mrmsCanvasRef={mrmsCanvasRef}
         mrmsEnabled={mrmsEnabled}
         onMrmsViewportChange={setMrmsViewport}
+        radarOpacity={radarOpacityPercent / 100}
       />
+
+      <RightPanel sections={rightPanelSections} />
 
       {/* S09c UI shell: slim always-visible top/bottom chrome for the most
           glanceable controls (GPU/scan-feed status, playback), modeled on
@@ -680,6 +804,24 @@ export default function App() {
             </div>
           )}
 
+          {/* UI polish pass: opacity control for the live radar sweep --
+              only has a visible effect while the radar canvas is actually
+              the active layer (`MapView` forces it fully invisible whenever
+              Rainbow or MRMS is on, unaffected by this slider -- see that
+              component's mutual-exclusivity comment). Lets map labels/city
+              names underneath show through when turned down. */}
+          <label title="Live radar opacity -- has no visible effect while Rainbow or MRMS is active">
+            Radar opacity{" "}
+            <input
+              type="range"
+              min={0}
+              max={100}
+              value={radarOpacityPercent}
+              onChange={(e) => setRadarOpacityPercent(Number(e.target.value))}
+            />{" "}
+            {radarOpacityPercent}%
+          </label>
+
           <InfoPanel
             siteIcao={site.icao}
             siteName={site.name}
@@ -730,12 +872,30 @@ export default function App() {
         </SidebarSection>
 
         <SidebarSection title="Rainbow">
-          <RainbowToggle
-            configured={rainbow.configured}
-            enabled={rainbow.enabled}
-            status={rainbow.status}
-            error={rainbow.error}
-            onToggle={handleRainbowToggle}
+          <RainbowToggle overlay={rainbow} onToggle={handleRainbowToggle} />
+        </SidebarSection>
+
+        {/* S09d Part B: Rainbow Nowcast (KB §6) -- point, minute-by-minute
+            precip forecast, distinct from the tile overlay above and from
+            the Rainbow Forecast panel below. Named distinctly per Global
+            Contract so it's never confused with either. */}
+        <SidebarSection title="Rainbow Nowcast">
+          <RainbowNowcastPanel
+            nowcast={rainbowNowcast}
+            pickModeActive={rainbowPointPickTarget === "nowcast"}
+            onTogglePickMode={handleToggleNowcastPick}
+          />
+        </SidebarSection>
+
+        {/* S09d Part C: Rainbow Weather (KB §7) -- Rainbow's own blended
+            hourly/daily point forecast. Distinct from the GEFS/HRRR
+            "Forecast" panel above -- never bare "Forecast" in this panel's
+            copy (Global Contract). */}
+        <SidebarSection title="Rainbow Forecast">
+          <RainbowWeatherPanel
+            weather={rainbowWeather}
+            pickModeActive={rainbowPointPickTarget === "weather"}
+            onTogglePickMode={handleToggleWeatherPick}
           />
         </SidebarSection>
 

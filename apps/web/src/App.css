@@ -544,6 +544,33 @@ body,
   cursor: default;
 }
 
+/* S09d Part A: layer/palette/forecast-time/coverage/use-precip-type
+ * controls -- plain `<select>`/checkbox rows per this stage's explicit
+ * "dropdown, not button-row" UI decision. */
+.rainbow-toggle-options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin-top: 0.4rem;
+}
+
+.rainbow-toggle-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+}
+
+.rainbow-toggle-option select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.rainbow-toggle-checkbox {
+  justify-content: flex-start;
+}
+
 .rainbow-toggle-status {
   margin-top: 0.2rem;
   font-size: 0.72rem;
@@ -560,6 +587,107 @@ body,
 
 .rainbow-toggle-status-ready {
   color: #8fe38f;
+}
+
+/* S09d Parts B/C: Rainbow Nowcast + Weather point panels -- same dark-HUD
+ * palette and `.rainbow-toggle-status*` status-line classes as the tile
+ * toggle above, so all three Rainbow panels read as one visual family. */
+
+.rainbow-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.rainbow-panel-point {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.rainbow-panel-field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  font-size: 0.78rem;
+  flex: 1 1 auto;
+}
+
+.rainbow-panel-field input,
+.rainbow-panel-field select {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
+}
+
+.rainbow-panel-button {
+  align-self: flex-start;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.rainbow-panel-button:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+/* S09d follow-up: "click the map to set the point" -- the "Pick on map"
+ * button both panels get. `aria-pressed` (rather than a second class) drives
+ * the armed look so it stays in sync with the actual toggle state instead of
+ * a class a caller could forget to also flip. */
+.rainbow-panel-button-secondary {
+  background: transparent;
+  border: 1px solid #5a5a62;
+}
+
+.rainbow-panel-button-secondary[aria-pressed="true"] {
+  background: #3a6ea5;
+  border-color: #5a9bd8;
+  color: #fff;
+}
+
+.rainbow-panel-results {
+  border-top: 1px solid #3a3a40;
+  padding-top: 0.4rem;
+  margin-top: 0.2rem;
+}
+
+.rainbow-panel-summary {
+  font-size: 0.78rem;
+  color: #b5b5bc;
+  margin-bottom: 0.3rem;
+}
+
+.rainbow-panel-table-scroll {
+  /* Was 220px while these tables lived in the narrow left sidebar; now
+   * rendered only inside the wider, taller `.right-panel` (see
+   * `RightPanel.tsx`/`RainbowNowcastResults`/`RainbowWeatherResults`), which
+   * has the vertical room to show more rows before this inner scroll
+   * kicks in. */
+  max-height: 340px;
+  overflow-y: auto;
+}
+
+.rainbow-panel-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.72rem;
+}
+
+.rainbow-panel-table th,
+.rainbow-panel-table td {
+  text-align: left;
+  padding: 0.15rem 0.4rem 0.15rem 0;
+  white-space: nowrap;
+}
+
+.rainbow-panel-table th {
+  position: sticky;
+  top: 0;
+  background: #1e1e22;
+  color: #b5b5bc;
+  font-weight: 600;
 }
 
 /* MRMS national-mosaic overlay panel (S09 Phase 3) -- reuses the same
@@ -1130,6 +1258,78 @@ body,
   flex-direction: column;
   gap: 0.6rem;
   padding: 0.4rem 0 0.2rem 1.3rem;
+}
+
+/* UI polish pass on S09d: right-docked results panel (`RightPanel.tsx`) --
+ * Rainbow Nowcast/Forecast used to render their result tables inline in
+ * the left sidebar's narrow control-rail column; both now keep only their
+ * inputs there and dock their tables here instead, where tabular data has
+ * room to breathe. Reuses `.hud-panel`'s base dark-HUD look (background/
+ * border/color/font-size, plus its `h1`/`select` descendant rules) the same
+ * way `.hud-panel.sidebar` already does for the left dock -- only the
+ * position/size rules differ, mirrored on the opposite edge. `top`/`bottom`
+ * clear the fixed top/bottom chrome exactly like `.hud-panel.sidebar`'s own
+ * padding does, so this can never sit underneath (or peek out above/below)
+ * `.top-bar`/`.bottom-bar`. Left at the base `.hud-panel` z-index (10) --
+ * below both the chrome bars (20) and the sidebar (15) -- so on a narrow
+ * window where an open sidebar and this dock would otherwise collide, the
+ * sidebar (the control surface the user is actively using) wins rather
+ * than the two silently fighting for the same pixels. */
+.hud-panel.right-panel {
+  position: fixed;
+  top: 3.25rem;
+  right: 1rem;
+  bottom: 4.5rem;
+  left: auto;
+  width: min(480px, 92vw);
+  max-width: none;
+  max-height: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  overflow-y: auto;
+}
+
+.right-panel-section {
+  border-bottom: 1px solid #2a2a2e;
+  padding-bottom: 0.6rem;
+}
+
+.right-panel-section:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.right-panel-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin: 0 0 0.4rem 0;
+}
+
+.right-panel-section-title {
+  color: #8fd0ff;
+  font-size: 0.88rem;
+  font-weight: normal;
+  margin: 0;
+}
+
+.right-panel-dismiss {
+  flex: none;
+  background: transparent;
+  border: 1px solid #3a3a3e;
+  border-radius: 3px;
+  color: #b8b8bc;
+  line-height: 1;
+  font-size: 0.95rem;
+  padding: 0.05rem 0.4rem;
+  cursor: pointer;
+}
+
+.right-panel-dismiss:hover {
+  background: #2a2a2e;
+  color: #fff;
 }
 
 @media (max-width: 480px) {

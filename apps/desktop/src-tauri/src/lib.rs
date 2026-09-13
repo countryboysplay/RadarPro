@@ -14,6 +14,7 @@ use tauri::Manager;
 use tauri_plugin_log::{Target, TargetKind};
 
 mod rainbow;
+mod rainbow_weather;
 
 /// Diagnostics surfaced to the frontend via `invoke("get_diagnostics")` --
 /// intentionally small and read-only (no filesystem/shell passthrough; see
@@ -142,8 +143,11 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .invoke_handler(tauri::generate_handler![
             get_diagnostics,
+            rainbow::rainbow_get_snapshot,
             rainbow::rainbow_probe_tile,
-            rainbow::rainbow_fetch_tile
+            rainbow::rainbow_fetch_tile,
+            rainbow_weather::rainbow_nowcast_precip,
+            rainbow_weather::rainbow_weather_forecast
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
