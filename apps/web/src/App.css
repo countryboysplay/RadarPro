@@ -134,6 +134,19 @@ body,
   color: #6fd66f;
 }
 
+/* S10 Phase 3: a "live" badge whose displayed volume has gone stale (see
+   `useScanHistory`'s `isLiveStale`) must not read the same as a healthy
+   live feed -- overrides `.play-mode-live`'s green with the same warning
+   red used elsewhere for an active/error state. */
+.play-mode-stale {
+  color: #e05a5a;
+}
+
+.play-mode-stale-warning {
+  color: #e05a5a;
+  font-weight: bold;
+}
+
 .play-mode-paused {
   color: #e0c25a;
 }

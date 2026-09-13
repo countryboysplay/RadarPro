@@ -15,10 +15,31 @@ export interface PlaybackControlsProps {
   onTogglePlay: () => void;
   onJumpLatest: () => void;
   onFrameMsChange: (ms: number) => void;
+  /** S10 Phase 3: `true` once the displayed "live" frame's own volume start
+   * time is old enough that it should no longer read as fresh -- see
+   * `useScanHistory`'s `isLiveStale` doc comment for why this exists
+   * (verified live against a real blocked feed: the badge below used to
+   * keep reading "live" unchanged no matter how old the data actually
+   * got). Always `false` outside `"live"` mode. */
+  isLiveStale: boolean;
+  /** Age (ms) of the currently-displayed frame's own volume start time, for
+   * the "no new scan in Xm" label -- `null` when nothing is selected. */
+  currentVolumeAgeMillis: number | null;
 }
 
 function formatTime(ms: number): string {
   return new Date(ms).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "medium" });
+}
+
+/** Round an age in milliseconds down to a human "Xm"/"Xh Ym" label -- only
+ * ever shown once an age is already well past `STALE_LIVE_AFTER_MS` (tens of
+ * minutes), so minute granularity (no seconds) is the right precision. */
+function formatAge(ms: number): string {
+  const totalMinutes = Math.max(1, Math.floor(ms / 60_000));
+  if (totalMinutes < 60) return `${totalMinutes}m`;
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return minutes === 0 ? `${hours}h` : `${hours}h ${minutes}m`;
 }
 
 /**
@@ -38,6 +59,8 @@ export function PlaybackControls({
   onTogglePlay,
   onJumpLatest,
   onFrameMsChange,
+  isLiveStale,
+  currentVolumeAgeMillis,
 }: PlaybackControlsProps) {
   const disabled = entriesCount === 0;
   return (
@@ -62,7 +85,12 @@ export function PlaybackControls({
         </button>
       </div>
       <div className="playback-status">
-        <span className={`play-mode play-mode-${playMode}`}>{playMode}</span>
+        <span className={`play-mode play-mode-${playMode}${isLiveStale ? " play-mode-stale" : ""}`}>{playMode}</span>
+        {isLiveStale && currentVolumeAgeMillis !== null && (
+          <span className="play-mode-stale-warning" title="The live feed has not produced a newer scan in a while -- see Settings > Network diagnostics.">
+            ⚠ no new scan in {formatAge(currentVolumeAgeMillis)}
+          </span>
+        )}
         <span className="playback-time">
           {currentTimeMillis !== null ? formatTime(currentTimeMillis) : "no scan loaded"}
         </span>

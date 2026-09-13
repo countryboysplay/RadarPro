@@ -173,6 +173,7 @@ export default function App() {
     error,
     adapterName,
     backend,
+    decodeError,
     decodeVolume,
     momentWireCodesForSweep,
     defaultSweepIndexForMoment,
@@ -578,6 +579,20 @@ export default function App() {
           <span className="top-bar-status-item" title="Scan feed status">
             {describePollEvent(history.pollEvent)}
           </span>
+          {/* S10 Phase 3: a volume that downloaded fine but failed to decode
+              (truncated/corrupted transfer) used to throw uncaught out of
+              the decode effect below and white-screen the whole app -- see
+              `useRadarRenderer`'s `decodeVolume` doc comment. Now it can't
+              crash anything, and this is that failure's one visible,
+              always-present home instead of only a console line. */}
+          {decodeError && (
+            <span
+              className="top-bar-status-item top-bar-status-error"
+              title="The most recently downloaded volume failed to decode -- likely a truncated/corrupted transfer. The display keeps showing the last good frame."
+            >
+              decode error: {decodeError}
+            </span>
+          )}
         </div>
       </header>
 
@@ -773,6 +788,8 @@ export default function App() {
           onTogglePlay={history.togglePlay}
           onJumpLatest={history.jumpToLatest}
           onFrameMsChange={history.setFrameMs}
+          isLiveStale={history.isLiveStale}
+          currentVolumeAgeMillis={history.currentVolumeAgeMillis}
         />
         <div className="keyboard-hint">
           ← / → prev/next scan · Space play/pause · ↑ / ↓ elevation · L latest

@@ -52,6 +52,11 @@ export interface RadarRendererState {
   error: string | null;
   adapterName: string | null;
   backend: string | null;
+  /** The most recent `decodeVolume` failure message (a truncated/corrupted
+   * download failed to parse), or `null` if the most recent decode
+   * succeeded -- see `decodeVolume`'s doc comment. Distinct from `error`
+   * above, which is the GPU/renderer-init failure, not a per-volume one. */
+  decodeError: string | null;
 }
 
 function errMessage(err: unknown): string {
@@ -78,6 +83,7 @@ export function useRadarRenderer(canvasRef: RefObject<HTMLCanvasElement>) {
     error: null,
     adapterName: null,
     backend: null,
+    decodeError: null,
   });
   const rendererRef = useRef<RadarWebRenderer | null>(null);
 
@@ -135,22 +141,49 @@ export function useRadarRenderer(canvasRef: RefObject<HTMLCanvasElement>) {
    * Decode `bytes` (a full raw Archive II volume) once and keep it in the
    * wasm renderer's own memory. Does not render anything -- call
    * `selectAndRender` afterward. Returns `null` if the renderer is not
-   * ready yet.
+   * ready yet, *or* if `bytes` fails to decode (a truncated/corrupted
+   * download -- see S10 Phase 3's "partial downloads" reliability pass).
+   *
+   * # S10 Phase 3: this used to be the one renderer call in this file with
+   * no try/catch around it
+   *
+   * `radar-web`'s `decodeVolume` is a `Result<VolumeSummary, JsValue>` on
+   * the Rust side, which `wasm-bindgen` turns into a JS function that
+   * *throws* on `Err` -- exactly like every other fallible method on this
+   * renderer (`selectAndRender`, `probeGate`, etc.), all of which this file
+   * already wraps in try/catch. This one call was not, and live-verifying
+   * against a real truncated NEXRAD download (a fetch response body sliced
+   * short) turned up the real consequence: the thrown error propagated,
+   * uncaught, out of the `useEffect` in `App.tsx` that calls this, and
+   * React -- with no error boundary anywhere in this app -- unmounted the
+   * *entire* tree to a blank white screen. A single bad download from an
+   * otherwise-healthy feed was enough to white-screen the app. Now this
+   * matches every sibling method: caught, logged, and reported through
+   * `decodeError` below instead of crashing.
    */
   const decodeVolume = useCallback((bytes: Uint8Array): VolumeMeta | null => {
     const renderer = rendererRef.current;
     if (!renderer) return null;
-    const summary = renderer.decodeVolume(bytes);
     try {
-      return {
-        siteIcao: summary.siteIcao,
-        sweepCount: summary.sweepCount,
-        elevationDegs: Array.from(summary.elevationDegs()),
-      };
-    } finally {
-      // `VolumeSummary` is a wasm-bindgen class backed by linear-memory
-      // allocations the JS garbage collector does not know about.
-      summary.free();
+      const summary = renderer.decodeVolume(bytes);
+      try {
+        const meta = {
+          siteIcao: summary.siteIcao,
+          sweepCount: summary.sweepCount,
+          elevationDegs: Array.from(summary.elevationDegs()),
+        };
+        setState((s) => (s.decodeError === null ? s : { ...s, decodeError: null }));
+        return meta;
+      } finally {
+        // `VolumeSummary` is a wasm-bindgen class backed by linear-memory
+        // allocations the JS garbage collector does not know about.
+        summary.free();
+      }
+    } catch (err) {
+      const message = errMessage(err);
+      console.error("decodeVolume failed (likely a truncated/corrupted download):", message);
+      setState((s) => ({ ...s, decodeError: message }));
+      return null;
     }
   }, []);
 

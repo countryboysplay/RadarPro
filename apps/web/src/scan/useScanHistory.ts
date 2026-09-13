@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useReducer, useRef } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import type { DiscoveredVolume } from "../nexrad/keys";
 import { type PollEvent, useScanPoller } from "./useScanPoller";
 
@@ -26,6 +26,30 @@ export const MAX_HISTORY_SCANS = 15;
  */
 export const MIN_HISTORY_SCANS = 5;
 export const MAX_HISTORY_SCANS_LIMIT = 60;
+
+/**
+ * S10 Phase 3 reliability pass: how old the currently-*live* frame's own
+ * volume start time must get before the UI stops calling it "live" without
+ * qualification. `useScanPoller`'s own doc comment already establishes that
+ * WSR-88D volumes normally complete every 4-10 minutes -- so "now minus this
+ * volume's start time" naturally drifts up toward that 10-minute figure even
+ * under completely healthy polling, right before the next volume lands.
+ * Twice that slow-end figure gives a full extra cycle of buffer (covers one
+ * missed/delayed poll) before flagging anything, so this must never
+ * false-positive during normal operation, while still catching a real stuck
+ * feed (site down, or the poller silently never finding a newer key) well
+ * inside the "several minutes" a person would actually notice something is
+ * wrong -- see this module's `useScanHistory` doc comment for the bug this
+ * fixes (a site's feed going stale while the badge kept reading "live").
+ */
+export const STALE_LIVE_AFTER_MS = 20 * 60_000;
+
+/** How often the "is the live frame stale" clock re-checks itself. Cheap
+ * (a plain comparison, no network/decode work) and only needs
+ * minute-grained freshness for a human-readable "no new scan in Xm" label,
+ * so a coarse interval is deliberate here, unlike `ADVANCE_FRAME`'s
+ * animation timer above. */
+const STALE_CHECK_INTERVAL_MS = 15_000;
 
 /** Clamp any candidate cache-size value (e.g. read back from a
  * hand-editable `settings.json`, or typed into the Settings field) into
@@ -209,6 +233,17 @@ export interface ScanHistory {
    * `next`: a deliberate jump is never mistaken for "live". */
   jumpToNearestByTimestamp: (millis: number) => void;
   setFrameMs: (ms: number) => void;
+  /** How old the currently-displayed frame's own volume start time is,
+   * right now -- ticks live via a coarse internal timer (see
+   * `STALE_CHECK_INTERVAL_MS`) so it keeps advancing even when nothing else
+   * about the selection changes. `null` when nothing is selected. */
+  currentVolumeAgeMillis: number | null;
+  /** `true` only in `"live"` mode, once {@link currentVolumeAgeMillis}
+   * exceeds {@link STALE_LIVE_AFTER_MS} -- i.e. exactly the case a "LIVE"
+   * badge must stop reading as fresh. Always `false` in `"paused"`/
+   * `"playing"` mode: a deliberate history review is never mislabeled as a
+   * stuck live feed. */
+  isLiveStale: boolean;
 }
 
 /**
@@ -226,6 +261,22 @@ export interface ScanHistory {
  * (`useScanPoller` runs unconditionally below) -- only whether a newly
  * downloaded scan *changes what's displayed* depends on `playMode` (see
  * `historyReducer`'s `SCAN_ADDED` case).
+ *
+ * # S10 Phase 3: staleness, not just poll errors
+ *
+ * `useScanPoller`'s `pollEvent` already surfaces a *transient* poll failure
+ * (a top-bar "error: ..." line), but live-verifying against a real blocked
+ * feed (the NEXRAD bucket host unreachable while everything else keeps
+ * working) turned up a real gap: the playback status's "live" badge kept
+ * reading exactly as it does when everything is healthy, with no signal at
+ * all that the displayed volume was actually minutes old -- and a feed that
+ * silently stops finding a newer key (no HTTP error at all, just
+ * `"up-to-date"` forever) would not even get the transient error text. This
+ * hook now separately tracks how old the *displayed* live volume itself is
+ * ({@link STALE_LIVE_AFTER_MS}) so the UI can flag that directly, regardless
+ * of whether the underlying poll is erroring or just never finding anything
+ * new -- see `currentVolumeAgeMillis`/`isLiveStale` below and
+ * `PlaybackControls`'s use of them.
  */
 export function useScanHistory(icao: string, maxEntries: number = MAX_HISTORY_SCANS): ScanHistory {
   const [state, dispatch] = useReducer(historyReducer, maxEntries, initialState);
@@ -274,6 +325,21 @@ export function useScanHistory(icao: string, maxEntries: number = MAX_HISTORY_SC
     return () => clearInterval(timer);
   }, [state.playMode, state.frameMs]);
 
+  // Live-ticking clock backing `currentVolumeAgeMillis`/`isLiveStale` --
+  // deliberately a plain `Date.now()` sample on a coarse interval, not
+  // derived from any poll event, so staleness is caught whether the
+  // underlying poll is erroring, or just never finding a newer key.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), STALE_CHECK_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, []);
+
+  const currentEntryForAge = state.entries[state.currentIndex];
+  const currentVolumeAgeMillis = currentEntryForAge ? now - currentEntryForAge.startTimeMillis : null;
+  const isLiveStale =
+    state.playMode === "live" && currentVolumeAgeMillis !== null && currentVolumeAgeMillis > STALE_LIVE_AFTER_MS;
+
   const currentBytes = useCallback(() => {
     const entry = state.entries[state.currentIndex];
     return entry ? bytesRef.current.get(entry.key) : undefined;
@@ -305,5 +371,7 @@ export function useScanHistory(icao: string, maxEntries: number = MAX_HISTORY_SC
     jumpToLatest,
     jumpToNearestByTimestamp,
     setFrameMs,
+    currentVolumeAgeMillis,
+    isLiveStale,
   };
 }
