@@ -195,15 +195,18 @@ async fn main() {
     rr_gpu::wait_for_gpu(&ctx.device);
     let pixels = rr_gpu::read_rgba8(&ctx.device, &ctx.queue, &target);
 
-    let distinct_colors: std::collections::HashSet<[u8; 4]> = pixels
-        .chunks_exact(4)
-        .map(|c| [c[0], c[1], c[2], c[3]])
-        .collect();
+    let distinct_colors: std::collections::HashSet<[u8; 4]> =
+        pixels.as_chunks::<4>().0.iter().copied().collect();
     println!(
         "Rendered {RENDER_WIDTH}x{RENDER_HEIGHT} frame with {} distinct RGBA colors",
         distinct_colors.len()
     );
-    let opaque_count = pixels.chunks_exact(4).filter(|c| c[3] == 255).count();
+    let opaque_count = pixels
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .filter(|c| c[3] == 255)
+        .count();
     println!(
         "{opaque_count} of {} pixels are fully opaque (inside the CONUS grid)",
         RENDER_WIDTH as usize * RENDER_HEIGHT as usize

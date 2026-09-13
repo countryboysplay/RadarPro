@@ -125,8 +125,8 @@ fn grid_render_places_known_values_at_the_correct_screen_positions() {
     let mut other_opaque_colors: std::collections::HashSet<[u8; 4]> =
         std::collections::HashSet::new();
 
-    for chunk in pixels.chunks_exact(4) {
-        let p = [chunk[0], chunk[1], chunk[2], chunk[3]];
+    for chunk in pixels.as_chunks::<4>().0 {
+        let p = *chunk;
         if p[3] == 0 {
             transparent_pixel_count += 1;
         } else if close(p, cold_color) {
