@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { isRainbowConfigured, RAINBOW_API_KEY } from "./config";
+import { useRainbowApiKey } from "./useRainbowApiKey";
 import {
   buildRainbowPrecipTileUrlTemplate,
   RAINBOW_FORECAST_TIME_CURRENT,
@@ -41,7 +41,10 @@ export interface RainbowOverlay {
  * provider-hook convention (`useForecastProvider`, `useAlertPoller`).
  */
 export function useRainbowOverlay(): RainbowOverlay {
-  const configured = isRainbowConfigured();
+  // S09c: `effectiveKey`/`configured` are reactive to a key saved in the
+  // Settings section (localStorage), not just the build-time env var -- see
+  // `useRainbowApiKey`'s doc comment for the priority rule.
+  const { effectiveKey, configured } = useRainbowApiKey();
   const [enabled, setEnabled] = useState(false);
   const [status, setStatus] = useState<RainbowStatus>(configured ? "off" : "unconfigured");
   const [error, setError] = useState<string | null>(null);
@@ -74,12 +77,12 @@ export function useRainbowOverlay(): RainbowOverlay {
     setStatus("resolving");
     setError(null);
 
-    resolveRainbowSnapshot(RAINBOW_API_KEY, RAINBOW_FORECAST_TIME_CURRENT, controller.signal).then(
+    resolveRainbowSnapshot(effectiveKey, RAINBOW_FORECAST_TIME_CURRENT, controller.signal).then(
       (result) => {
         if (generationRef.current !== generation) return; // superseded -- ignore.
         if (result.ok) {
           setTileUrlTemplate(
-            buildRainbowPrecipTileUrlTemplate(result.snapshot, RAINBOW_FORECAST_TIME_CURRENT, RAINBOW_API_KEY),
+            buildRainbowPrecipTileUrlTemplate(result.snapshot, RAINBOW_FORECAST_TIME_CURRENT, effectiveKey),
           );
           setStatus("ready");
         } else {
@@ -103,7 +106,9 @@ export function useRainbowOverlay(): RainbowOverlay {
     return () => {
       controller.abort();
     };
-  }, [configured, enabled]);
+    // Re-resolves if the effective key itself changes (e.g. a Settings edit)
+    // while the overlay is enabled -- not just on toggle/configured changes.
+  }, [configured, enabled, effectiveKey]);
 
   return { configured, enabled, toggle, status, error, tileUrlTemplate };
 }

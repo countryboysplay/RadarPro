@@ -27,6 +27,7 @@ import type { AlertJson } from "./alerts/types";
 import { ForecastPanel } from "./forecast/ForecastPanel";
 import { useRainbowOverlay } from "./rainbow/useRainbowOverlay";
 import { RainbowToggle } from "./ui/RainbowToggle";
+import { SettingsPanel } from "./ui/SettingsPanel";
 import { Sidebar } from "./ui/Sidebar";
 import { SidebarSection } from "./ui/SidebarSection";
 
@@ -522,6 +523,10 @@ export default function App() {
             error={rainbow.error}
             onToggle={rainbow.toggle}
           />
+        </SidebarSection>
+
+        <SidebarSection title="Settings">
+          <SettingsPanel />
         </SidebarSection>
       </Sidebar>
 

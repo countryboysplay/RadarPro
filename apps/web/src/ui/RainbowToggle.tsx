@@ -11,7 +11,7 @@ export interface RainbowToggleProps {
 function describeStatus(status: RainbowStatus, error: string | null): string | null {
   switch (status) {
     case "unconfigured":
-      return "not configured -- set VITE_RAINBOW_API_KEY (see .env.example) to enable";
+      return "not configured -- add your API key in Settings to enable";
     case "off":
       return null;
     case "resolving":

@@ -545,6 +545,59 @@ body,
   color: #8fe38f;
 }
 
+/* Settings section (S09c addendum) -- Rainbow API key field */
+
+.settings-field label {
+  display: block;
+  margin-bottom: 0.3rem;
+}
+
+.settings-field-row {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.settings-field-row input {
+  flex: 1;
+  font: inherit;
+  background: #1c1c20;
+  color: inherit;
+  border: 1px solid #3a3a40;
+  border-radius: 3px;
+  padding: 0.2rem 0.4rem;
+}
+
+.settings-field-row button {
+  font: inherit;
+  background: #1c1c20;
+  color: inherit;
+  border: 1px solid #3a3a40;
+  border-radius: 3px;
+  padding: 0.2rem 0.55rem;
+  cursor: pointer;
+  flex: none;
+}
+
+.settings-field-status {
+  margin-top: 0.35rem;
+  font-size: 0.72rem;
+  color: #8fe38f;
+}
+
+.settings-field-status-active {
+  color: #8fe38f;
+}
+
+.settings-field-status-none {
+  color: #7a7a82;
+}
+
+.settings-field-note {
+  margin-top: 0.35rem;
+  font-size: 0.72rem;
+  color: #b5b5bc;
+}
+
 /* Model forecast panel (S08 follow-up) */
 
 .forecast-panel-title {
@@ -767,7 +820,8 @@ body,
 
 .hud-panel.sidebar select,
 .hud-panel.sidebar textarea,
-.hud-panel.sidebar input[type="text"] {
+.hud-panel.sidebar input[type="text"],
+.hud-panel.sidebar input[type="password"] {
   max-width: 100%;
   min-width: 0;
   box-sizing: border-box;
