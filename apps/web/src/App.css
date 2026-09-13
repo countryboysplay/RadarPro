@@ -549,6 +549,116 @@ body,
   color: #8fe38f;
 }
 
+/* MRMS national-mosaic overlay panel (S09 Phase 3) -- reuses the same
+ * dark-HUD palette as `.forecast-*`/`.rainbow-toggle-*` (amber accent for
+ * the product switcher, matching `.forecast-provider-button-active`'s
+ * "this is a gridded-field control" color language; green/red status
+ * colors matching `.rainbow-toggle-status-ready`/`-error`). */
+
+.mrms-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.mrms-toggle-label {
+  cursor: pointer;
+}
+
+.mrms-product-switcher {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.mrms-product-button {
+  font: inherit;
+  background: #1c1c20;
+  color: inherit;
+  border: 1px solid #3a3a40;
+  border-radius: 3px;
+  padding: 0.25rem 0.7rem;
+  cursor: pointer;
+}
+
+.mrms-product-button-active {
+  border-color: #ffd27a;
+  color: #ffd27a;
+}
+
+.mrms-product-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.mrms-status {
+  font-size: 0.78rem;
+  color: #b5b5bc;
+}
+
+.mrms-status-error {
+  color: #ff8f8f;
+}
+
+.mrms-status-ready {
+  color: #8fe38f;
+}
+
+.mrms-status-no-coverage-in-view {
+  color: #e3c88f;
+}
+
+.mrms-retry-button {
+  font: inherit;
+  background: #1c1c20;
+  color: #ff8f8f;
+  border: 1px solid #6a3a3a;
+  border-radius: 3px;
+  padding: 0.15rem 0.5rem;
+  cursor: pointer;
+  align-self: flex-start;
+}
+
+.mrms-refresh-button {
+  font: inherit;
+  background: #1c1c20;
+  color: inherit;
+  border: 1px solid #3a3a40;
+  border-radius: 3px;
+  padding: 0.15rem 0.5rem;
+  cursor: pointer;
+  align-self: flex-start;
+}
+
+.mrms-refresh-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.mrms-meta {
+  margin: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.2rem 0.6rem;
+  font-size: 0.78rem;
+}
+
+.mrms-meta dt {
+  color: #9a9aa2;
+}
+
+.mrms-meta dd {
+  margin: 0;
+  word-break: break-word;
+}
+
+.mrms-attribution {
+  margin-top: 0.2rem;
+  padding-top: 0.4rem;
+  border-top: 1px solid #3a3a40;
+  font-size: 0.7rem;
+  color: #7a7a82;
+}
+
 /* Settings section (S09c addendum) -- Rainbow API key field */
 
 .settings-field label {

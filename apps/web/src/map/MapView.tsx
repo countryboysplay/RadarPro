@@ -8,6 +8,7 @@ import type { RadarSite } from "../sites";
 import type { AlertFeatureCollection } from "../alerts/types";
 import { SEVERITY_COLORS, severityRank } from "../alerts/types";
 import { pointInAlertGeometry } from "../alerts/geometryHitTest";
+import type { MrmsViewport } from "../mrms/types";
 
 /**
  * Draw `rings` (radar-web's `rangeRingsGeoJson` output -- plain `[lon,
@@ -247,6 +248,31 @@ function metersPerPixel(latitudeDeg: number, zoom: number): number {
   return (156543.03392804097 * Math.cos((latitudeDeg * Math.PI) / 180)) / Math.pow(2, zoom);
 }
 
+/**
+ * S09 Phase 3: the live map's current viewport, expressed as the plain
+ * center/half-extent camera `useMrmsOverlay`/`renderCurrentGrid` take (see
+ * `MrmsViewport`'s own doc comment for why this crosses the mapping-adapter
+ * boundary as plain numbers, not a MapLibre type). Derived straight from
+ * `map.getBounds()` -- the same "regular flat-plane" approximation
+ * `forecast_grid.wgsl` already documents (not a real map projection), which
+ * is an acceptable, documented approximation for a raster overlay at this
+ * scale (mirrors `APPROX_SWEEP_RADIUS_KM`'s own "reasonable approximation"
+ * precedent above).
+ */
+function viewportFromMapBounds(map: MapLibreMap): MrmsViewport {
+  const bounds = map.getBounds();
+  const west = bounds.getWest();
+  const east = bounds.getEast();
+  const south = bounds.getSouth();
+  const north = bounds.getNorth();
+  return {
+    centerLon: (west + east) / 2,
+    centerLat: (south + north) / 2,
+    halfExtentLon: (east - west) / 2,
+    halfExtentLat: (north - south) / 2,
+  };
+}
+
 export interface MapViewProps {
   site: RadarSite;
   canvasRef: RefObject<HTMLCanvasElement>;
@@ -280,6 +306,24 @@ export interface MapViewProps {
    * and what actually drives hiding the live radar canvas (see the render
    * comment below for why). */
   rainbowEnabled?: boolean;
+  /** S09 Phase 3: canvas `useMrmsOverlay` paints its rendered MRMS frame
+   * onto -- owned by the caller (`App.tsx`), same "hook owns the render
+   * pipeline, `MapView` owns the DOM element's position/size" split
+   * `canvasRef` (radar) already establishes. `undefined` until the caller
+   * has one to give (never expected in practice -- `App.tsx` always
+   * creates it via `useRef` up front). */
+  mrmsCanvasRef?: RefObject<HTMLCanvasElement>;
+  /** The user's MRMS toggle *intent* -- what actually drives hiding the
+   * live radar canvas (see the render comment below), same shape as
+   * `rainbowEnabled`. */
+  mrmsEnabled?: boolean;
+  /** Fired on every map `move`/`zoom`/`resize`/`load`, with the map's
+   * current viewport already resolved to the plain center/half-extent
+   * camera `useMrmsOverlay` consumes (see `viewportFromMapBounds`) --
+   * `useMrmsOverlay` itself debounces/generation-guards what it does with
+   * this; `MapView` just reports it on every relevant map event, same as
+   * `onCursorMove` reports every raw `mousemove`. */
+  onMrmsViewportChange?: (viewport: MrmsViewport) => void;
 }
 
 /**
@@ -313,6 +357,9 @@ export function MapView({
   onAlertClick,
   rainbowTileUrlTemplate = null,
   rainbowEnabled = false,
+  mrmsCanvasRef,
+  mrmsEnabled = false,
+  onMrmsViewportChange,
 }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
@@ -325,6 +372,8 @@ export function MapView({
   const selectedAlertKeyRef = useRef<string | null>(selectedAlertKey);
   selectedAlertKeyRef.current = selectedAlertKey;
   const appliedRainbowUrlRef = useRef<string | null>(null);
+  const onMrmsViewportChangeRef = useRef(onMrmsViewportChange);
+  onMrmsViewportChangeRef.current = onMrmsViewportChange;
 
   // Create the map once.
   useEffect(() => {
@@ -373,6 +422,7 @@ export function MapView({
     const canvas = canvasRef.current;
     const ringsCanvas = ringsCanvasRef.current;
     const alertsCanvas = alertsCanvasRef.current;
+    const mrmsCanvas = mrmsCanvasRef?.current ?? null;
     if (!map || !canvas) return;
 
     function updateOverlay() {
@@ -414,6 +464,26 @@ export function MapView({
         }
         drawAlerts(map, alertsCanvas, alertsRef.current, selectedAlertKeyRef.current);
       }
+
+      // S09 Phase 3: same backing-buffer sync as rings/alerts above -- the
+      // MRMS overlay is a full-viewport raster, not a fixed-size circle
+      // like the radar sweep canvas, so it needs to cover exactly the same
+      // pixel area the map itself does (see `useMrmsOverlay`'s doc comment
+      // for why its render call is framed to match this exactly).
+      if (mrmsCanvas) {
+        const mapCanvas = map.getCanvas();
+        if (mrmsCanvas.width !== mapCanvas.width || mrmsCanvas.height !== mapCanvas.height) {
+          mrmsCanvas.width = mapCanvas.width;
+          mrmsCanvas.height = mapCanvas.height;
+          mrmsCanvas.style.width = mapCanvas.style.width;
+          mrmsCanvas.style.height = mapCanvas.style.height;
+        }
+      }
+
+      // Report the current viewport as a plain center/half-extent camera --
+      // `useMrmsOverlay` (not this component) decides whether/when that's
+      // worth actually re-rendering for (debounced, generation-guarded).
+      onMrmsViewportChangeRef.current?.(viewportFromMapBounds(map));
     }
 
     map.easeTo({ center: [site.lon, site.lat], duration: 600 });
@@ -436,7 +506,7 @@ export function MapView({
       map.off("resize", updateOverlay);
       map.off("load", updateOverlay);
     };
-  }, [site, canvasRef]);
+  }, [site, canvasRef, mrmsCanvasRef]);
 
   // Redraw the range rings whenever the geometry itself changes (new site,
   // or the first time it becomes available after wasm load) -- projecting
@@ -552,24 +622,62 @@ export function MapView({
           top: 0,
           left: 0,
           pointerEvents: "none",
-          // S09b mutual-exclusivity decision: hidden whenever the user has
-          // the Rainbow toggle on. This canvas is opaque and sits above
-          // MapLibre's own canvas (see this component's other doc comments
-          // on why range rings/alerts had to move to overlay canvases for
-          // exactly that reason) -- a Rainbow raster layer, added the
-          // normal native-MapLibre way per this stage's brief, paints
-          // *underneath* it and would be completely invisible with the
-          // live sweep still showing. Rather than adding a third bespoke
-          // overlay-canvas workaround for what's just a full-frame raster
-          // image (no benefit over MapLibre's own raster source for that),
-          // the two are made mutually exclusive: turning Rainbow on hides
-          // the radar canvas, turning it off restores it. Driven by
-          // `rainbowEnabled` (the toggle's intent) rather than by whether a
-          // tile URL has actually resolved yet, so the switch feels
-          // immediate rather than lagging a network round trip.
-          opacity: rainbowEnabled ? 0 : 1,
+          // S09b/S09 Phase 3 mutual-exclusivity decision: hidden whenever
+          // the user has the Rainbow toggle *or* the MRMS toggle on. This
+          // canvas is opaque and sits above MapLibre's own canvas (see this
+          // component's other doc comments on why range rings/alerts had to
+          // move to overlay canvases for exactly that reason) -- a Rainbow
+          // raster layer, added the normal native-MapLibre way per that
+          // stage's brief, paints *underneath* it and would be completely
+          // invisible with the live sweep still showing; the MRMS overlay
+          // canvas below sits *above* it for the same reason (both are
+          // full-frame raster images occupying this exact "opaque raster
+          // over the map" slot). Rather than trying to show more than one
+          // of {live radar, Rainbow nowcast, MRMS national mosaic}
+          // simultaneously -- three full-coverage rasters stacked would
+          // just occlude each other with no way to see through, and mixing
+          // a live single-site sweep with a national mosaic of the same
+          // physical quantity (reflectivity) invites exactly the kind of
+          // observation-vs-observation confusion GLOBAL_CONTRACT's
+          // distinguishability rule is about -- all three are made mutually
+          // exclusive: only one is ever visible at a time, enforced at the
+          // toggle level in `App.tsx` (turning one on turns the other two
+          // off, not just visually here) so a checkbox's checked state
+          // never lies about what's on screen. Driven by `rainbowEnabled`/
+          // `mrmsEnabled` (the toggles' intent) rather than by whether
+          // their data has actually resolved yet, so a switch feels
+          // immediate rather than lagging a network/render round trip.
+          opacity: rainbowEnabled || mrmsEnabled ? 0 : 1,
         }}
       />
+      {/* S09 Phase 3: MRMS national-mosaic overlay -- a full-viewport raster
+          `useMrmsOverlay` paints into via `putImageData`, positioned/sized
+          exactly like the rings/alerts overlay canvases below (backing
+          buffer synced to the map's own canvas dimensions in
+          `updateOverlay`) rather than the radar canvas's fixed circular
+          framing, since MRMS covers the whole current viewport reactively,
+          not a fixed site-centered footprint. Sits at the same z-index
+          "slot" as the radar canvas (see that canvas's own mutual-
+          exclusivity comment above) -- opacity-gated by `mrmsEnabled` the
+          same way the radar canvas is gated by "not Rainbow/MRMS". Renders
+          only when a `mrmsCanvasRef` was actually supplied (always true in
+          practice; optional only so this component doesn't hard-require a
+          feature `App.tsx` might not wire up in some future embedding). */}
+      {mrmsCanvasRef && (
+        <canvas
+          ref={mrmsCanvasRef}
+          style={{
+            position: "absolute",
+            zIndex: 1,
+            top: 0,
+            left: 0,
+            width: "100%",
+            height: "100%",
+            pointerEvents: "none",
+            opacity: mrmsEnabled ? 1 : 0,
+          }}
+        />
+      )}
       {/* Range rings, one z-index above the (opaque) radar sweep canvas --
           see `drawRangeRings`'s doc comment for why a native MapLibre
           layer (painted into the map's own canvas, underneath the sweep

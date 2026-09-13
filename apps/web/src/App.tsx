@@ -28,6 +28,9 @@ import { ForecastPanel } from "./forecast/ForecastPanel";
 import { useForecastProvider } from "./forecast/useForecastProvider";
 import { useRainbowOverlay } from "./rainbow/useRainbowOverlay";
 import { RainbowToggle } from "./ui/RainbowToggle";
+import { useMrmsOverlay, type MrmsViewport } from "./mrms/useMrmsOverlay";
+import type { MrmsProductId } from "./mrms/types";
+import { MrmsPanel } from "./ui/MrmsPanel";
 import { SettingsPanel } from "./ui/SettingsPanel";
 import { Sidebar } from "./ui/Sidebar";
 import { SidebarSection } from "./ui/SidebarSection";
@@ -135,6 +138,35 @@ export default function App() {
   // gated. Owns its own toggle state + snapshot resolution; see the hook's
   // doc comment and `RainbowToggle`/`MapView`'s mutual-exclusivity comment.
   const rainbow = useRainbowOverlay();
+
+  // S09 Phase 3: MRMS national-mosaic overlay -- `enabled`/`productId`
+  // (unlike Rainbow's own hook, which owns its toggle state internally)
+  // live here, not inside `useMrmsOverlay` itself, specifically so this
+  // component can enforce three-way mutual exclusivity with Rainbow (see
+  // `handleMrmsToggle`/`handleRainbowToggle` below and `MapView`'s own
+  // mutual-exclusivity doc comment) by actually flipping the *other*
+  // overlay's toggle off, not just hiding it visually -- leaving Rainbow's
+  // hook "on" in the background while invisible would keep it polling/
+  // resolving snapshots for no visible effect, a wasteful and confusing
+  // state no checkbox should be able to reach.
+  const [mrmsEnabled, setMrmsEnabled] = useState(false);
+  const [mrmsProductId, setMrmsProductId] = useState<MrmsProductId>("reflectivity");
+  const [mrmsViewport, setMrmsViewport] = useState<MrmsViewport | null>(null);
+  const mrmsCanvasRef = useRef<HTMLCanvasElement>(null);
+  const mrms = useMrmsOverlay(mrmsCanvasRef, mrmsProductId, mrmsEnabled, mrmsViewport);
+
+  const handleMrmsToggle = useCallback(() => {
+    setMrmsEnabled((prev) => {
+      const next = !prev;
+      if (next && rainbow.enabled) rainbow.toggle(); // enforce mutual exclusivity -- see comment above.
+      return next;
+    });
+  }, [rainbow]);
+
+  const handleRainbowToggle = useCallback(() => {
+    if (!rainbow.enabled && mrmsEnabled) setMrmsEnabled(false); // enforce mutual exclusivity -- see comment above.
+    rainbow.toggle();
+  }, [rainbow, mrmsEnabled]);
 
   const alerts = useAlertPoller();
   const [selectedAlertKey, setSelectedAlertKey] = useState<string | null>(null);
@@ -421,6 +453,9 @@ export default function App() {
         onAlertClick={handleAlertClick}
         rainbowTileUrlTemplate={rainbow.tileUrlTemplate}
         rainbowEnabled={rainbow.enabled}
+        mrmsCanvasRef={mrmsCanvasRef}
+        mrmsEnabled={mrmsEnabled}
+        onMrmsViewportChange={setMrmsViewport}
       />
 
       {/* S09c UI shell: slim always-visible top/bottom chrome for the most
@@ -556,7 +591,25 @@ export default function App() {
             enabled={rainbow.enabled}
             status={rainbow.status}
             error={rainbow.error}
-            onToggle={rainbow.toggle}
+            onToggle={handleRainbowToggle}
+          />
+        </SidebarSection>
+
+        {/* S09 Phase 3: NOAA MRMS national radar-mosaic observation overlay
+            -- see `MrmsPanel`'s doc comment and `MapView`'s mutual-
+            exclusivity comment for why this, Rainbow, and the live radar
+            sweep can never all show at once. */}
+        <SidebarSection title="MRMS">
+          <MrmsPanel
+            productId={mrmsProductId}
+            onProductChange={setMrmsProductId}
+            enabled={mrmsEnabled}
+            onToggle={handleMrmsToggle}
+            phase={mrms.phase}
+            error={mrms.error}
+            snapshot={mrms.snapshot}
+            grid={mrms.grid}
+            onRefresh={mrms.refresh}
           />
         </SidebarSection>
 
