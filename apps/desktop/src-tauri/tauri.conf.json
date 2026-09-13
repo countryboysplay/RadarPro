@@ -37,8 +37,7 @@
     ],
     "android": {
       "debugApplicationIdSuffix": ".debug"
-    },
-    "createUpdaterArtifacts": true
+    }
   },
   "plugins": {
     "updater": {

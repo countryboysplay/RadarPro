@@ -115,6 +115,28 @@ mechanism.
 
 ## Releases and updates (S10 Phase 4)
 
+### Status: built, but deliberately not switched on yet
+
+Per explicit user decision (2026-09-13): auto-updating isn't a
+priority before the app itself has been manually tried and confirmed
+to work end to end. Everything below is fully implemented and wired
+up (the plugin, the UI, the release workflow), but
+`bundle.createUpdaterArtifacts` in `tauri.conf.json` is currently
+**off** so that a plain local `npm run build` (or a real
+`desktop-v*` release build) succeeds without needing the
+`TAURI_SIGNING_PRIVATE_KEY` secret at all. The `plugins.updater` block
+(the public key + endpoint) is deliberately left in place even though
+signing is off -- removing that block entirely makes the app **panic
+on startup** (`tauri_plugin_updater` requires its config to exist even
+when unused), confirmed empirically. Leave that block alone.
+
+When ready to actually turn updates on: set `createUpdaterArtifacts`
+back to `true`, complete the one-time GitHub secret setup below, and
+cut a release as described. Until then, the in-app "Check for
+updates" button (Settings section) works and fails gracefully with a
+clear "no release found" message -- it does not need to be hidden or
+removed, it's just inert.
+
 ### Code signing: deliberately not done, ever
 
 RadarPro does **not** pursue a Windows code-signing certificate (or Apple
