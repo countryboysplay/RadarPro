@@ -23,3 +23,11 @@ bytemuck = { version = "=1.25.2", features = ["derive"] }
 # dev-dependency to match `provider-gefs`'s own established pattern for the
 # exact same use.
 pollster = "=1.0.1"
+
+# `js_sys::Date::now()` -- `src/time.rs`'s `unix_seconds_now()` wasm32
+# clock source (`std::time::SystemTime::now()` panics unconditionally on
+# `wasm32-unknown-unknown`; see that function's own doc comment). Same
+# pinned version already resolved elsewhere in this workspace
+# (`radar-web`/`weather-alerts`/`forecast-web`/`provider-hrrr`).
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+js-sys = "=0.3.105"

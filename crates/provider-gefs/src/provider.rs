@@ -11,6 +11,14 @@ use forecast_core::request::FieldRequest;
 use forecast_core::time::UtcTimestamp;
 
 /// NOAA GEFS, via the anonymous `noaa-gefs-pds` S3 bucket.
+///
+/// `Clone` (cheap: `GefsClient` itself derives it, wrapping a `reqwest::Client`
+/// which is internally reference-counted) -- needed so a caller holding a
+/// `GefsProvider` across an async boundary it does not control (e.g.
+/// `forecast-web`'s `wasm_bindgen_futures::future_to_promise`, which needs
+/// a `'static` future and so cannot capture a borrow of a caller-owned
+/// value) can clone the provider into that future instead.
+#[derive(Clone)]
 pub struct GefsProvider {
     client: GefsClient,
 }

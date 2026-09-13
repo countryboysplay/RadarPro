@@ -24,6 +24,7 @@ import { AlertsPanel } from "./ui/AlertsPanel";
 import { AlertDetail } from "./ui/AlertDetail";
 import { useAlertPoller } from "./alerts/useAlertPoller";
 import type { AlertJson } from "./alerts/types";
+import { ForecastPanel } from "./forecast/ForecastPanel";
 
 /** Fixed reference radii (km) for the range rings drawn around the
  * selected site -- a documented, reasonable default (not derived from any
@@ -461,6 +462,13 @@ export default function App() {
           <AlertDetail alert={selectedAlert} isActive={selectedActiveEntry !== null} onClose={() => setSelectedAlertKey(null)} />
         </div>
       )}
+
+      {/* S08 follow-up: GEFS/HRRR forecast provider switcher + shared
+          render path -- see `ForecastPanel`'s doc comment for why this is
+          a dedicated panel rather than a MapView overlay in this stage. */}
+      <div className="hud-panel hud-panel-forecast">
+        <ForecastPanel />
+      </div>
     </div>
   );
 }

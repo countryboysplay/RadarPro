@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-// Builds this app's wasm32 dependencies -- `crates/radar-web` (S04/S05) and
-// `crates/weather-alerts` (S06) -- and generates each one's `wasm-bindgen`
-// JS/TS glue directly into `apps/web/src/wasm/`, where Vite's dev server and
-// production build both pick it up as a plain ES module import (see
-// `apps/web/README.md` "Wasm build pipeline" for the full explanation of
-// this choice).
+// Builds this app's wasm32 dependencies -- `crates/radar-web` (S04/S05),
+// `crates/weather-alerts` (S06), and `crates/forecast-web` (S08 follow-up)
+// -- and generates each one's `wasm-bindgen` JS/TS glue directly into
+// `apps/web/src/wasm/`, where Vite's dev server and production build both
+// pick it up as a plain ES module import (see `apps/web/README.md` "Wasm
+// build pipeline" for the full explanation of this choice).
 //
 // This is a thin wrapper around the exact commands each crate's own README
 // documents -- it does not reimplement or second-guess them, just runs them
@@ -14,21 +14,22 @@
 // this via their `pre*` npm lifecycle hooks) never silently proceed against
 // a stale or missing wasm module.
 //
-// Both crates' `wasm-bindgen --target web` output is written to the same
-// `apps/web/src/wasm/` directory (distinguished by `--out-name`, so
-// `radar_web.*` and `weather_alerts.*` sit side by side with no collision)
-// rather than separate directories -- there is no meaningful benefit to
-// splitting them, and every existing import path in `src/radar/wasmModule.ts`
-// (`../wasm/radar_web.js`) keeps working unchanged. The existing
-// `apps/web/src/wasm/`-wide `.gitignore` entry already covers this
-// crate's output too.
+// All three crates' `wasm-bindgen --target web` output is written to the
+// same `apps/web/src/wasm/` directory (distinguished by `--out-name`, so
+// `radar_web.*`, `weather_alerts.*`, and `forecast_web.*` sit side by side
+// with no collision) rather than separate directories -- there is no
+// meaningful benefit to splitting them, and every existing import path in
+// `src/radar/wasmModule.ts` (`../wasm/radar_web.js`) keeps working
+// unchanged. The existing `apps/web/src/wasm/`-wide `.gitignore` entry
+// already covers this crate's output too.
 //
 // Prerequisites (see crates/radar-web/README.md, crates/weather-alerts/
-// Cargo.toml, and this app's README.md):
+// Cargo.toml, crates/forecast-web/Cargo.toml, and this app's README.md):
 //   rustup target add wasm32-unknown-unknown
 //   cargo install wasm-bindgen-cli --version 0.2.128 --locked
-// (0.2.128 must match the `wasm-bindgen` version pinned in both crates'
-// Cargo.toml exactly -- a mismatch is a runtime error, not a compile error.)
+// (0.2.128 must match the `wasm-bindgen` version pinned in all three
+// crates' Cargo.toml exactly -- a mismatch is a runtime error, not a
+// compile error.)
 
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -96,5 +97,8 @@ function buildWasmCrate(crateName, artifactName) {
 
 buildWasmCrate("radar-web", "radar_web");
 buildWasmCrate("weather-alerts", "weather_alerts");
+buildWasmCrate("forecast-web", "forecast_web");
 
-console.log(`[build-wasm] wrote wasm-bindgen output for radar-web and weather-alerts to ${outDir}`);
+console.log(
+  `[build-wasm] wrote wasm-bindgen output for radar-web, weather-alerts, and forecast-web to ${outDir}`,
+);

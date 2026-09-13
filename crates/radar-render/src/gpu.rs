@@ -587,10 +587,17 @@ pub fn wait_for_gpu(device: &wgpu::Device) {
     let _ = device.poll(wgpu::PollType::wait_indefinitely());
 }
 
-/// Read `target`'s pixels back to the CPU as tightly-packed RGBA8 rows
-/// (no `wgpu` copy-alignment padding left in the result), blocking until
-/// the copy and buffer mapping complete.
-pub fn read_rgba8(device: &wgpu::Device, queue: &wgpu::Queue, target: &RenderTarget) -> Vec<u8> {
+/// Shared setup for [`read_rgba8`] and [`read_rgba8_async`]: allocates the
+/// readback buffer sized to `wgpu`'s row-alignment requirement, and
+/// encodes+submits the texture-to-buffer copy. Returns the buffer plus the
+/// unpadded/padded row byte-widths, so both callers unpad identically via
+/// [`unpad_rgba8_rows`] -- the only thing they actually differ on is *how*
+/// they wait for the subsequent `map_async` to complete.
+fn begin_rgba8_readback(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    target: &RenderTarget,
+) -> (wgpu::Buffer, u32, u32) {
     let bytes_per_pixel = 4u32;
     let unpadded_bytes_per_row = target.width * bytes_per_pixel;
     // `wgpu` requires `COPY_BYTES_PER_ROW_ALIGNMENT` (256)-aligned rows
@@ -632,6 +639,52 @@ pub fn read_rgba8(device: &wgpu::Device, queue: &wgpu::Queue, target: &RenderTar
     );
     queue.submit(std::iter::once(encoder.finish()));
 
+    (
+        readback_buffer,
+        unpadded_bytes_per_row,
+        padded_bytes_per_row,
+    )
+}
+
+/// Strip `wgpu`'s row-alignment padding out of a mapped readback buffer,
+/// returning tightly-packed RGBA8 rows. Shared by [`read_rgba8`] and
+/// [`read_rgba8_async`] so the two paths can never drift on this
+/// (row-padding/alignment correctness is load-bearing for pixel-readback
+/// correctness).
+fn unpad_rgba8_rows(
+    mapped: &[u8],
+    height: u32,
+    unpadded_bytes_per_row: u32,
+    padded_bytes_per_row: u32,
+) -> Vec<u8> {
+    let mut out = Vec::with_capacity((unpadded_bytes_per_row * height) as usize);
+    for row in 0..height {
+        let start = (row * padded_bytes_per_row) as usize;
+        let end = start + unpadded_bytes_per_row as usize;
+        out.extend_from_slice(&mapped[start..end]);
+    }
+    out
+}
+
+/// Read `target`'s pixels back to the CPU as tightly-packed RGBA8 rows
+/// (no `wgpu` copy-alignment padding left in the result), blocking the
+/// calling thread until the copy and buffer mapping complete.
+///
+/// **Native-only in practice.** This blocks on a `std::sync::mpsc::Receiver`
+/// after an explicit `Device::poll(wait_indefinitely)`, which is exactly how
+/// `pollster`/native `wgpu` complete a `map_async` -- but it is a genuine
+/// deadlock on the WebGPU backend, where `Device::poll` is documented as a
+/// no-op (the browser polls the device on its own) and nothing would ever
+/// wake this blocked thread (wasm32 is single-threaded, so a blocked thread
+/// also starves the very JS event loop that would otherwise drive the
+/// callback -- see `radar_web::browser`'s doc comment on this same point).
+/// Kept for the native harness (`src/bin/harness.rs`) and `gpu_tests.rs`,
+/// which both rely on its synchronous, blocking-until-GPU-done timing
+/// semantics; **wasm32 callers must use [`read_rgba8_async`] instead.**
+pub fn read_rgba8(device: &wgpu::Device, queue: &wgpu::Queue, target: &RenderTarget) -> Vec<u8> {
+    let (readback_buffer, unpadded_bytes_per_row, padded_bytes_per_row) =
+        begin_rgba8_readback(device, queue, target);
+
     let slice = readback_buffer.slice(..);
     let (sender, receiver) = std::sync::mpsc::channel();
     slice.map_async(wgpu::MapMode::Read, move |result| {
@@ -646,12 +699,74 @@ pub fn read_rgba8(device: &wgpu::Device, queue: &wgpu::Queue, target: &RenderTar
     let mapped = slice
         .get_mapped_range()
         .expect("buffer was just successfully mapped above");
-    let mut out = Vec::with_capacity((unpadded_bytes_per_row * target.height) as usize);
-    for row in 0..target.height {
-        let start = (row * padded_bytes_per_row) as usize;
-        let end = start + unpadded_bytes_per_row as usize;
-        out.extend_from_slice(&mapped[start..end]);
-    }
+    let out = unpad_rgba8_rows(
+        &mapped,
+        target.height,
+        unpadded_bytes_per_row,
+        padded_bytes_per_row,
+    );
+    drop(mapped);
+    readback_buffer.unmap();
+    out
+}
+
+/// Async, executor-agnostic equivalent of [`read_rgba8`]: identical
+/// texture-to-buffer copy and row-unpadding (via the same
+/// [`begin_rgba8_readback`]/[`unpad_rgba8_rows`] helpers, so pixel-readback
+/// correctness cannot drift between the two paths), but resolves the
+/// `map_async` completion through a `futures_channel::oneshot::Receiver`
+/// `.await` instead of blocking a thread on `std::sync::mpsc::Receiver::recv`.
+///
+/// This is what makes the function safe to call from wasm32: `.await`ing a
+/// real `Future` yields control back to whatever is driving it --
+/// `pollster::block_on` on native, or the browser's own microtask queue via
+/// `wasm_bindgen_futures::future_to_promise` on wasm32 -- rather than
+/// blocking the single wasm thread (which would starve the very event loop
+/// that needs to run for `map_async`'s callback to ever fire, since
+/// `Device::poll` is a documented no-op on the WebGPU backend).
+///
+/// `Device::poll` is still called, but only on native (`cfg(not(target_arch
+/// = "wasm32"))`): native `wgpu`/`pollster` require an explicit poll to
+/// drive `map_async` to completion at all, and calling it there means the
+/// oneshot's value is already sent by the time this function reaches the
+/// `.await` (so the await resolves immediately, preserving the same
+/// blocking-until-GPU-done semantics native callers had before -- this
+/// function is safe to use from the native harness/tests too, not just
+/// wasm32, though `read_rgba8` is kept for them per this module's
+/// stability guarantee). On wasm32 the poll is skipped entirely, matching
+/// `radar_web::browser`'s existing documented finding that it is a no-op
+/// there.
+pub async fn read_rgba8_async(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    target: &RenderTarget,
+) -> Vec<u8> {
+    let (readback_buffer, unpadded_bytes_per_row, padded_bytes_per_row) =
+        begin_rgba8_readback(device, queue, target);
+
+    let slice = readback_buffer.slice(..);
+    let (sender, receiver) = futures_channel::oneshot::channel();
+    slice.map_async(wgpu::MapMode::Read, move |result| {
+        let _ = sender.send(result);
+    });
+
+    #[cfg(not(target_arch = "wasm32"))]
+    let _ = device.poll(wgpu::PollType::wait_indefinitely());
+
+    receiver
+        .await
+        .expect("map_async callback should always fire (sender is never dropped without sending)")
+        .expect("readback buffer mapping should succeed for a COPY_DST|MAP_READ buffer");
+
+    let mapped = slice
+        .get_mapped_range()
+        .expect("buffer was just successfully mapped above");
+    let out = unpad_rgba8_rows(
+        &mapped,
+        target.height,
+        unpadded_bytes_per_row,
+        padded_bytes_per_row,
+    );
     drop(mapped);
     readback_buffer.unmap();
     out

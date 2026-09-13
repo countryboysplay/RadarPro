@@ -447,9 +447,26 @@ name = "forecast-core"
 version = "0.1.0"
 dependencies = [
  "bytemuck",
+ "js-sys",
  "pollster",
  "radar-render",
  "wgpu",
+]
+
+[[package]]
+name = "forecast-web"
+version = "0.1.0"
+dependencies = [
+ "console_error_panic_hook",
+ "forecast-core",
+ "js-sys",
+ "provider-gefs",
+ "provider-hrrr",
+ "radar-render",
+ "serde",
+ "serde_json",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
 ]
 
 [[package]]
@@ -1487,6 +1504,7 @@ dependencies = [
  "forecast-core",
  "grib",
  "image",
+ "js-sys",
  "provider-gefs",
  "quick-xml",
  "radar-render",
@@ -1494,6 +1512,8 @@ dependencies = [
  "rustls",
  "thiserror",
  "tokio",
+ "wasm-bindgen-futures",
+ "web-sys",
 ]
 
 [[package]]
@@ -1557,6 +1577,7 @@ name = "radar-render"
 version = "0.1.0"
 dependencies = [
  "bytemuck",
+ "futures-channel",
  "image",
  "nexrad-level2",
  "pollster",

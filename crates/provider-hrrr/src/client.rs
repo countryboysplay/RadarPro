@@ -24,14 +24,18 @@ impl HrrrClient {
     /// Build a client against an arbitrary bucket base URL (no trailing
     /// slash) -- e.g. for tests against a local server.
     pub fn new(bucket_url: impl Into<String>) -> Result<Self, HrrrError> {
+        #[cfg(not(target_arch = "wasm32"))]
         ensure_crypto_provider_installed();
-        let http = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(30))
-            .build()
-            .map_err(|source| HrrrError::Request {
-                url: "<client construction>".to_string(),
-                source,
-            })?;
+        let builder = reqwest::Client::builder();
+        // `ClientBuilder::timeout` does not exist on reqwest's wasm32
+        // (browser `fetch`) backend -- see `provider-gefs::client::GefsClient::new`
+        // for the same gating and rationale.
+        #[cfg(not(target_arch = "wasm32"))]
+        let builder = builder.timeout(std::time::Duration::from_secs(30));
+        let http = builder.build().map_err(|source| HrrrError::Request {
+            url: "<client construction>".to_string(),
+            source,
+        })?;
         Ok(Self {
             http,
             bucket_url: bucket_url.into(),
@@ -151,7 +155,7 @@ impl HrrrClient {
                 Err(e) => {
                     last_err = Some(e);
                     if attempt + 1 < MAX_ATTEMPTS {
-                        tokio::time::sleep(RETRY_DELAY).await;
+                        crate::sleep::sleep(RETRY_DELAY).await;
                     }
                 }
             }
@@ -317,11 +321,16 @@ fn build_list_url(
 /// [`HrrrClient::find_recent_run`]'s discovery walk, never to compute or
 /// validate a decoded field's own metadata (which always comes from the
 /// GRIB2 message itself).
+///
+/// Goes through `forecast_core::time::unix_seconds_now()` rather than
+/// calling `std::time::SystemTime::now()` directly (as this used to) --
+/// that call panics unconditionally on `wasm32-unknown-unknown`, which
+/// `forecast-web` builds this crate for; see that function's own doc
+/// comment for why, and `today_utc_date`'s identical fix in the same
+/// commit (this crate's own `find_recent_run` calls that too, a few lines
+/// below).
 fn current_utc_hour() -> u8 {
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default();
-    ((now.as_secs() / 3600) % 24) as u8
+    ((forecast_core::time::unix_seconds_now() / 3600) % 24) as u8
 }
 
 /// Ensure a global `rustls` crypto provider is installed exactly once, per
@@ -330,6 +339,11 @@ fn current_utc_hour() -> u8 {
 /// provider is already installed (by an earlier call here, or by another
 /// crate in the same process, e.g. `provider-gefs`/`radar-cache`) is
 /// treated as success.
+///
+/// Native-only -- see `provider-gefs::client::ensure_crypto_provider_installed`
+/// for why this has no wasm32 equivalent (this crate has no `rustls`
+/// dependency at all on that target).
+#[cfg(not(target_arch = "wasm32"))]
 fn ensure_crypto_provider_installed() {
     if rustls::crypto::CryptoProvider::get_default().is_none() {
         let _ = rustls::crypto::ring::default_provider().install_default();

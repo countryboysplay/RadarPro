@@ -23,8 +23,26 @@ grib = { version = "=0.18.5", default-features = false }
 
 thiserror = "=2.0.20"
 
+# S3 `ListObjectsV2` (run discovery) returns XML; pure text/XML parsing, no
+# OS/network dependency of its own -- fine unconditionally on every target,
+# wasm32 included.
+quick-xml = "=0.42.0"
+
+# Only used by `src/bin/harness.rs`, to save one rendered frame as a PNG.
+image = { version = "=0.25.10", default-features = false, features = ["png"] }
+
+# Only used by `src/bin/harness.rs`, for `clip_to_world` (the camera math
+# `forecast_core::gpu::render_forecast_grid` itself needs as an argument).
+radar-render = { path = "../radar-render" }
+
+# HTTP client, TLS stack, and async runtime -- native-only, same rationale
+# as `provider-gefs`'s own Cargo.toml (see its comment): `reqwest`'s wasm32
+# target section needs neither a `rustls` dependency of this crate's own
+# (the browser's own `fetch` does TLS) nor `tokio` (whose `rt` feature needs
+# OS threads, unavailable on `wasm32-unknown-unknown`).
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 # Same pinned versions/features `provider-gefs` already uses for the same
-# jobs (anonymous S3 HTTP access, async runtime, XML listing parsing).
+# jobs (anonymous S3 HTTP access, async runtime).
 reqwest = { version = "=0.13.5", default-features = false, features = [
     "rustls-no-provider",
 ] }
@@ -34,14 +52,33 @@ rustls = { version = "=0.23.35", default-features = false, features = [
     "tls12",
 ] }
 tokio = { version = "=1.47.1", features = ["rt", "time", "macros"] }
-quick-xml = "=0.42.0"
 
-# Only used by `src/bin/harness.rs`, to save one rendered frame as a PNG.
-image = { version = "=0.25.10", default-features = false, features = ["png"] }
+# Real browser HTTP is wasm32-only -- same rationale as `provider-gefs`'s
+# own Cargo.toml: `default-features = false` with no features enabled skips
+# every native-only extra, none of which apply once the browser itself is
+# doing the fetch.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+reqwest = { version = "=0.13.5", default-features = false }
 
-# Only used by `src/bin/harness.rs`, for `clip_to_world` (the camera math
-# `forecast_core::gpu::render_forecast_grid` itself needs as an argument).
-radar-render = { path = "../radar-render" }
+# This crate's own `object_exists_with_retries` (`src/client.rs`) needs an
+# async sleep between retry attempts on every target -- `tokio::time::sleep`
+# on native, but `tokio`'s time driver needs OS threads/timers unavailable
+# on `wasm32-unknown-unknown`. `src/sleep.rs` provides both halves of this
+# shim; the wasm32 half is built on the browser's own `setTimeout`, needing
+# only `js-sys`/`web-sys`/`wasm-bindgen-futures` (no full async-runtime
+# dependency), pinned to the exact same versions `radar-web` already
+# resolves for the same job.
+[target.'cfg(target_arch = "wasm32")'.dependencies.js-sys]
+version = "=0.3.105"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies.wasm-bindgen-futures]
+version = "=0.4.78"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies.web-sys]
+version = "=0.3.105"
+# Only `Window`, for `web_sys::window()` and its `set_timeout_with_*`
+# methods -- not a blanket `features = ["*"]` enable.
+features = ["Window"]
 
 [dev-dependencies]
 tokio = { version = "=1.47.1", features = ["rt-multi-thread"] }

@@ -11,12 +11,25 @@
 //! (adapter/device acquisition), [`radar_render::gpu::upload_palette`]/
 //! [`radar_render::gpu::PaletteGpuResources`]/[`radar_render::gpu::update_palette`]
 //! (the palette LUT texture), and [`radar_render::gpu::create_render_target`]/
-//! [`radar_render::gpu::render_frame`]/[`radar_render::gpu::wait_for_gpu`]/
-//! [`radar_render::gpu::read_rgba8`]/[`radar_render::gpu::RENDER_TARGET_FORMAT`]
-//! (off-screen target + draw + readback -- generic over any pipeline/bind
-//! group). Only the grid *value* texture, this crate's own `Uniforms`
-//! layout, and the pipeline/bind-group-layout tied to
-//! `shaders/forecast_grid.wgsl`'s specific bindings are defined here.
+//! [`radar_render::gpu::render_frame`]/[`radar_render::gpu::read_rgba8_async`]/
+//! [`radar_render::gpu::RENDER_TARGET_FORMAT`] (off-screen target + draw +
+//! readback -- generic over any pipeline/bind group). Only the grid *value*
+//! texture, this crate's own `Uniforms` layout, and the pipeline/bind-group-layout
+//! tied to `shaders/forecast_grid.wgsl`'s specific bindings are defined here.
+//!
+//! [`render_forecast_grid`] specifically uses
+//! [`radar_render::gpu::read_rgba8_async`], not the older
+//! [`radar_render::gpu::wait_for_gpu`]/[`radar_render::gpu::read_rgba8`]
+//! pair: this crate's whole reason for existing is to be called from
+//! `forecast-web`'s wasm-bindgen glue (see `crates/forecast-web/src/wasm_api.rs`),
+//! and the blocking `read_rgba8` deadlocks the browser tab on wasm32 --
+//! `Device::poll` is a documented no-op on the WebGPU backend (see
+//! `radar_web::browser`'s doc comment on this exact point), so nothing
+//! would ever wake a thread blocked on `std::sync::mpsc::Receiver::recv`.
+//! `read_rgba8_async` fixes this by resolving through a real `.await`
+//! instead, which is what actually yields control back to the browser's
+//! event loop (via `wasm_bindgen_futures::future_to_promise` on the
+//! `forecast-web` side) rather than blocking it.
 
 use crate::grid::{ForecastGrid, GridGeometry};
 use radar_render::camera::Mat4;
@@ -383,12 +396,14 @@ pub async fn render_forecast_grid(
         &bind_group,
         &target,
     );
-    radar_render::gpu::wait_for_gpu(&ctx.device);
-    Some(radar_render::gpu::read_rgba8(
-        &ctx.device,
-        &ctx.queue,
-        &target,
-    ))
+    // `read_rgba8_async`, not `wait_for_gpu`+`read_rgba8`: the latter pair
+    // blocks a thread on `std::sync::mpsc::Receiver::recv`, which deadlocks
+    // the browser tab on wasm32 (see this module's doc comment). This
+    // `.await` itself drives the wait for the GPU to finish (native: an
+    // internal `Device::poll(wait_indefinitely)`; wasm32: the browser's own
+    // polling, surfaced back to this future via `map_async`'s callback) --
+    // no separate `wait_for_gpu` call is needed either way.
+    Some(radar_render::gpu::read_rgba8_async(&ctx.device, &ctx.queue, &target).await)
 }
 
 #[cfg(test)]

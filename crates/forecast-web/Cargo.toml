@@ -1,0 +1,65 @@
+[package]
+name = "forecast-web"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "S08 follow-up: browser/wasm-bindgen glue exposing forecast-core's ForecastProvider abstraction (provider-gefs, provider-hrrr) to apps/web -- select a provider by id, discover its latest run, fetch a field, and render it through forecast-core's shared GPU grid renderer. Mirrors weather-alerts's wasm_api.rs conventions (JSON strings for structured data, Result<String, JsValue> for fallible calls)."
+
+[lib]
+# `cdylib` is what `wasm-bindgen`/`wasm-pack` compile into the browser-loaded
+# `.wasm` module (see `src/wasm_api.rs`); `rlib` keeps this crate usable as
+# an ordinary Rust dependency on the host target too (`cargo build
+# --workspace`/`cargo test -p forecast-web`) -- same split `radar-web`/
+# `weather-alerts` use.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# forecast-core's ForecastProvider trait isn't dyn-safe (associated `Run`/
+# `Error` types plus `impl Future` return position -- see
+# `forecast_core::provider`'s own module docs), so this crate dispatches
+# over a small concrete enum of the two real providers rather than a trait
+# object (`ProviderHandle`/`RunHandle` in `src/wasm_api.rs`) -- avoiding a
+# speculative "generic provider wasm framework" for what is still only the
+# second and third concrete providers in the workspace.
+forecast-core = { path = "../forecast-core" }
+provider-gefs = { path = "../provider-gefs" }
+provider-hrrr = { path = "../provider-hrrr" }
+
+# For `clip_to_world` -- the same camera-math call every native harness
+# (`provider-gefs-harness`/`provider-hrrr-harness`) already uses to build
+# `forecast_core::gpu::render_forecast_grid`'s `clip_to_world` argument.
+# Already proven wasm32-compatible (it is pure CPU matrix math, no `wgpu`
+# dependency of its own -- see `radar-render::camera`'s module doc), same
+# as `forecast-core`'s own unconditional `radar-render` dependency.
+radar-render = { path = "../radar-render" }
+
+# Structured data crosses to JS as JSON strings (JS does `JSON.parse`), not
+# hand-built `js_sys` objects -- same convention `weather-alerts::wasm_api`
+# already established. Same pinned versions already used throughout this
+# workspace (`weather-alerts`/`radar-render`/`radar-cache`).
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.151"
+
+# Real browser/wasm-bindgen glue is wasm32-only, the same split every other
+# wasm-facing crate in this workspace uses: a native `cargo build
+# --workspace`/`cargo test -p forecast-web` never needs to resolve any of
+# these.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+# Pinned to the exact same versions `radar-web`/`weather-alerts` already
+# resolve for the same job (`wasm-bindgen-cli`'s installed version in CI
+# must match this exactly -- see `apps/web/README.md`/`.github/workflows/ci.yml`).
+wasm-bindgen = "=0.2.128"
+# `discoverLatestRun`/`fetchField`/render are all genuinely async (network
+# fetch, GPU readback); `future_to_promise` is the standard wasm-bindgen
+# bridge from a Rust future to a JS `Promise` -- its return type
+# (`js_sys::Promise`) is named directly in `src/wasm_api.rs`'s exported
+# method signatures, hence the direct `js-sys` dependency below too (same
+# pin `radar-web` already resolves).
+wasm-bindgen-futures = "=0.4.78"
+js-sys = "=0.3.105"
+
+# Turns a Rust panic into a readable `console.error` message instead of an
+# opaque wasm trap -- same pin, same rationale, as `radar-web`/`weather-alerts`.
+[target.'cfg(target_arch = "wasm32")'.dependencies.console_error_panic_hook]
+version = "=0.1.7"

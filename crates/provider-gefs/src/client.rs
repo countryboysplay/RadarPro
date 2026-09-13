@@ -29,14 +29,20 @@ impl GefsClient {
     /// Build a client against an arbitrary bucket base URL (no trailing
     /// slash) -- e.g. for tests against a local server.
     pub fn new(bucket_url: impl Into<String>) -> Result<Self, GefsError> {
+        #[cfg(not(target_arch = "wasm32"))]
         ensure_crypto_provider_installed();
-        let http = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(30))
-            .build()
-            .map_err(|source| GefsError::Request {
-                url: "<client construction>".to_string(),
-                source,
-            })?;
+        let builder = reqwest::Client::builder();
+        // `ClientBuilder::timeout` does not exist on reqwest's wasm32
+        // (browser `fetch`) backend -- there is no client-wide request
+        // timeout to set there; a hung fetch is left to the browser's own
+        // defaults on that target. Native keeps the same 30s timeout this
+        // crate has always used.
+        #[cfg(not(target_arch = "wasm32"))]
+        let builder = builder.timeout(std::time::Duration::from_secs(30));
+        let http = builder.build().map_err(|source| GefsError::Request {
+            url: "<client construction>".to_string(),
+            source,
+        })?;
         Ok(Self {
             http,
             bucket_url: bucket_url.into(),
@@ -323,6 +329,12 @@ fn member_sort_key(member: &MemberKey) -> (u8, u8) {
 /// feature-selected default. Idempotent: `install_default` erroring because
 /// a provider is already installed (by an earlier call here, or by another
 /// crate in the same process, e.g. `radar-cache`) is treated as success.
+///
+/// Native-only: on `wasm32`, `reqwest` never builds a `rustls`-based TLS
+/// backend at all (the browser's own `fetch` does TLS), so this crate has
+/// no `rustls` dependency there and this function is never called (see the
+/// `cfg` on its call site in [`GefsClient::new`]).
+#[cfg(not(target_arch = "wasm32"))]
 fn ensure_crypto_provider_installed() {
     if rustls::crypto::CryptoProvider::get_default().is_none() {
         let _ = rustls::crypto::ring::default_provider().install_default();

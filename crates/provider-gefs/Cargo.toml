@@ -29,29 +29,10 @@ grib = { version = "=0.18.5", default-features = false }
 
 thiserror = "=2.0.20"
 
-# HTTP client for anonymous S3 `ListObjectsV2`/`GetObject`+Range GET calls
-# against the public `noaa-gefs-pds` bucket. Pinned to the exact same
-# version/feature set `radar-cache` already uses and has verified builds and
-# makes real HTTPS requests in this exact environment with no C toolchain
-# (`rustls-no-provider` + explicit `ring` provider below, avoiding both
-# `native-tls`/OpenSSL and rustls's `aws-lc-rs` default, which needs cmake).
-reqwest = { version = "=0.13.5", default-features = false, features = [
-    "rustls-no-provider",
-] }
-rustls = { version = "=0.23.35", default-features = false, features = [
-    "ring",
-    "std",
-    "tls12",
-] }
-
-# Async runtime backing the HTTP client above. Only `rt`/`time`/`macros`:
-# the same minimal, empirically-sufficient feature set `radar-cache` already
-# uses for the same `reqwest` version (no `fs` here -- this crate never
-# touches the local filesystem itself).
-tokio = { version = "=1.47.1", features = ["rt", "time", "macros"] }
-
 # S3 `ListObjectsV2` (member/run-hour discovery) returns XML; same pinned
-# version `radar-cache` already uses for the same job.
+# version `radar-cache` already uses for the same job. Pure text/XML
+# parsing, no OS/network dependency of its own -- fine unconditionally on
+# every target, wasm32 included.
 quick-xml = "=0.42.0"
 
 # Only used by `src/bin/harness.rs`, for `clip_to_world` (the camera math
@@ -62,6 +43,45 @@ radar-render = { path = "../radar-render" }
 # a human (or this task's own verification) can confirm the render is
 # geographically correct.
 image = { version = "=0.25.10", default-features = false, features = ["png"] }
+
+# HTTP client for anonymous S3 `ListObjectsV2`/`GetObject`+Range GET calls
+# against the public `noaa-gefs-pds` bucket, plus the async runtime and TLS
+# stack backing it -- native-only. `reqwest`'s own wasm32 target section
+# (see its Cargo.toml) never pulls in a TLS backend at all on that target
+# (the browser's own `fetch` does TLS), so this crate's own direct `rustls`
+# dependency (needed only to install a native crypto provider -- see
+# `client.rs`'s `ensure_crypto_provider_installed`) and `tokio` (whose `rt`
+# feature needs OS threads, unavailable on `wasm32-unknown-unknown`) are
+# both native-only concerns, gated out of the wasm32 build entirely rather
+# than left to fail there.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# Pinned to the exact same version/feature set `radar-cache` already uses
+# and has verified builds and makes real HTTPS requests in this exact
+# environment with no C toolchain (`rustls-no-provider` + explicit `ring`
+# provider below, avoiding both `native-tls`/OpenSSL and rustls's
+# `aws-lc-rs` default, which needs cmake).
+reqwest = { version = "=0.13.5", default-features = false, features = [
+    "rustls-no-provider",
+] }
+rustls = { version = "=0.23.35", default-features = false, features = [
+    "ring",
+    "std",
+    "tls12",
+] }
+
+# Only `rt`/`time`/`macros`: the same minimal, empirically-sufficient
+# feature set `radar-cache` already uses for the same `reqwest` version (no
+# `fs` here -- this crate never touches the local filesystem itself).
+tokio = { version = "=1.47.1", features = ["rt", "time", "macros"] }
+
+# Real browser HTTP is wasm32-only: `reqwest` 0.13's own wasm32 target
+# section builds its client on the browser `fetch` API (via `web-sys`),
+# needing no TLS/async-runtime dependency of this crate's own at all --
+# `default-features = false` with no features enabled skips every
+# native-only extra (`default-tls`, `http2`, `charset`, `system-proxy`),
+# none of which apply once the browser itself is doing the fetch.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+reqwest = { version = "=0.13.5", default-features = false }
 
 [dev-dependencies]
 tokio = { version = "=1.47.1", features = ["rt-multi-thread"] }

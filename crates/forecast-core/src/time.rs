@@ -82,15 +82,44 @@ impl UtcTimestamp {
     }
 }
 
+/// Current Unix time, in whole seconds -- the one place any provider crate
+/// (or this crate itself) should read "what time is it right now" from, so
+/// the wasm32-vs-native clock-source split lives in exactly one place.
+///
+/// `std::time::SystemTime::now()` is not merely slow or imprecise on
+/// `wasm32-unknown-unknown` (the target `forecast-web` builds for) -- it
+/// unconditionally *panics* ("time not implemented on this platform"),
+/// confirmed the hard way running `forecast-web` in a real browser during
+/// this stage's own frontend integration: because wasm-bindgen builds with
+/// `panic = "abort"`, that panic traps the entire wasm instance (a
+/// `RuntimeError: unreachable` on the JS side), not just the call that
+/// triggered it -- the `future_to_promise`-wrapped call this was hit
+/// through never even rejects its `Promise`, it just kills the module.
+/// `wasm32-unknown-unknown` has no OS clock syscall to back `SystemTime`
+/// with, unlike `wasm32-wasip1`/`wasm32-unknown-emscripten` -- `js_sys::
+/// Date::now()` (backed by the browser's real wall clock, milliseconds
+/// since epoch per ECMA-262) is the standard wasm-bindgen-ecosystem
+/// replacement, the same role the `web-time` crate exists to fill for
+/// other wasm-bindgen projects.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn unix_seconds_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn unix_seconds_now() -> u64 {
+    (js_sys::Date::now() / 1000.0) as u64
+}
+
 /// Today's UTC calendar date (year, month, day), from the system clock.
 /// Used only by a provider's own "find the most recently published run"
 /// discovery logic -- never used to compute or validate a decoded field's
 /// own metadata, which always comes from the decoded message itself.
 pub fn today_utc_date() -> (u16, u8, u8) {
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default();
-    let days_since_epoch = (now.as_secs() / 86_400) as i64;
+    let days_since_epoch = (unix_seconds_now() / 86_400) as i64;
     let (year, month, day) = civil_from_days(days_since_epoch);
     (year as u16, month as u8, day as u8)
 }

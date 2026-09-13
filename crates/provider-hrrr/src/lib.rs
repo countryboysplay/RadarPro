@@ -38,6 +38,7 @@ pub mod error;
 pub mod idx;
 pub mod keys;
 pub mod provider;
+mod sleep;
 mod xml;
 
 pub use error::HrrrError;

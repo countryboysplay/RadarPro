@@ -30,6 +30,19 @@ bytemuck = { version = "=1.25.2", features = ["derive"] }
 # same single job.
 pollster = "=1.0.1"
 
+# `read_rgba8_async`'s `map_async` completion signal: a `oneshot` channel
+# whose `Receiver` is a real `Future` that a caller can `.await` -- unlike
+# `std::sync::mpsc` (whose `recv()` blocks a thread, which deadlocks on
+# wasm32: `Device::poll` is a no-op there, so nothing would ever wake a
+# blocked thread -- see `forecast_core::gpu::render_forecast_grid`'s doc
+# comment for the full story). `futures-channel` is a tiny, executor-agnostic
+# crate (no runtime of its own) that already resolves in this workspace's
+# lockfile as a transitive dependency, so this adds no new supply-chain
+# surface, just a direct, pinned dependency on it. Only the `oneshot` module
+# is used; default features (`std`, `sink`) are left on rather than trimmed,
+# since this crate has no `no_std` requirement.
+futures-channel = "=0.3.34"
+
 # Only used by `src/bin/harness.rs` to save one rendered frame as a PNG so a
 # human can visually confirm the render (this stage's exit criteria). Not
 # used by the library itself. `default-features = false` plus the single

@@ -44,6 +44,33 @@ use crate::model::{ModelMetadata, ModelRun};
 use crate::request::FieldRequest;
 use std::future::Future;
 
+/// `Send` on every target except `wasm32`, where it is a no-op marker
+/// implemented for everything.
+///
+/// [`ForecastProvider`]'s async methods need to be usable from a
+/// multi-threaded native async runtime (`Send` futures), but a provider's
+/// real implementation (`provider-gefs`/`provider-hrrr`, via `reqwest`) is
+/// built on `wasm-bindgen`'s `JsFuture` on `wasm32` -- a type that wraps a
+/// `Rc<RefCell<..>>` and is therefore never `Send`, because `wasm32-unknown-
+/// unknown` has no real threads to send anything to in the first place. A
+/// blanket `+ Send` bound on [`ForecastProvider`]'s futures would make the
+/// trait impossible to implement on `wasm32` at all for any HTTP-backed
+/// provider; this marker lets the same trait definition require `Send`
+/// only where it is actually meaningful (native), while wasm32's
+/// inherently single-threaded model makes the requirement moot there. Same
+/// idiom used across the wasm/native-async ecosystem (e.g.
+/// `send_wrapper`-adjacent crates) for exactly this reason -- not a
+/// speculative abstraction, just what wasm32 async requires.
+#[cfg(not(target_arch = "wasm32"))]
+pub trait MaybeSend: Send {}
+#[cfg(not(target_arch = "wasm32"))]
+impl<T: Send> MaybeSend for T {}
+
+#[cfg(target_arch = "wasm32")]
+pub trait MaybeSend {}
+#[cfg(target_arch = "wasm32")]
+impl<T> MaybeSend for T {}
+
 /// A forecast data source: discover a published run, then fetch and decode
 /// one field for it.
 pub trait ForecastProvider {
@@ -69,7 +96,7 @@ pub trait ForecastProvider {
     fn discover_latest_run(
         &self,
         lookback_days: u32,
-    ) -> impl Future<Output = Result<Self::Run, Self::Error>> + Send;
+    ) -> impl Future<Output = Result<Self::Run, Self::Error>> + MaybeSend;
 
     /// Fetch and decode one field (one variable, forecast lead, and
     /// ensemble statistic if this provider has one) for `run`. A
@@ -80,5 +107,5 @@ pub trait ForecastProvider {
         &self,
         run: &Self::Run,
         request: &FieldRequest,
-    ) -> impl Future<Output = Result<ForecastGrid, Self::Error>> + Send;
+    ) -> impl Future<Output = Result<ForecastGrid, Self::Error>> + MaybeSend;
 }

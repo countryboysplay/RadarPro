@@ -11,6 +11,7 @@ members = [
     "crates/forecast-core",
     "crates/provider-gefs",
     "crates/provider-hrrr",
+    "crates/forecast-web",
     "apps/radar-cli",
 ]
 

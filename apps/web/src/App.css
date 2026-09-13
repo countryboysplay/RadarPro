@@ -513,3 +513,107 @@ body,
   font-size: 0.7rem;
   color: #7a7a82;
 }
+
+/* Model forecast panel (S08 follow-up) */
+
+.hud-panel-forecast {
+  left: 50%;
+  bottom: 1rem;
+  top: auto;
+  transform: translateX(-50%);
+  width: 420px;
+  max-height: 70vh;
+}
+
+.forecast-panel-title {
+  color: #ffd27a;
+  font-weight: bold;
+}
+
+.forecast-provider-switcher {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.forecast-provider-button {
+  font: inherit;
+  background: #1c1c20;
+  color: inherit;
+  border: 1px solid #3a3a40;
+  border-radius: 3px;
+  padding: 0.25rem 0.7rem;
+  cursor: pointer;
+}
+
+.forecast-provider-button-active {
+  border-color: #ffd27a;
+  color: #ffd27a;
+}
+
+.forecast-provider-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.forecast-status {
+  font-size: 0.78rem;
+  color: #b5b5bc;
+}
+
+.forecast-status-error {
+  color: #ff8f8f;
+}
+
+.forecast-retry-button {
+  font: inherit;
+  background: #1c1c20;
+  color: #ff8f8f;
+  border: 1px solid #6a3a3a;
+  border-radius: 3px;
+  padding: 0.15rem 0.5rem;
+  cursor: pointer;
+  align-self: flex-start;
+}
+
+.forecast-model-kind {
+  font-size: 0.75rem;
+  color: #8fd0ff;
+}
+
+.forecast-controls {
+  display: flex;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+}
+
+.forecast-meta {
+  margin: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.2rem 0.6rem;
+  font-size: 0.78rem;
+}
+
+.forecast-meta dt {
+  color: #9a9aa2;
+}
+
+.forecast-meta dd {
+  margin: 0;
+  word-break: break-word;
+}
+
+.forecast-canvas {
+  width: 100%;
+  height: auto;
+  border: 1px solid #3a3a40;
+  border-radius: 4px;
+  background: #101012;
+  display: block;
+}
+
+.forecast-canvas-caption {
+  font-size: 0.7rem;
+  color: #7a7a82;
+  text-align: center;
+}

@@ -10,6 +10,13 @@ use forecast_core::request::FieldRequest;
 use forecast_core::time::UtcTimestamp;
 
 /// NOAA HRRR, via the anonymous `noaa-hrrr-bdp-pds` S3 bucket.
+///
+/// `Clone` (cheap: `HrrrClient` itself derives it, wrapping a `reqwest::Client`
+/// which is internally reference-counted) -- same rationale as
+/// `provider_gefs::GefsProvider`'s own `Clone` derive: lets a caller (e.g.
+/// `forecast-web`) clone the provider into a `'static` async boundary it
+/// does not control, rather than needing to borrow it.
+#[derive(Clone)]
 pub struct HrrrProvider {
     client: HrrrClient,
 }
