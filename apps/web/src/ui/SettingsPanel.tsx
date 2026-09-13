@@ -1,6 +1,14 @@
 import { useEffect, useId, useState } from "react";
 import { useRainbowApiKey } from "../rainbow/useRainbowApiKey";
-import { getDesktopDiagnostics, isDesktop, type DesktopDiagnostics } from "../platform/desktop";
+import {
+  checkForUpdate,
+  getDesktopDiagnostics,
+  installPendingUpdate,
+  isDesktop,
+  type DesktopDiagnostics,
+  type UpdateCheckResult,
+  type UpdateDownloadProgress,
+} from "../platform/desktop";
 import type { PollEvent } from "../scan/useScanPoller";
 import { MIN_HISTORY_SCANS, MAX_HISTORY_SCANS_LIMIT } from "../scan/useScanHistory";
 import type { AlertPollStatus } from "../alerts/useAlertPoller";
@@ -47,6 +55,116 @@ function DesktopDiagnosticsPanel() {
       ) : (
         <p className="settings-field-note">loading…</p>
       )}
+    </div>
+  );
+}
+
+/**
+ * S10 Phase 4 update strategy: a "Check for updates" affordance backed by
+ * `@tauri-apps/plugin-updater` (see `checkForUpdate`/`installPendingUpdate`
+ * in `apps/web/src/platform/desktop.ts` for what these actually call and
+ * why this is unrelated to code signing). Renders nothing in a browser tab.
+ *
+ * Current version is read from the same `get_diagnostics` command
+ * `DesktopDiagnosticsPanel` already uses, rather than adding a second way
+ * to ask the native side for the app version.
+ */
+function UpdatePanel() {
+  const [appVersion, setAppVersion] = useState<string | null>(null);
+  const [check, setCheck] = useState<UpdateCheckResult | null>(null);
+  const [phase, setPhase] = useState<"idle" | "checking" | "downloading" | "done">("idle");
+  const [progress, setProgress] = useState<UpdateDownloadProgress | null>(null);
+  const [installError, setInstallError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isDesktop()) return;
+    let cancelled = false;
+    getDesktopDiagnostics().then((d) => {
+      if (!cancelled && d) setAppVersion(d.appVersion);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (!isDesktop()) return null;
+
+  async function handleCheck() {
+    setPhase("checking");
+    setInstallError(null);
+    const result = await checkForUpdate();
+    setCheck(result);
+    setPhase("idle");
+  }
+
+  async function handleInstall() {
+    setPhase("downloading");
+    setInstallError(null);
+    setProgress({ downloadedBytes: 0, totalBytes: null });
+    const result = await installPendingUpdate((p) => setProgress(p));
+    // A successful install normally relaunches the app before this
+    // resolves at all -- reaching here with `ok: true` (rather than the
+    // process just ending) is harmless, but `ok: false` means it genuinely
+    // failed (e.g. a dropped connection mid-download) and the user is
+    // still looking at this panel.
+    if (!result.ok) {
+      setInstallError(result.error ?? "install failed");
+      setPhase("idle");
+    } else {
+      setPhase("done");
+    }
+  }
+
+  return (
+    <div className="settings-field" style={{ marginTop: "1em" }}>
+      <label>Updates</label>
+      <dl className="settings-field-note" style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "0.15em 0.6em", margin: 0 }}>
+        <dt>Current version</dt>
+        <dd>{appVersion ?? "…"}</dd>
+      </dl>
+
+      <div className="settings-field-row" style={{ marginTop: "0.5em" }}>
+        <button type="button" onClick={handleCheck} disabled={phase === "checking" || phase === "downloading"}>
+          {phase === "checking" ? "Checking…" : "Check for updates"}
+        </button>
+        {check?.status === "available" && phase !== "downloading" && phase !== "done" && (
+          <button type="button" onClick={handleInstall} style={{ marginLeft: "0.5em" }}>
+            Download and install {check.version}
+          </button>
+        )}
+      </div>
+
+      {check?.status === "up-to-date" && phase === "idle" && (
+        <div className="settings-field-status settings-field-status-active">up to date (v{appVersion ?? "?"})</div>
+      )}
+      {check?.status === "available" && (phase === "idle" || phase === "downloading" || phase === "done") && (
+        <div className="settings-field-status settings-field-status-active">
+          update available: v{check.version}
+          {check.notes ? ` -- ${check.notes}` : ""}
+        </div>
+      )}
+      {check?.status === "error" && (
+        <div className="settings-field-status settings-field-status-none">check failed: {check.error}</div>
+      )}
+
+      {phase === "downloading" && (
+        <div className="settings-field-status">
+          downloading…
+          {progress
+            ? progress.totalBytes
+              ? ` ${Math.round((progress.downloadedBytes / progress.totalBytes) * 100)}%`
+              : ` ${Math.round(progress.downloadedBytes / 1024)} KB`
+            : ""}
+        </div>
+      )}
+      {phase === "done" && <div className="settings-field-status settings-field-status-active">installed -- restarting…</div>}
+      {installError && <div className="settings-field-status settings-field-status-none">install failed: {installError}</div>}
+
+      <p className="settings-field-note">
+        Checks this project's GitHub Releases for a newer signed update package (verified against a bundled public
+        key -- unrelated to Windows code signing, which this build does not use). Installing relaunches the app into
+        the new version.
+      </p>
     </div>
   );
 }
@@ -259,6 +377,7 @@ export function SettingsPanel({
         alertError={alertError}
         alertLastPolledAt={alertLastPolledAt}
       />
+      <UpdatePanel />
       <DesktopDiagnosticsPanel />
     </div>
   );

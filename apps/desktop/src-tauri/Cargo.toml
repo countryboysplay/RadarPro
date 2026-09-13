@@ -38,3 +38,12 @@ log = "0.4"
 tauri = { version = "2.11.3", features = [] }
 tauri-plugin-log = "2"
 tauri-plugin-store = "2"
+# S10 Phase 4 update strategy: Tauri's own updater plugin, verifying update
+# packages against a self-generated Ed25519/minisign keypair (see
+# `tauri.conf.json`'s `plugins.updater.pubkey`) -- a free, no-CA mechanism
+# unrelated to the Windows code-signing this project has explicitly decided
+# against (see `Agent Context/context/stages/S10-desktop-beta.md`'s "Code
+# signing" section). `tauri-plugin-process` supplies `relaunch()`, used to
+# restart into the newly-installed version after an update completes.
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"

@@ -111,6 +111,26 @@ pub fn run() {
         // fs-read/write IPC command (GLOBAL_CONTRACT: narrowest verb
         // possible, no generic filesystem passthrough to the renderer).
         .plugin(tauri_plugin_store::Builder::default().build())
+        // S10 Phase 4 update strategy: Tauri's own updater plugin, checking
+        // the GitHub Releases endpoint configured in `tauri.conf.json`
+        // (`plugins.updater.endpoints`) and verifying downloaded artifacts
+        // against that config's `pubkey` (a self-generated Ed25519/minisign
+        // keypair -- see `apps/desktop/README.md`'s "Releases and updates"
+        // section for how that keypair is generated/rotated). This is a
+        // completely separate, free, no-CA mechanism from the Windows
+        // code-signing this project has explicitly decided against. The
+        // frontend calls it via `@tauri-apps/plugin-updater` -- see
+        // `apps/web/src/platform/desktop.ts`'s `checkForUpdate`/
+        // `installPendingUpdate` and their use in `SettingsPanel.tsx`.
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        // Supplies `relaunch()` (via `@tauri-apps/plugin-process`), used to
+        // restart the app into the newly-installed version once an update
+        // finishes downloading+installing. Only `process:allow-restart` is
+        // granted in `capabilities/default.json` -- not `process:default`,
+        // which would also hand the webview `allow-exit` (killing the whole
+        // app), unneeded surface for what this feature actually needs (see
+        // GLOBAL_CONTRACT's "narrowest verb possible" IPC rule).
+        .plugin(tauri_plugin_process::init())
         .invoke_handler(tauri::generate_handler![get_diagnostics])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

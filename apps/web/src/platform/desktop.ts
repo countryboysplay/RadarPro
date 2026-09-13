@@ -218,6 +218,100 @@ export interface DesktopDiagnostics {
   logDir: string | null;
 }
 
+/**
+ * S10 Phase 4 update strategy -- see `apps/desktop/README.md`'s "Releases
+ * and updates" section. Backed by `@tauri-apps/plugin-updater`, which
+ * checks the GitHub Releases endpoint configured in
+ * `apps/desktop/src-tauri/tauri.conf.json` (`plugins.updater.endpoints`)
+ * and verifies the downloaded artifact against that config's `pubkey` -- a
+ * self-generated Ed25519/minisign keypair. This is a completely separate,
+ * free, no-CA mechanism from the Windows code-signing this project has
+ * explicitly decided against (see `Agent Context/context/stages/
+ * S10-desktop-beta.md`'s "Code signing" section) -- it verifies the update
+ * *package*, not the app binary's publisher identity.
+ */
+export type UpdateCheckResult =
+  | { status: "up-to-date" }
+  | { status: "available"; version: string; notes: string | null }
+  | { status: "error"; error: string };
+
+/** Holds the `Update` handle returned by a successful `check()` call so a
+ * following {@link installPendingUpdate} can act on it without checking
+ * again. Desktop-only; never populated in a browser tab. Cleared once
+ * consumed (or once a fresh check supersedes it). */
+let pendingUpdate: Awaited<ReturnType<typeof import("@tauri-apps/plugin-updater").check>> | null = null;
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+/** Check the configured update endpoint for a newer release. No-op (never
+ * called) outside the desktop shell; callers should gate on {@link isDesktop}
+ * the same as every other function in this module. Never throws -- a
+ * network failure or malformed manifest comes back as `{ status: "error" }`,
+ * not an exception, so a flaky connection can't crash the Settings panel. */
+export async function checkForUpdate(): Promise<UpdateCheckResult> {
+  if (!isDesktop()) return { status: "error", error: "not running in the desktop shell" };
+  try {
+    const { check } = await import("@tauri-apps/plugin-updater");
+    const update = await check();
+    if (!update) {
+      pendingUpdate = null;
+      return { status: "up-to-date" };
+    }
+    pendingUpdate = update;
+    return { status: "available", version: update.version, notes: update.body ?? null };
+  } catch (err) {
+    console.error("[desktop] update check failed:", err);
+    pendingUpdate = null;
+    return { status: "error", error: errorMessage(err) };
+  }
+}
+
+/** Download progress for {@link installPendingUpdate}'s optional callback.
+ * `totalBytes` is `null` until the download's `Started` event reports a
+ * content length (some servers omit it). */
+export interface UpdateDownloadProgress {
+  downloadedBytes: number;
+  totalBytes: number | null;
+}
+
+/**
+ * Download and install the update found by the most recent
+ * {@link checkForUpdate} call, then relaunch into the new version. Returns
+ * `{ ok: false }` (never throws) if there is no pending update or the
+ * download/install fails -- e.g. a connection drop partway through. A
+ * successful install normally ends the process via `relaunch()` before
+ * this promise resolves, so callers should treat "no response" as success,
+ * not a hang.
+ */
+export async function installPendingUpdate(
+  onProgress?: (progress: UpdateDownloadProgress) => void,
+): Promise<{ ok: boolean; error?: string }> {
+  if (!isDesktop()) return { ok: false, error: "not running in the desktop shell" };
+  const update = pendingUpdate;
+  if (!update) return { ok: false, error: "no update available -- check for updates first" };
+  try {
+    let downloadedBytes = 0;
+    let totalBytes: number | null = null;
+    await update.downloadAndInstall((event) => {
+      if (event.event === "Started") {
+        totalBytes = event.data.contentLength ?? null;
+      } else if (event.event === "Progress") {
+        downloadedBytes += event.data.chunkLength;
+      }
+      onProgress?.({ downloadedBytes, totalBytes });
+    });
+    pendingUpdate = null;
+    const { relaunch } = await import("@tauri-apps/plugin-process");
+    await relaunch();
+    return { ok: true };
+  } catch (err) {
+    console.error("[desktop] update install failed:", err);
+    return { ok: false, error: errorMessage(err) };
+  }
+}
+
 export async function getDesktopDiagnostics(): Promise<DesktopDiagnostics | null> {
   if (!isDesktop()) return null;
   try {

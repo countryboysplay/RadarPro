@@ -37,6 +37,15 @@
     ],
     "android": {
       "debugApplicationIdSuffix": ".debug"
+    },
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEE1QjI1RTAxMDFEMThFMzAKUldRd2p0RUJBVjZ5cFRLRnQxWVlXY0lDOWM2L1p3VndpNmpYc1NUVU93TVMySVc5QnNPVW1CRDAK",
+      "endpoints": [
+        "https://github.com/countryboysplay/RadarPro/releases/latest/download/latest.json"
+      ]
     }
   }
 }

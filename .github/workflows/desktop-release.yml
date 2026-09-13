@@ -1,0 +1,141 @@
+name: Desktop release
+
+# S10 Phase 4 (Desktop Beta: distribution + update strategy) -- see
+# `Agent Context/context/stages/S10-desktop-beta.md`. This is a SEPARATE
+# workflow from `ci.yml`: `ci.yml` runs on every push/PR to `main` and
+# never builds or publishes the desktop app; this one runs ONLY when a
+# `desktop-v*` tag is pushed, and its whole job is producing a signed-
+# for-integrity (NOT code-signed -- see below) Windows installer attached
+# to a GitHub Release.
+#
+# Windows-only, per this project's explicit user decision recorded in
+# S10-desktop-beta.md's "Platforms" section (no macOS/Linux). Unsigned,
+# per that same file's "Code signing" section: RadarPro does not pursue
+# Authenticode/EV certificates or Apple notarization -- an unsigned build
+# with the SmartScreen "unknown publisher" warning is an accepted tradeoff
+# for an open-source project (forks can sign their own).
+#
+# The `TAURI_SIGNING_PRIVATE_KEY`/`TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
+# secrets referenced below are Tauri's OWN updater-manifest signing key (a
+# self-generated Ed25519/minisign keypair, free, no CA) -- a completely
+# different, unrelated mechanism from code signing. It verifies that an
+# update package downloaded by an already-installed copy of RadarPro was
+# produced by this project, not a corrupted or tampered download; it does
+# NOT make Windows/SmartScreen trust the installer's publisher identity.
+# See `apps/desktop/README.md`'s "Releases and updates" section for the
+# one-time secret setup this requires (the user's own GitHub repo access
+# is required for that -- this workflow only ever reads the secret via
+# `${{ secrets.* }}`, never anything hard-coded).
+
+on:
+  push:
+    tags:
+      - "desktop-v*"
+
+# Only one release build per tag at a time; a re-push of the same tag
+# (e.g. after fixing something) cancels an in-flight run for it rather
+# than racing two uploads to the same GitHub Release.
+concurrency:
+  group: desktop-release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  release:
+    name: Build + release Windows installer
+    runs-on: windows-latest
+    permissions:
+      # `tauri-action` creates/updates the GitHub Release and uploads
+      # assets (the installer + `latest.json`) using this token -- no PAT
+      # needed.
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # apps/desktop's `beforeBuildCommand` (`npm --prefix ../web run
+      # build`, see `apps/desktop/src-tauri/tauri.conf.json`) builds
+      # `apps/web` first, which needs a wasm32 target in addition to the
+      # native `x86_64-pc-windows-msvc` one this job's own Tauri build
+      # needs -- mirroring `ci.yml`'s "Web app" job (same wasm-bindgen-cli
+      # version pin; keep these two workflows in sync if that pin changes).
+      - name: Install stable Rust toolchain (native + wasm32 targets)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      # `apps/desktop/src-tauri` is its OWN Cargo workspace (see its
+      # Cargo.toml's doc comment) -- scope the cache to it so this job
+      # never touches (or gets slowed down by) the root workspace's cache.
+      - name: Cache cargo registry, index, and build output
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+
+      - name: Cache wasm-bindgen-cli
+        id: cache-wasm-bindgen-cli
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/wasm-bindgen.exe
+          key: wasm-bindgen-cli-0.2.128-${{ runner.os }}
+
+      - name: Install wasm-bindgen-cli
+        if: steps.cache-wasm-bindgen-cli.outputs.cache-hit != 'true'
+        run: cargo install wasm-bindgen-cli --version 0.2.128 --locked
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # Both apps/web (the actual frontend bundled into the app) and
+      # apps/desktop (the Tauri CLI + JS plugin packages) have their own
+      # package-lock.json and must each be installed -- same two-install
+      # shape as local dev (see apps/desktop/README.md's "Dev workflow").
+      - name: Install apps/web dependencies
+        working-directory: apps/web
+        run: npm ci
+
+      - name: Install apps/desktop dependencies
+        working-directory: apps/desktop
+        run: npm ci
+
+      - name: Build + release (tauri-action)
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Updater-manifest signing key (Ed25519/minisign) -- see the doc
+          # comment at the top of this file and apps/desktop/README.md.
+          # NOT a code-signing certificate. `tauri build` reads these two
+          # env vars itself (via the updater plugin's build-time signing
+          # step) whenever `bundle.createUpdaterArtifacts` is `true` in
+          # `tauri.conf.json`, which it is.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: apps/desktop
+          tagName: ${{ github.ref_name }}
+          releaseName: "RadarPro Desktop ${{ github.ref_name }}"
+          releaseBody: |
+            Unsigned Windows build (no code-signing certificate -- see
+            apps/desktop/README.md). Windows will show an "unknown
+            publisher" SmartScreen warning; choose "More info" -> "Run
+            anyway" to proceed, or build it yourself from source.
+
+            See the commit history for what changed in this release.
+          # Draft first so a bad build never goes live to users
+          # automatically -- publish the release manually once the
+          # attached installer has been sanity-checked. This does not
+          # block the update feed: an existing install only checks
+          # `.../releases/latest/download/latest.json`, which GitHub does
+          # not serve from a draft release, so drafting is a real gate,
+          # not just a formality.
+          releaseDraft: true
+          prerelease: false
+          # Generates and uploads latest.json (the updater manifest
+          # `@tauri-apps/plugin-updater` polls -- see
+          # `apps/desktop/src-tauri/tauri.conf.json`'s
+          # `plugins.updater.endpoints`) alongside the installer, signed
+          # with the TAURI_SIGNING_PRIVATE_KEY above. This is the action's
+          # own default (`true`); spelled out here so it isn't silently
+          # relied upon.
+          uploadUpdaterJson: true
