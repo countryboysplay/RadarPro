@@ -135,7 +135,7 @@ async fn main() {
     let half_extent_lat = ((CONUS_LAT_MAX - CONUS_LAT_MIN) / 2.0) as f32;
 
     let pixels = forecast_core::gpu::render_forecast_grid(
-        &subset,
+        &subset.geometry,
         &celsius_values,
         &palette_lut,
         forecast_core::render::DEFAULT_MIN_CELSIUS,

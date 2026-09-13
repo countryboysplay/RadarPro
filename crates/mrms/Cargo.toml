@@ -1,0 +1,67 @@
+[package]
+name = "mrms"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "S09 Phase 1: MRMS national mosaic (reflectivity) and precipitation-rate observation products -- fetches, decodes, and renders a real live gridded radar-mosaic snapshot end to end natively. Not a ForecastProvider: MRMS is an observation product with no run/lead-time/ensemble concept."
+
+[dependencies]
+forecast-core = { path = "../forecast-core" }
+
+# GRIB2 decode. Same crate/pin as provider-gefs/provider-hrrr (ADR-0011), but
+# MRMS's Section 5 (data representation) is Template 5.41 (PNG compression) --
+# confirmed empirically against a real downloaded MRMS message -- which none
+# of the other providers need. `png-unpack-with-png-crate` is enabled on top
+# of `default-features = false` to support it: verified to depend only on the
+# pure-Rust `png`/`miniz_oxide` crates (no C/C++ toolchain), consistent with
+# ADR-0011's actual reasoning (avoid C-toolchain deps, not avoid every
+# optional feature). See docs/adr/0014-mrms-grib2-png-unpack-and-local-discipline.md.
+grib = { version = "=0.18.5", default-features = false, features = [
+    "png-unpack-with-png-crate",
+] }
+
+thiserror = "=2.0.20"
+
+# S3 `ListObjectsV2` (snapshot discovery) returns XML -- same pinned version
+# provider-gefs/provider-hrrr already use for the same job.
+quick-xml = "=0.42.0"
+
+# Reused NEXRAD REF color table for the reflectivity product (same physical
+# quantity, dBZ) -- `radar-render`'s `color_table`/`palette` modules.
+radar-render = { path = "../radar-render" }
+
+# `radar_types::MomentKind::Reflectivity`, needed to look up the reused REF
+# color table above.
+radar-types = { path = "../radar-types" }
+
+# gzip decompression: every real MRMS object fetched is gzip-wrapped GRIB2.
+# Pure-Rust DEFLATE implementation (no C/zlib dependency), same
+# toolchain-avoidance discipline as this project's other crates.
+flate2 = { version = "=1.1.5", default-features = false, features = [
+    "rust_backend",
+] }
+
+# Only used by `src/bin/harness.rs`, to save each rendered frame as a PNG.
+image = { version = "=0.25.10", default-features = false, features = ["png"] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+reqwest = { version = "=0.13.5", default-features = false, features = [
+    "rustls-no-provider",
+] }
+rustls = { version = "=0.23.35", default-features = false, features = [
+    "ring",
+    "std",
+    "tls12",
+] }
+tokio = { version = "=1.47.1", features = ["rt", "time", "macros"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+reqwest = { version = "=0.13.5", default-features = false }
+
+[dev-dependencies]
+tokio = { version = "=1.47.1", features = ["rt-multi-thread"] }
+
+[[bin]]
+name = "mrms-harness"
+path = "src/bin/harness.rs"

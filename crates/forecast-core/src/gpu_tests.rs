@@ -114,7 +114,7 @@ fn regular_lat_lon_grid_renders_known_values_at_the_correct_screen_positions() {
         let half_extent_lat = (lat_step.abs() + lat_step.abs() * 0.5) as f32;
 
         crate::gpu::render_forecast_grid(
-            &grid,
+            &grid.geometry,
             &grid.values,
             &palette_lut,
             cold,
@@ -219,7 +219,7 @@ fn lambert_conformal_grid_renders_known_values_at_the_correct_screen_positions()
         let half_extent_lat = ((lat_max - lat_min) * 1.5) as f32;
 
         crate::gpu::render_forecast_grid(
-            &grid,
+            &grid.geometry,
             &grid.values,
             &palette_lut,
             cold,

@@ -73,7 +73,7 @@ async fn render_and_save(grid: &ForecastGrid, out_name: &str) -> Option<Vec<u8>>
     let half_extent_lat = (((lat_max - lat_min) / 2.0) * 1.05) as f32;
 
     let pixels = forecast_core::gpu::render_forecast_grid(
-        grid,
+        &grid.geometry,
         &celsius_values,
         &palette_lut,
         forecast_core::render::DEFAULT_MIN_CELSIUS,

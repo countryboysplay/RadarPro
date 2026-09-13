@@ -314,7 +314,7 @@ impl ProviderHandle {
             );
 
             let pixels = forecast_core::gpu::render_forecast_grid(
-                &grid,
+                &grid.geometry,
                 &display_values,
                 &palette_lut,
                 forecast_core::render::DEFAULT_MIN_CELSIUS,

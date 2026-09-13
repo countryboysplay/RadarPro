@@ -31,7 +31,7 @@
 //! event loop (via `wasm_bindgen_futures::future_to_promise` on the
 //! `forecast-web` side) rather than blocking it.
 
-use crate::grid::{ForecastGrid, GridGeometry};
+use crate::grid::GridGeometry;
 use radar_render::camera::Mat4;
 use wgpu::util::DeviceExt;
 
@@ -342,21 +342,30 @@ pub fn create_bind_group(
     })
 }
 
-/// The single, provider-agnostic render call path: upload `grid`'s already
-/// unit-converted `display_values` and `palette_lut`, build the pipeline
-/// and bind group from `grid.geometry` alone (no branch on `grid.provider_id`
-/// or `grid.variable` anywhere in this function), draw one full-screen
-/// frame, and read it back as RGBA8. Returns `None` if no GPU adapter is
-/// available.
+/// The single, provider-agnostic render call path: upload `display_values`/
+/// `palette_lut`, build the pipeline and bind group from `geometry` alone
+/// (no branch on any provider/variable identity anywhere in this function),
+/// draw one full-screen frame, and read it back as RGBA8. Returns `None` if
+/// no GPU adapter is available.
 ///
-/// This is the literal shared call path the S08 stage's exit criteria and
-/// this crate's own cross-provider test (`tests/cross_provider_render.rs`
-/// equivalent, see `provider-hrrr`'s and `provider-gefs`'s harnesses) rely
-/// on: called once for a GEFS-decoded [`ForecastGrid`] and once for an
-/// HRRR-decoded one, with the exact same code.
+/// Takes a bare [`GridGeometry`] rather than a whole `ForecastGrid` --
+/// this function never touched any of `ForecastGrid`'s forecast-specific
+/// fields (`run_time`/`forecast_lead_hours`/`ensemble`/etc.), only its
+/// `geometry`, so requiring a full `ForecastGrid` here forced every
+/// caller (including a future non-forecast, observation-only caller such
+/// as `mrms`, which has no run/lead-time/ensemble concept at all -- see
+/// `docs/adr/0014-mrms-grib2-png-unpack-and-local-discipline.md`) to either
+/// have a real `ForecastGrid` on hand or construct a misleading fake one
+/// just to call this shared renderer. This is the literal shared call path
+/// the S08 stage's exit criteria and this crate's own cross-provider test
+/// (`tests/cross_provider_render.rs`, see also `provider-hrrr`'s and
+/// `provider-gefs`'s harnesses) rely on: called once for a GEFS-decoded
+/// grid, once for an HRRR-decoded one, and once for an MRMS-decoded one
+/// (S09), with the exact same code -- only `geometry`'s own projection kind
+/// is ever branched on, inside this function's own `GpuUniforms::for_geometry`.
 #[allow(clippy::too_many_arguments)]
 pub async fn render_forecast_grid(
-    grid: &ForecastGrid,
+    geometry: &GridGeometry,
     display_values: &[f32],
     palette_lut: &[[u8; 4]],
     palette_min: f32,
@@ -370,15 +379,15 @@ pub async fn render_forecast_grid(
     let grid_gpu = upload_grid(
         &ctx.device,
         &ctx.queue,
-        grid.geometry.width(),
-        grid.geometry.height(),
+        geometry.width(),
+        geometry.height(),
         display_values,
     );
     let palette_gpu = radar_render::gpu::upload_palette(&ctx.device, &ctx.queue, palette_lut);
     let pipeline = create_pipeline(&ctx.device, radar_render::gpu::RENDER_TARGET_FORMAT);
     let uniforms_gpu = UniformsGpu::new(
         &ctx.device,
-        GpuUniforms::for_geometry(clip_to_world, &grid.geometry, palette_min, palette_max),
+        GpuUniforms::for_geometry(clip_to_world, geometry, palette_min, palette_max),
     );
     let bind_group = create_bind_group(
         &ctx.device,

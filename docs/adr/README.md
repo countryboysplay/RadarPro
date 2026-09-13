@@ -17,3 +17,4 @@ This index lists RadarPro's ADRs in order. See `Agent Context/templates/ADR_TEMP
 | [0011](0011-gefs-grib2-crate-selection-and-limitations.md) | `grib` crate selection for GEFS GRIB2 decoding, and its documented limitations | Accepted |
 | [0012](0012-hrrr-lambert-conformal-grid.md) | HRRR's real grid is Lambert Conformal Conic, handled by `grib` with no PROJ needed | Accepted |
 | [0013](0013-forecast-core-extraction.md) | Extracting `forecast-core` -- `ForecastProvider`/`ForecastGrid`/`EnsembleStatistic` shape | Accepted |
+| [0014](0014-mrms-grib2-png-unpack-and-local-discipline.md) | MRMS GRIB2 PNG-unpack feature selection, local-use discipline, and missing-value sentinels | Accepted |
