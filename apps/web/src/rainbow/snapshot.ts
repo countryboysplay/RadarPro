@@ -13,15 +13,69 @@ import { RAINBOW_API_BASE } from "./config";
  * stage file). */
 export const RAINBOW_FORECAST_TIME_CURRENT = 0;
 
-/** A fixed, always-in-range tile coordinate used only to *probe* whether a
- * candidate snapshot is published -- z=0 is valid for every Rainbow tile
- * endpoint (precip's zoom range is `[0,12]`) and is the sole tile at that
- * zoom, so it always exists as a coordinate regardless of the region a key
- * has access to. What we care about is the HTTP status the API returns for
- * this (snapshot, forecast_time) pair, not the pixels themselves. */
-const PROBE_Z = 0;
-const PROBE_X = 0;
-const PROBE_Y = 0;
+/**
+ * HTTP statuses this endpoint returns for a snapshot that is confirmed not
+ * (yet) available -- the case `resolveRainbowSnapshot` steps back an older
+ * boundary for, as opposed to a real transient failure it retries in place.
+ *
+ * `404` is the documented "missing" case. `400` was found live (via the
+ * desktop CORS-bypass path, which is the first time this project ever saw
+ * real, distinguishable HTTP responses from this endpoint instead of every
+ * attempt failing identically to a browser CORS block): requesting the
+ * newest 10-minute boundary before Rainbow has published it returns `400`
+ * with body `{"message":"Invalid timestamp"}`, not `404` -- confirmed with
+ * a real key against the real endpoint, not assumed. Before this fix, that
+ * 400 was misclassified as `"transient-error"`, which
+ * `probeBoundaryWithRetry` retries a few times *in place* and then gives up
+ * entirely rather than stepping back -- so the whole resolution failed with
+ * "unavailable" even though an older, genuinely published boundary existed
+ * one step back. This was invisible in the browser path, where every
+ * attempt already fails identically to CORS regardless of status code (see
+ * `browserProbeTile`'s doc comment).
+ *
+ * The only variable part of this endpoint's request shape is the snapshot
+ * timestamp (z/x/y come from a fixed, always-valid tile computation;
+ * forecast_time is always `RAINBOW_FORECAST_TIME_CURRENT`), so a 400 here
+ * means "invalid timestamp" in practice -- not response-body-sniffed since
+ * `rainbow_probe_tile` (the desktop path) only returns a status code, not a
+ * body, to keep that command minimal.
+ */
+export function isConfirmedNotYetAvailable(status: number): boolean {
+  return status === 404 || status === 400;
+}
+
+/** Fixed probe zoom level for {@link probeTileForSite}. z=0's sole tile
+ * covers the whole world, which isn't tied to any real, meaningful location
+ * -- z=5 instead gives ~1,225km-square tiles at the equator: coarse enough
+ * that the selected site is essentially guaranteed to fall inside whatever
+ * regional coverage area contains it (this is only a does-a-snapshot-exist
+ * probe, not a check that interesting weather is visible), while still
+ * being a real coordinate derived from the site's actual lat/lon rather
+ * than an arbitrary, location-independent corner tile. */
+const PROBE_ZOOM = 5;
+
+/** Standard slippy-map (Web Mercator) lon/lat -> tile x/y formula at a
+ * fixed zoom -- see e.g. the OSM wiki's "Slippy map tilenames" page. Result
+ * is clamped into `[0, 2^zoom - 1]` defensively (a lat/lon exactly at a
+ * pole or the antimeridian could otherwise round to an out-of-range index),
+ * though no real WSR-88D site is anywhere near either edge case. */
+function lonLatToTile(lon: number, lat: number, zoom: number): { z: number; x: number; y: number } {
+  const latRad = (lat * Math.PI) / 180;
+  const n = 2 ** zoom;
+  const x = Math.floor(((lon + 180) / 360) * n);
+  const y = Math.floor(((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2) * n);
+  const clamp = (v: number) => Math.min(Math.max(v, 0), n - 1);
+  return { z: zoom, x: clamp(x), y: clamp(y) };
+}
+
+/** The probe tile coordinate for a given site: a real, meaningful location
+ * (the currently selected radar site's own lat/lon) instead of the old
+ * always-`(0,0,0)` whole-earth tile, which wasn't tied to any real,
+ * populated location. `useRainbowOverlay` is the only caller -- see its
+ * doc comment for how the selected site reaches this module. */
+export function probeTileForSite(lat: number, lon: number): { z: number; x: number; y: number } {
+  return lonLatToTile(lon, lat, PROBE_ZOOM);
+}
 
 /** Rainbow snapshots are epoch-UTC-seconds aligned to a 10-minute boundary
  * (doc.rainbow.ai, verified 2026-09-13). */
@@ -32,11 +86,13 @@ const SNAPSHOT_STEP_SECONDS = 600;
  * 6 steps = 1 hour back, comfortably inside the documented 2-hour access
  * window while keeping a single toggle-on action to a small, bounded number
  * of requests even in the worst case (every boundary reporting confirmed
- * 404 until this limit is hit). */
+ * not-yet-available -- see {@link isConfirmedNotYetAvailable} -- until this
+ * limit is hit). */
 const MAX_BOUNDARY_FALLBACK_STEPS = 6;
 
 /** Retries applied to a *single* boundary when the probe fails with a
- * network/5xx error -- never on a confirmed 404. Mirrors the discipline
+ * network/5xx error -- never on a confirmed not-yet-available status (see
+ * {@link isConfirmedNotYetAvailable}). Mirrors the discipline
  * learned from provider-gefs/provider-hrrr's run-discovery loops
  * ([[radarpro-discovery-loop-transient-error-swallowing]]): a transient
  * failure is not confirmed absence, and swallowing it as "try an older
@@ -56,9 +112,14 @@ export function latestTenMinuteBoundaryEpoch(now: number = Date.now()): number {
   return nowSeconds - (nowSeconds % SNAPSHOT_STEP_SECONDS);
 }
 
-function precipTileUrl(snapshot: number, forecastTime: number, apiKey: string): string {
+function precipTileUrl(
+  snapshot: number,
+  forecastTime: number,
+  tile: { z: number; x: number; y: number },
+  apiKey: string,
+): string {
   return (
-    `${RAINBOW_API_BASE}/tiles/v1/precip/${snapshot}/${forecastTime}/${PROBE_Z}/${PROBE_X}/${PROBE_Y}` +
+    `${RAINBOW_API_BASE}/tiles/v1/precip/${snapshot}/${forecastTime}/${tile.z}/${tile.x}/${tile.y}` +
     `?token=${encodeURIComponent(apiKey)}`
   );
 }
@@ -78,23 +139,50 @@ export function buildRainbowPrecipTileUrlTemplate(
   );
 }
 
-type ProbeResult = "published" | "not-published" | "transient-error";
+export type ProbeResult = "published" | "not-published" | "transient-error";
 
-/** One HTTP probe of a single (snapshot, forecast_time) pair, never
- * retried by this function itself -- retry/fallback policy lives in
- * `resolveRainbowSnapshot` so it can apply the "retry error, fall back only
- * on confirmed absence" rule across probes, not within one. */
-async function probeOnce(snapshot: number, forecastTime: number, apiKey: string, signal?: AbortSignal): Promise<ProbeResult> {
+/** Transport signature for a single boundary probe -- the browser path's
+ * default is {@link browserProbeTile} (a plain `fetch`); the desktop path
+ * (`useRainbowOverlay`, via `apps/web/src/rainbow/desktopTiles.ts`) injects
+ * one that calls the native `rainbow_probe_tile` Tauri command instead, to
+ * route around `api.rainbow.ai`'s total lack of CORS headers (see that
+ * module's doc comment) -- everything else in this file (the retry/
+ * fallback policy below) is unchanged either way, since only the transport
+ * differs. */
+export type ProbeFn = (
+  snapshot: number,
+  forecastTime: number,
+  tile: { z: number; x: number; y: number },
+  apiKey: string,
+  signal?: AbortSignal,
+) => Promise<ProbeResult>;
+
+/** One HTTP probe of a single (snapshot, forecast_time) pair via a plain
+ * browser `fetch`, never retried by this function itself -- retry/fallback
+ * policy lives in `resolveRainbowSnapshot` so it can apply the "retry
+ * error, fall back only on confirmed absence" rule across probes, not
+ * within one. The default {@link ProbeFn} for the browser (non-desktop)
+ * path. */
+async function browserProbeTile(
+  snapshot: number,
+  forecastTime: number,
+  tile: { z: number; x: number; y: number },
+  apiKey: string,
+  signal?: AbortSignal,
+): Promise<ProbeResult> {
   try {
-    const response = await fetch(precipTileUrl(snapshot, forecastTime, apiKey), { method: "GET", signal });
-    if (response.status === 404) return "not-published"; // confirmed absence -- the only case we step back for.
+    const response = await fetch(precipTileUrl(snapshot, forecastTime, tile, apiKey), { method: "GET", signal });
+    if (isConfirmedNotYetAvailable(response.status)) return "not-published"; // confirmed absence -- see that helper's doc comment (404 documented, 400 found live).
     if (response.ok) return "published";
     // Any other status (401/403/429/5xx/...) is a real failure, not
     // confirmed absence -- see the module doc comment.
     return "transient-error";
   } catch {
     // Network failure (offline, DNS, CORS, timeout, aborted) -- same
-    // "not confirmed absence" treatment as a non-404 HTTP error.
+    // "not confirmed absence" treatment as a non-404 HTTP error. In the
+    // plain browser this is, in practice, *always* how api.rainbow.ai's
+    // missing CORS headers show up -- see the module doc comment on
+    // `ProbeFn`; this catch is not a bug to chase further here.
     return "transient-error";
   }
 }
@@ -105,12 +193,14 @@ async function probeOnce(snapshot: number, forecastTime: number, apiKey: string,
 async function probeBoundaryWithRetry(
   snapshot: number,
   forecastTime: number,
+  tile: { z: number; x: number; y: number },
   apiKey: string,
+  probeFn: ProbeFn,
   signal?: AbortSignal,
 ): Promise<ProbeResult> {
   let last: ProbeResult = "transient-error";
   for (let attempt = 0; attempt < ERROR_RETRY_ATTEMPTS; attempt++) {
-    last = await probeOnce(snapshot, forecastTime, apiKey, signal);
+    last = await probeFn(snapshot, forecastTime, tile, apiKey, signal);
     if (last !== "transient-error") return last;
     if (attempt < ERROR_RETRY_ATTEMPTS - 1) {
       await delay(ERROR_RETRY_BASE_DELAY_MS * (attempt + 1));
@@ -127,22 +217,33 @@ export type RainbowSnapshotResolution =
  * Resolve the newest usable `snapshot` value for the precip tile endpoint.
  *
  * Tries the latest 10-minute boundary first (the common case: already
- * published). On a *confirmed* 404 there, steps back one boundary at a time
- * (up to `MAX_BOUNDARY_FALLBACK_STEPS`) -- "not published yet" is expected
- * and normal for the newest boundary. On a network/5xx error, retries the
+ * published). On a *confirmed* not-yet-available response there (404, or
+ * the 400 `{"message":"Invalid timestamp"}` this endpoint actually returns
+ * for the newest boundary -- see {@link isConfirmedNotYetAvailable}), steps
+ * back one boundary at a time (up to `MAX_BOUNDARY_FALLBACK_STEPS`) -- "not
+ * published yet" is expected and normal for the newest boundary. On a
+ * network/5xx error, retries the
  * *same* boundary in place (`probeBoundaryWithRetry`) and, if it never
  * resolves, gives up with an error rather than guessing an older boundary
  * might work -- a transient failure is never treated as confirmed absence
  * (see module doc comment).
+ *
+ * `tile` is the probe coordinate (see {@link probeTileForSite} -- normally
+ * derived from the currently selected radar site's lat/lon, not an
+ * arbitrary/location-independent corner). `probeFn` defaults to
+ * {@link browserProbeTile}; the desktop path passes one that routes through
+ * the native Tauri command instead (see {@link ProbeFn}'s doc comment).
  */
 export async function resolveRainbowSnapshot(
   apiKey: string,
+  tile: { z: number; x: number; y: number },
   forecastTime: number = RAINBOW_FORECAST_TIME_CURRENT,
   signal?: AbortSignal,
+  probeFn: ProbeFn = browserProbeTile,
 ): Promise<RainbowSnapshotResolution> {
   let candidate = latestTenMinuteBoundaryEpoch();
   for (let step = 0; step <= MAX_BOUNDARY_FALLBACK_STEPS; step++) {
-    const result = await probeBoundaryWithRetry(candidate, forecastTime, apiKey, signal);
+    const result = await probeBoundaryWithRetry(candidate, forecastTime, tile, apiKey, probeFn, signal);
     if (result === "published") return { ok: true, snapshot: candidate };
     if (result === "not-published") {
       candidate -= SNAPSHOT_STEP_SECONDS;

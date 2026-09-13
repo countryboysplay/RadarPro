@@ -86,6 +86,21 @@ export interface RainbowApiKeyState {
   setSettingsKey: (key: string) => void;
 }
 
+/**
+ * Non-hook accessor for the same resolution `useRainbowApiKey` performs
+ * (Settings override, else the build-time env var, else `""`) -- for
+ * callers that are not React components and so cannot use
+ * `useSyncExternalStore`. Currently only `apps/web/src/rainbow/
+ * desktopTiles.ts`'s `maplibregl.addProtocol` handler, which needs the
+ * *current* key at the moment MapLibre requests a tile, not a value
+ * captured once when the protocol was registered. Reads the same
+ * `localStorage`/env-var sources `useRainbowApiKey` does -- no second copy
+ * of the priority rule. Never log this value.
+ */
+export function getEffectiveRainbowApiKey(): string {
+  return readSettingsKeyRaw() || RAINBOW_ENV_API_KEY;
+}
+
 export function useRainbowApiKey(): RainbowApiKeyState {
   const settingsKey = useSyncExternalStore(subscribe, readSettingsKeyRaw);
 

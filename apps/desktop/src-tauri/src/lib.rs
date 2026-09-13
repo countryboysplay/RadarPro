@@ -13,6 +13,8 @@ use serde::Serialize;
 use tauri::Manager;
 use tauri_plugin_log::{Target, TargetKind};
 
+mod rainbow;
+
 /// Diagnostics surfaced to the frontend via `invoke("get_diagnostics")` --
 /// intentionally small and read-only (no filesystem/shell passthrough; see
 /// GLOBAL_CONTRACT's IPC-boundary rules). This is the native-shell half of
@@ -71,6 +73,13 @@ pub fn run() {
         log::error!("PANIC (native shell about to crash): {info}");
         default_panic_hook(info);
     }));
+
+    // Install the `ring`-based rustls crypto provider deterministically,
+    // before `tauri_plugin_updater` (registered below) gets a chance to
+    // initialize its own reqwest/rustls stack first and race for the same
+    // global singleton -- see `rainbow::ensure_crypto_provider_installed`'s
+    // doc comment for the real, live-confirmed startup race this fixes.
+    rainbow::ensure_crypto_provider_installed();
 
     tauri::Builder::default()
         // Structured logging to a real file in the OS app-data/log
@@ -131,7 +140,11 @@ pub fn run() {
         // app), unneeded surface for what this feature actually needs (see
         // GLOBAL_CONTRACT's "narrowest verb possible" IPC rule).
         .plugin(tauri_plugin_process::init())
-        .invoke_handler(tauri::generate_handler![get_diagnostics])
+        .invoke_handler(tauri::generate_handler![
+            get_diagnostics,
+            rainbow::rainbow_probe_tile,
+            rainbow::rainbow_fetch_tile
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

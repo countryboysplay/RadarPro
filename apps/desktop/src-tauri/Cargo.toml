@@ -47,3 +47,30 @@ tauri-plugin-store = "2"
 # restart into the newly-installed version after an update completes.
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
+
+# Native (CORS-free) HTTP transport for Rainbow Weather tile fetches -- see
+# `src/rainbow.rs`'s module doc comment. `api.rainbow.ai` sends no CORS
+# headers for any browser origin (verified; see the
+# radarpro-rainbow-cors-no-browser-support memory), so the webview's own
+# `fetch()` can never load these tiles; native HTTP has no CORS enforcement
+# at all. Same `rustls-no-provider` + explicit `ring` provider setup as
+# `crates/radar-cache` (see that crate's `Cargo.toml` comment and
+# `docs/adr/0008-live-data-pipeline-architecture.md`) -- avoids both
+# `native-tls` (OpenSSL/C toolchain) and rustls's `aws-lc-rs` default
+# provider (cmake/nasm), reusing the one combination already empirically
+# verified to build and make a real HTTPS request in this project.
+reqwest = { version = "=0.13.5", default-features = false, features = [
+    "rustls-no-provider",
+] }
+rustls = { version = "=0.23.35", default-features = false, features = [
+    "ring",
+    "std",
+    "tls12",
+] }
+
+# Encodes fetched tile bytes for the JSON-over-IPC return convention this
+# crate already uses (see `get_diagnostics`'s plain-struct return) -- no
+# `ArrayBuffer`/binary-IPC precedent exists yet in this codebase, so a
+# base64 string keeps this consistent with that existing convention rather
+# than introducing a new one for a single command.
+base64 = "=0.22.1"

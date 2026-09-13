@@ -9,6 +9,20 @@ import type { AlertFeatureCollection } from "../alerts/types";
 import { SEVERITY_COLORS, severityRank } from "../alerts/types";
 import { pointInAlertGeometry } from "../alerts/geometryHitTest";
 import type { MrmsViewport } from "../mrms/types";
+import { isDesktop } from "../platform/desktop";
+import { registerDesktopRainbowProtocol } from "../rainbow/desktopTiles";
+
+// S10 follow-up: register the `rainbow-tile://` custom MapLibre protocol
+// once per app lifetime, only inside the desktop shell -- this is the one
+// MapLibre-aware module (see this file's own "map/render adapter boundary"
+// doc comment below), so it owns registering a MapLibre-level concern like
+// a custom protocol, not `useRainbowOverlay`/`App.tsx`. A no-op in a plain
+// browser tab; `registerDesktopRainbowProtocol` is itself also idempotent,
+// so this is safe even though module-level code only really runs once
+// anyway. See `../rainbow/desktopTiles.ts`'s doc comment for why the
+// desktop shell needs a custom protocol at all (api.rainbow.ai's total
+// lack of CORS headers).
+if (isDesktop()) registerDesktopRainbowProtocol();
 
 /**
  * Draw `rings` (radar-web's `rangeRingsGeoJson` output -- plain `[lon,

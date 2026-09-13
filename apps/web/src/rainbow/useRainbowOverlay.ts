@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { isDesktop } from "../platform/desktop";
 import { useRainbowApiKey } from "./useRainbowApiKey";
 import {
   buildRainbowPrecipTileUrlTemplate,
+  probeTileForSite,
   RAINBOW_FORECAST_TIME_CURRENT,
   resolveRainbowSnapshot,
 } from "./snapshot";
+import { buildDesktopRainbowPrecipTileUrlTemplate, desktopProbeTile } from "./desktopTiles";
 
 export type RainbowStatus =
   | "unconfigured" // no VITE_RAINBOW_API_KEY at all -- toggle stays disabled.
@@ -39,8 +42,22 @@ export interface RainbowOverlay {
  * the fields above -- neither needs to know about Rainbow's snapshot
  * scheme or retry/fallback policy, matching this codebase's existing
  * provider-hook convention (`useForecastProvider`, `useAlertPoller`).
+ *
+ * `site` supplies the lat/lon the availability probe is tied to (see
+ * `snapshot.ts`'s `probeTileForSite` -- a real, meaningful location instead
+ * of the old always-`(0,0,0)` whole-earth tile). `App.tsx` passes its
+ * currently selected radar site; only its `lat`/`lon` are read.
+ *
+ * On the desktop shell (`isDesktop()`), snapshot probing and the resulting
+ * tile URL template route through the native Tauri commands in
+ * `apps/desktop/src-tauri/src/rainbow.rs` (via `./desktopTiles`) instead of
+ * a plain `fetch`/`https://` URL, since `api.rainbow.ai` sends no CORS
+ * headers for any browser origin and the webview's own `fetch()` can never
+ * load these tiles (see `desktopTiles.ts`'s doc comment). The plain browser
+ * path is completely unchanged -- CORS there is a real, unfixable
+ * limitation, not a bug.
  */
-export function useRainbowOverlay(): RainbowOverlay {
+export function useRainbowOverlay(site: { lat: number; lon: number }): RainbowOverlay {
   // S09c: `effectiveKey`/`configured` are reactive to a key saved in the
   // Settings section (localStorage), not just the build-time env var -- see
   // `useRainbowApiKey`'s doc comment for the priority rule.
@@ -55,6 +72,14 @@ export function useRainbowOverlay(): RainbowOverlay {
   // `useForecastProvider` uses for its own async provider switches, so a
   // stale response can never clobber a newer toggle state.
   const generationRef = useRef(0);
+
+  // `site` changes over the hook's lifetime (the user can pick a different
+  // radar site while Rainbow is enabled) but shouldn't itself force a
+  // re-resolution -- it's only read at the moment a resolution starts, same
+  // "ref for a value the effect reads but doesn't need to re-run for"
+  // pattern `rangeRingsRef`/`alertsRef` use in `MapView.tsx`.
+  const siteRef = useRef(site);
+  siteRef.current = site;
 
   const toggle = useCallback(() => {
     if (!configured) return; // never toggleable with no key -- see RainbowToggle.
@@ -77,12 +102,23 @@ export function useRainbowOverlay(): RainbowOverlay {
     setStatus("resolving");
     setError(null);
 
-    resolveRainbowSnapshot(effectiveKey, RAINBOW_FORECAST_TIME_CURRENT, controller.signal).then(
+    const tile = probeTileForSite(siteRef.current.lat, siteRef.current.lon);
+    const desktop = isDesktop();
+
+    resolveRainbowSnapshot(
+      effectiveKey,
+      tile,
+      RAINBOW_FORECAST_TIME_CURRENT,
+      controller.signal,
+      desktop ? desktopProbeTile : undefined,
+    ).then(
       (result) => {
         if (generationRef.current !== generation) return; // superseded -- ignore.
         if (result.ok) {
           setTileUrlTemplate(
-            buildRainbowPrecipTileUrlTemplate(result.snapshot, RAINBOW_FORECAST_TIME_CURRENT, effectiveKey),
+            desktop
+              ? buildDesktopRainbowPrecipTileUrlTemplate(result.snapshot, RAINBOW_FORECAST_TIME_CURRENT)
+              : buildRainbowPrecipTileUrlTemplate(result.snapshot, RAINBOW_FORECAST_TIME_CURRENT, effectiveKey),
           );
           setStatus("ready");
         } else {

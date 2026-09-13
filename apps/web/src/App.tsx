@@ -228,7 +228,7 @@ export default function App() {
   // S09b: Rainbow Weather precip nowcast overlay -- optional/keyed, config-
   // gated. Owns its own toggle state + snapshot resolution; see the hook's
   // doc comment and `RainbowToggle`/`MapView`'s mutual-exclusivity comment.
-  const rainbow = useRainbowOverlay();
+  const rainbow = useRainbowOverlay(site);
 
   // S09 Phase 3: MRMS national-mosaic overlay -- `enabled`/`productId`
   // (unlike Rainbow's own hook, which owns its toggle state internally)
