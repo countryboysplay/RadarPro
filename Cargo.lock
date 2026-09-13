@@ -450,6 +450,9 @@ dependencies = [
  "js-sys",
  "pollster",
  "radar-render",
+ "tokio",
+ "wasm-bindgen-futures",
+ "web-sys",
  "wgpu",
 ]
 
@@ -1504,7 +1507,6 @@ dependencies = [
  "forecast-core",
  "grib",
  "image",
- "js-sys",
  "provider-gefs",
  "quick-xml",
  "radar-render",
@@ -1512,8 +1514,6 @@ dependencies = [
  "rustls",
  "thiserror",
  "tokio",
- "wasm-bindgen-futures",
- "web-sys",
 ]
 
 [[package]]

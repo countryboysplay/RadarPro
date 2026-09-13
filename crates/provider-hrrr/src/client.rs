@@ -155,7 +155,7 @@ impl HrrrClient {
                 Err(e) => {
                     last_err = Some(e);
                     if attempt + 1 < MAX_ATTEMPTS {
-                        crate::sleep::sleep(RETRY_DELAY).await;
+                        forecast_core::sleep::sleep(RETRY_DELAY).await;
                     }
                 }
             }

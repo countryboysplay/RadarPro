@@ -24,10 +24,31 @@ bytemuck = { version = "=1.25.2", features = ["derive"] }
 # exact same use.
 pollster = "=1.0.1"
 
+# `src/sleep.rs`'s native `tokio::time::sleep` -- only the `time` feature is
+# needed here (moved from `provider-hrrr`, which pulls in the fuller
+# `rt`/`time`/`macros` set for its own HTTP client's async runtime; the
+# actual timer driver that makes this crate's `time` feature functional at
+# runtime comes from that same caller-provided runtime). Same pinned
+# version already used throughout this workspace.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tokio = { version = "=1.47.1", features = ["time"] }
+
 # `js_sys::Date::now()` -- `src/time.rs`'s `unix_seconds_now()` wasm32
 # clock source (`std::time::SystemTime::now()` panics unconditionally on
 # `wasm32-unknown-unknown`; see that function's own doc comment). Same
 # pinned version already resolved elsewhere in this workspace
 # (`radar-web`/`weather-alerts`/`forecast-web`/`provider-hrrr`).
+#
+# `wasm-bindgen-futures`/`web-sys` back `src/sleep.rs`'s wasm32
+# `window.setTimeout` shim, moved here from `provider-hrrr` once
+# `provider-gefs` needed the exact same shim -- same pinned versions
+# `provider-hrrr` already resolved for the same job.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 js-sys = "=0.3.105"
+wasm-bindgen-futures = "=0.4.78"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies.web-sys]
+version = "=0.3.105"
+# Only `Window`, for `web_sys::window()` and its `set_timeout_with_*`
+# methods -- not a blanket `features = ["*"]` enable.
+features = ["Window"]

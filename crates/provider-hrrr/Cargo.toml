@@ -61,24 +61,11 @@ tokio = { version = "=1.47.1", features = ["rt", "time", "macros"] }
 reqwest = { version = "=0.13.5", default-features = false }
 
 # This crate's own `object_exists_with_retries` (`src/client.rs`) needs an
-# async sleep between retry attempts on every target -- `tokio::time::sleep`
-# on native, but `tokio`'s time driver needs OS threads/timers unavailable
-# on `wasm32-unknown-unknown`. `src/sleep.rs` provides both halves of this
-# shim; the wasm32 half is built on the browser's own `setTimeout`, needing
-# only `js-sys`/`web-sys`/`wasm-bindgen-futures` (no full async-runtime
-# dependency), pinned to the exact same versions `radar-web` already
-# resolves for the same job.
-[target.'cfg(target_arch = "wasm32")'.dependencies.js-sys]
-version = "=0.3.105"
-
-[target.'cfg(target_arch = "wasm32")'.dependencies.wasm-bindgen-futures]
-version = "=0.4.78"
-
-[target.'cfg(target_arch = "wasm32")'.dependencies.web-sys]
-version = "=0.3.105"
-# Only `Window`, for `web_sys::window()` and its `set_timeout_with_*`
-# methods -- not a blanket `features = ["*"]` enable.
-features = ["Window"]
+# async sleep between retry attempts on every target -- see
+# `forecast_core::sleep`, which provides both the native (`tokio::time::
+# sleep`) and wasm32 (`window.setTimeout`) halves of that shim; this crate
+# needs no `js-sys`/`web-sys`/`wasm-bindgen-futures` dependency of its own
+# for it.
 
 [dev-dependencies]
 tokio = { version = "=1.47.1", features = ["rt-multi-thread"] }

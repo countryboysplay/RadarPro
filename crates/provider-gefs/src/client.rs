@@ -146,6 +146,47 @@ impl GefsClient {
         Ok(members)
     }
 
+    /// [`Self::discover_members`] with a bounded retry on transient failure.
+    /// `discover_members` calls `list_objects` (S3 `ListObjectsV2`), which
+    /// returns HTTP 200 with an empty result for a genuinely absent prefix
+    /// -- it never 404s -- so an `Err` here is never legitimate absence, it
+    /// is always a real request failure (timeout/transient HTTP error/
+    /// malformed response). `find_recent_run`'s tight, back-to-back walk (up
+    /// to roughly 50 sequential requests, no delay between them) is exactly
+    /// the shape of traffic that can trip a transient failure or brief S3
+    /// throttling response. Retrying a handful of times with a short delay
+    /// costs nothing when the run genuinely has no published members
+    /// (`Ok(members)` -- empty or not -- returns immediately, no retry) and
+    /// meaningfully improves real-world reliability when it does.
+    async fn discover_members_with_retries(
+        &self,
+        run: RunReference,
+        group: ProductGroup,
+        forecast_hour: ForecastHour,
+    ) -> Result<Vec<MemberKey>, GefsError> {
+        const MAX_ATTEMPTS: u32 = 3;
+        const RETRY_DELAY: std::time::Duration = std::time::Duration::from_millis(300);
+
+        let mut last_err = None;
+        for attempt in 0..MAX_ATTEMPTS {
+            match self.discover_members(run, group, forecast_hour).await {
+                Ok(members) => return Ok(members),
+                Err(e) => {
+                    last_err = Some(e);
+                    if attempt + 1 < MAX_ATTEMPTS {
+                        forecast_core::sleep::sleep(RETRY_DELAY).await;
+                    }
+                }
+            }
+        }
+        // Every attempt failed with a real error (never "confirmed absent",
+        // per this method's own doc comment) -- surface it to the caller
+        // rather than silently treating it as absence; `find_recent_run`
+        // still just moves on to the next run hour, but this keeps the
+        // distinction available to anything that wants it (e.g. logging).
+        Err(last_err.expect("loop runs at least once, so last_err is always set on this path"))
+    }
+
     /// Find the most recent published GEFS run (walking backward from
     /// today's UTC date, most recent run hour first) that actually has
     /// `pgrb2sp25`/`forecast_hour` objects published -- a run takes a few
@@ -168,7 +209,10 @@ impl GefsClient {
             }
             for run_hour in [RunHour::H18, RunHour::H12, RunHour::H06, RunHour::H00] {
                 let run = RunReference::new(year, month, day, run_hour);
-                if let Ok(members) = self.discover_members(run, group, forecast_hour).await {
+                if let Ok(members) = self
+                    .discover_members_with_retries(run, group, forecast_hour)
+                    .await
+                {
                     if !members.is_empty() {
                         return Ok(run);
                     }

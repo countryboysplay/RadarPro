@@ -69,6 +69,7 @@ pub mod projection;
 pub mod provider;
 pub mod render;
 pub mod request;
+pub mod sleep;
 pub mod time;
 pub mod variable;
 
