@@ -148,6 +148,10 @@ body,
   font-size: 0.78rem;
 }
 
+.playback-frame-index {
+  color: #7a7a82;
+}
+
 /* Legend */
 
 .legend {
@@ -693,6 +697,137 @@ body,
   text-align: center;
 }
 
+/* Unified observed/forecast timeline (S09) -- see
+ * `timeline/UnifiedTimeline.tsx`'s doc comment. Reuses the same dark-HUD
+ * palette as everything above (`.hud-panel`, `.forecast-*`,
+ * `.play-mode-*`): green for observed (matches `.play-mode-live`), amber
+ * for forecast (matches `.forecast-panel-title`/`-provider-button-active`),
+ * so the color language for "which source" is consistent app-wide, not a
+ * one-off invented here. */
+
+.unified-timeline {
+  border-top: 1px solid #3a3a40;
+  padding-top: 0.4rem;
+  padding-bottom: 0.4rem;
+}
+
+.unified-timeline-header {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  font-size: 0.78rem;
+  margin-bottom: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.unified-timeline-source {
+  font-weight: bold;
+}
+
+.unified-timeline-source-observed {
+  color: #6fd66f;
+}
+
+.unified-timeline-source-forecast {
+  color: #ffd27a;
+}
+
+.unified-timeline-divider {
+  color: #7a7a82;
+}
+
+.unified-timeline-track {
+  position: relative;
+  height: 34px;
+  background: #1c1c20;
+  border: 1px solid #3a3a40;
+  border-radius: 4px;
+  cursor: pointer;
+  /* This track owns horizontal drag gestures itself (see the pointer
+   * handlers in `UnifiedTimeline.tsx`) -- without this, touch browsers
+   * intercept the drag as a page-scroll/pan gesture instead. */
+  touch-action: none;
+}
+
+.unified-timeline-now-marker {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  border-left: 2px solid #ff8f3a;
+  /* Positioned but non-interactive -- must never steal a drag/click from
+   * the track underneath it (the stage's "unmistakable present boundary"
+   * is a visual requirement, not a third interactive target). */
+  pointer-events: none;
+  z-index: 3;
+}
+
+.unified-timeline-now-label {
+  position: absolute;
+  top: -1.05rem;
+  left: 2px;
+  font-size: 0.65rem;
+  color: #ff8f3a;
+  font-weight: bold;
+  white-space: nowrap;
+}
+
+.unified-timeline-tick {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  width: 3px;
+  margin-left: -1.5px;
+  padding: 0;
+  border: none;
+  border-radius: 2px;
+  cursor: pointer;
+  z-index: 2;
+}
+
+/* Observed: solid fill. Forecast: dashed (repeating-gradient) fill -- a
+ * distinct *line-style*, not just a distinct color, per the stage spec
+ * ("distinct styling -- e.g. color/line-style -- for observed vs. forecast
+ * ticks, not just position"). */
+.unified-timeline-tick-observed {
+  background: #6fd66f;
+  opacity: 0.55;
+}
+
+.unified-timeline-tick-forecast {
+  background: repeating-linear-gradient(to bottom, #ffd27a 0, #ffd27a 4px, transparent 4px, transparent 8px);
+  opacity: 0.7;
+}
+
+.unified-timeline-tick-active {
+  opacity: 1;
+  width: 5px;
+  margin-left: -2.5px;
+  z-index: 4;
+  box-shadow: 0 0 0 1px #101012;
+}
+
+.unified-timeline-tick-observed.unified-timeline-tick-active {
+  background: #8fffb0;
+}
+
+.unified-timeline-tick-forecast.unified-timeline-tick-active {
+  background: repeating-linear-gradient(to bottom, #ffe6ad 0, #ffe6ad 4px, transparent 4px, transparent 8px);
+}
+
+.unified-timeline-tick:disabled {
+  cursor: default;
+  opacity: 0.3;
+}
+
+.unified-timeline-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.65rem;
+  color: #7a7a82;
+  margin-top: 0.25rem;
+}
+
 /* S09c UI shell: slim always-on top/bottom chrome + one collapsible
  * sidebar, replacing the always-on floating hud-panel-left/right/alerts/
  * alert-detail/forecast boxes that used to all be visible at once. Extends
@@ -738,6 +873,12 @@ body,
 .bottom-bar .keyboard-hint {
   border-top: none;
   padding-top: 0;
+}
+
+.bottom-bar .unified-timeline {
+  border-top: none;
+  padding-bottom: 0;
+  width: min(720px, 96vw);
 }
 
 .top-bar-left {

@@ -4,12 +4,21 @@ export interface PlaybackControlsProps {
   playMode: PlayMode;
   currentIndex: number;
   entriesCount: number;
+  /** The currently-displayed frame's real timestamp, or `null` if none is
+   * selected -- S09: "use real timestamps, not frame indexes." The frame
+   * index is still shown alongside it (useful for "how many scans held"),
+   * just no longer the only thing displayed. */
+  currentTimeMillis: number | null;
   frameMs: number;
   onPrevious: () => void;
   onNext: () => void;
   onTogglePlay: () => void;
   onJumpLatest: () => void;
   onFrameMsChange: (ms: number) => void;
+}
+
+function formatTime(ms: number): string {
+  return new Date(ms).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "medium" });
 }
 
 /**
@@ -22,6 +31,7 @@ export function PlaybackControls({
   playMode,
   currentIndex,
   entriesCount,
+  currentTimeMillis,
   frameMs,
   onPrevious,
   onNext,
@@ -53,8 +63,11 @@ export function PlaybackControls({
       </div>
       <div className="playback-status">
         <span className={`play-mode play-mode-${playMode}`}>{playMode}</span>
-        <span>
-          frame {entriesCount === 0 ? 0 : currentIndex + 1} / {entriesCount}
+        <span className="playback-time">
+          {currentTimeMillis !== null ? formatTime(currentTimeMillis) : "no scan loaded"}
+        </span>
+        <span className="playback-frame-index">
+          (frame {entriesCount === 0 ? 0 : currentIndex + 1} / {entriesCount})
         </span>
       </div>
       <label className="playback-speed">

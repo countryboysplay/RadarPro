@@ -1,11 +1,11 @@
-import { useEffect, useRef } from "react";
+import type { RefObject } from "react";
 import {
   FORECAST_LEAD_HOUR_OPTIONS,
   FORECAST_RENDER_HEIGHT,
   FORECAST_RENDER_WIDTH,
   FORECAST_VARIABLE,
-  useForecastProvider,
   type ForecastPhase,
+  type useForecastProvider,
 } from "./useForecastProvider";
 import type { ForecastEnsembleSpec, ForecastProviderId } from "./types";
 
@@ -87,37 +87,26 @@ function formatTime(iso: string | undefined): string {
  * Every label in this panel says "forecast"/model name explicitly and the
  * canvas carries its own caption -- this must never be mistaken for the
  * live NEXRAD radar sweep `MapView` renders (Global Contract).
+ *
+ * # S09: state lifted to `App.tsx`
+ *
+ * This panel used to own its `useForecastProvider(canvasRef)` call (and the
+ * canvas ref it renders onto) entirely internally. S09's unified timeline
+ * (`../timeline/UnifiedTimeline`) needs to both *read* forecast run/lead/
+ * grid metadata and *drive* `setLeadHours` from outside this panel, so both
+ * the hook instance and its canvas ref now live in `App.tsx` and are passed
+ * down as props -- there is still exactly one `useForecastProvider` handle
+ * for the whole app, just no longer instantiated in here. This component
+ * keeps every other responsibility (provider switcher, phase/status text,
+ * ensemble picker, canvas paint target, "not observed radar" labeling)
+ * unchanged.
  */
-export function ForecastPanel() {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const forecast = useForecastProvider(canvasRef);
+export interface ForecastPanelProps {
+  canvasRef: RefObject<HTMLCanvasElement>;
+  forecast: ReturnType<typeof useForecastProvider>;
+}
 
-  // Load a default provider on mount -- otherwise the panel would start on
-  // a blank "select a model" state with nothing to look at.
-  //
-  // Deliberately no ref-guard against re-running this: React 18
-  // `StrictMode` (see `main.tsx`) double-invokes a mount effect in dev
-  // (mount -> cleanup -> mount) specifically to flush out effects that
-  // aren't safe to re-run -- `useForecastProvider`'s own unmount effect
-  // already bumps its generation counter and frees the handle on that
-  // first (simulated) cleanup, so a `didInitRef`-style "only call this
-  // once, ever" guard here would suppress the second `selectProvider` call
-  // the real remount needs, leaving the pipeline permanently stuck on its
-  // now-invalidated first generation with no new one ever started
-  // (confirmed during this task's own browser verification). Calling
-  // `selectProvider` again on every genuine mount is correct and cheap
-  // (same as `useAlertPoller`'s unguarded `ensureAlertsWasmModuleLoaded()
-  // .then(...)` in its own mount effect) -- `selectProvider` itself is the
-  // one place stale in-flight work gets discarded, via that same
-  // generation counter.
-  useEffect(() => {
-    forecast.selectProvider("gefs");
-    // Intentionally run once per real mount (empty deps -- this project's
-    // eslint config does not enable react-hooks/exhaustive-deps, see
-    // `App.tsx`): `selectProvider` is a stable callback from a hook
-    // instance that lives for this panel's whole lifetime.
-  }, []);
-
+export function ForecastPanel({ canvasRef, forecast }: ForecastPanelProps) {
   const isEnsemble = forecast.metadata?.isEnsemble ?? false;
   const busy = forecast.phase !== "ready" && forecast.phase !== "error" && forecast.phase !== "idle";
 

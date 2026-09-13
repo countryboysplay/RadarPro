@@ -48,7 +48,8 @@ type HistoryAction =
   | { type: "TOGGLE_PLAY" }
   | { type: "ADVANCE_FRAME" }
   | { type: "SET_FRAME_MS"; ms: number }
-  | { type: "JUMP_LATEST" };
+  | { type: "JUMP_LATEST" }
+  | { type: "JUMP_TO_TIME"; millis: number };
 
 const MIN_FRAME_MS = 100;
 const MAX_FRAME_MS = 4000;
@@ -113,6 +114,25 @@ function historyReducer(state: HistoryState, action: HistoryAction): HistoryStat
       if (state.entries.length === 0) return { ...state, playMode: "live" };
       return { ...state, currentIndex: state.entries.length - 1, playMode: "live" };
     }
+
+    case "JUMP_TO_TIME": {
+      if (state.entries.length === 0) return state;
+      // Nearest-by-timestamp, not nearest-by-index -- lets a caller (the
+      // S09 unified timeline) drive selection from a real clicked/dragged
+      // time position without knowing anything about indices itself.
+      let bestIndex = 0;
+      let bestDiffMillis = Infinity;
+      for (let i = 0; i < state.entries.length; i++) {
+        const diff = Math.abs(state.entries[i].startTimeMillis - action.millis);
+        if (diff < bestDiffMillis) {
+          bestDiffMillis = diff;
+          bestIndex = i;
+        }
+      }
+      // Same "deliberate look at history" treatment as STEP -- jumping to a
+      // specific time is never mistaken for "live".
+      return { ...state, currentIndex: bestIndex, playMode: "paused" };
+    }
   }
 }
 
@@ -132,6 +152,13 @@ export interface ScanHistory {
   next: () => void;
   togglePlay: () => void;
   jumpToLatest: () => void;
+  /** Select whichever held entry's `startTimeMillis` is closest to
+   * `millis` (a real timestamp, not an index) -- added for the S09 unified
+   * timeline so it can drive playback from a clicked/dragged real-time
+   * position while reusing all of this hook's existing index-based state.
+   * No-op if history is empty. Same "paused" treatment as `previous`/
+   * `next`: a deliberate jump is never mistaken for "live". */
+  jumpToNearestByTimestamp: (millis: number) => void;
   setFrameMs: (ms: number) => void;
 }
 
@@ -200,6 +227,10 @@ export function useScanHistory(icao: string): ScanHistory {
   const next = useCallback(() => dispatch({ type: "STEP", delta: 1 }), []);
   const togglePlay = useCallback(() => dispatch({ type: "TOGGLE_PLAY" }), []);
   const jumpToLatest = useCallback(() => dispatch({ type: "JUMP_LATEST" }), []);
+  const jumpToNearestByTimestamp = useCallback(
+    (millis: number) => dispatch({ type: "JUMP_TO_TIME", millis }),
+    [],
+  );
   const setFrameMs = useCallback((ms: number) => dispatch({ type: "SET_FRAME_MS", ms }), []);
 
   return {
@@ -213,6 +244,7 @@ export function useScanHistory(icao: string): ScanHistory {
     next,
     togglePlay,
     jumpToLatest,
+    jumpToNearestByTimestamp,
     setFrameMs,
   };
 }

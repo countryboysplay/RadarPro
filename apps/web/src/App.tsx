@@ -25,11 +25,13 @@ import { AlertDetail } from "./ui/AlertDetail";
 import { useAlertPoller } from "./alerts/useAlertPoller";
 import type { AlertJson } from "./alerts/types";
 import { ForecastPanel } from "./forecast/ForecastPanel";
+import { useForecastProvider } from "./forecast/useForecastProvider";
 import { useRainbowOverlay } from "./rainbow/useRainbowOverlay";
 import { RainbowToggle } from "./ui/RainbowToggle";
 import { SettingsPanel } from "./ui/SettingsPanel";
 import { Sidebar } from "./ui/Sidebar";
 import { SidebarSection } from "./ui/SidebarSection";
+import { UnifiedTimeline } from "./timeline/UnifiedTimeline";
 
 /** Fixed reference radii (km) for the range rings drawn around the
  * selected site -- a documented, reasonable default (not derived from any
@@ -90,6 +92,39 @@ export default function App() {
   } = useRadarRenderer(canvasRef);
 
   const history = useScanHistory(icao);
+
+  // S09: forecast state lifted here (out of `ForecastPanel`, which used to
+  // own this hook entirely internally) so the unified timeline below can
+  // both read forecast run/lead/grid metadata and drive `setLeadHours` --
+  // see `ForecastPanel`'s doc comment. Still exactly one `useForecastProvider`
+  // handle for the whole app.
+  const forecastCanvasRef = useRef<HTMLCanvasElement>(null);
+  const forecast = useForecastProvider(forecastCanvasRef);
+
+  // Load a default provider on mount -- otherwise the forecast panel would
+  // start on a blank "select a model" state with nothing to look at.
+  //
+  // Deliberately no ref-guard against re-running this: React 18
+  // `StrictMode` (see `main.tsx`) double-invokes a mount effect in dev
+  // (mount -> cleanup -> mount) specifically to flush out effects that
+  // aren't safe to re-run -- `useForecastProvider`'s own unmount effect
+  // already bumps its generation counter and frees the handle on that
+  // first (simulated) cleanup, so a `didInitRef`-style "only call this
+  // once, ever" guard here would suppress the second `selectProvider` call
+  // the real remount needs, leaving the pipeline permanently stuck on its
+  // now-invalidated first generation with no new one ever started
+  // (confirmed during S08's own browser verification, when this effect
+  // still lived in `ForecastPanel`). Calling `selectProvider` again on
+  // every genuine mount is correct and cheap -- `selectProvider` itself is
+  // the one place stale in-flight work gets discarded, via that same
+  // generation counter.
+  useEffect(() => {
+    forecast.selectProvider("gefs");
+    // Intentionally run once per real mount (empty deps -- this project's
+    // eslint config does not enable react-hooks/exhaustive-deps):
+    // `selectProvider` is a stable callback from a hook instance that lives
+    // for this component's whole lifetime.
+  }, []);
 
   // S06: NWS alerts. `useAlertPoller` owns the whole poll loop + wasm
   // `AlertStoreHandle`; this component only ever reads its current active
@@ -512,7 +547,7 @@ export default function App() {
             render path -- see `ForecastPanel`'s doc comment for why this is
             a dedicated panel rather than a MapView overlay in this stage. */}
         <SidebarSection title="Forecast">
-          <ForecastPanel />
+          <ForecastPanel canvasRef={forecastCanvasRef} forecast={forecast} />
         </SidebarSection>
 
         <SidebarSection title="Rainbow">
@@ -531,10 +566,17 @@ export default function App() {
       </Sidebar>
 
       <footer className="bottom-bar">
+        {/* S09: unified real-time-axis timeline -- see
+            `timeline/UnifiedTimeline.tsx`'s doc comment. Drives the same
+            `history`/`forecast` selections `PlaybackControls`/`ForecastPanel`
+            already read/write; it is an additional way to set them, not a
+            replacement rendering path. */}
+        <UnifiedTimeline history={history} forecast={forecast} />
         <PlaybackControls
           playMode={history.playMode}
           currentIndex={history.currentIndex}
           entriesCount={history.entries.length}
+          currentTimeMillis={currentEntry?.startTimeMillis ?? null}
           frameMs={history.frameMs}
           onPrevious={history.previous}
           onNext={history.next}
