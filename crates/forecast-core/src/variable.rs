@@ -80,23 +80,50 @@ impl ForecastVariable {
         }
     }
 
-    /// WMO GRIB2 Table 4.2 discipline-0 ("Meteorological products")
-    /// `(parameter category, parameter number)` for this quantity -- the
-    /// same pair regardless of which GRIB2-based provider's message carries
-    /// it (empirically confirmed identical for GEFS and HRRR's 2m
-    /// temperature: both `(0, 0)`). A convenience for GRIB2-based providers
-    /// cross-checking a decoded message's declared parameter against the
-    /// field they asked for; not part of [`crate::provider::ForecastProvider`]'s
-    /// contract, since a future non-GRIB2 provider would not use this at
-    /// all.
+    /// A typical/reference WMO GRIB2 Table 4.2 discipline-0 ("Meteorological
+    /// products") `(parameter category, parameter number)` for this
+    /// quantity -- a useful starting point for a new GRIB2-based provider,
+    /// **not a guarantee every provider's real message uses this exact
+    /// pair**. Confirmed identical across GEFS and HRRR for most of this
+    /// enum's variables (e.g. both providers' 2m temperature really is
+    /// `(0, 0)`), but empirically **false** for [`Self::Mslp`]: GEFS's real
+    /// message (`MSLET`) decodes as `(3, 192)` while HRRR's
+    /// (`MSLMA`) decodes as `(3, 198)` -- two genuinely different named
+    /// MSLP-family products, not a bug in either provider (see
+    /// `provider-gefs`/`provider-hrrr`'s own `decode::idx_names` doc
+    /// comments). Because of this, no provider's `decode_field` actually
+    /// cross-checks a decoded message against *this* method any more --
+    /// each provider's own `idx_names` table carries the `(category,
+    /// number)` pair *it* empirically verified for *its own* real message,
+    /// per this project's "provider-specific names and formats stop at the
+    /// adapter" rule. This method remains here only as documentation/a
+    /// reference default, not part of [`crate::provider::ForecastProvider`]'s
+    /// contract.
     pub const fn grib2_parameter(&self) -> (u8, u8) {
         match self {
-            Self::Temperature2m => (0, 0),      // TMP
-            Self::Dewpoint2m => (0, 6),         // DPT
-            Self::WindU10m => (2, 2),           // UGRD
-            Self::WindV10m => (2, 3),           // VGRD
-            Self::WindGust => (2, 22),          // GUST
-            Self::Mslp => (3, 1),               // PRMSL / MSLET
+            Self::Temperature2m => (0, 0), // TMP
+            Self::Dewpoint2m => (0, 6),    // DPT
+            Self::WindU10m => (2, 2),      // UGRD
+            Self::WindV10m => (2, 3),      // VGRD
+            Self::WindGust => (2, 22),     // GUST
+            // MSLET (NCEP's Eta-model-reduction mean sea level pressure --
+            // what NCEP model output conventionally calls "MSLP", and the
+            // message `provider-gefs` decodes for this variable), NOT the
+            // standard WMO `PRMSL` (which would be `(3, 1)`. Empirically
+            // corrected during GEFS 8-variable decode work (2026-09-13):
+            // real GEFS `MSLET` messages decode with parameter category 3
+            // / number 192 -- a discipline-0/category-3 *local-table* code
+            // (NCEP GRIB2 Table 4.2, local extension range 192-254), not
+            // the standard PRMSL pairing this field previously assumed.
+            // Verified against a real, live-fetched
+            // `gefs.20260913/12/.../gec00...` `MSLET` message via this
+            // crate's own decode path -- both `MSLET` and `PRMSL` are
+            // published side by side at the identical `.idx` level
+            // ("mean sea level"), so this is not a case of one message
+            // simply being absent; the two are genuinely different
+            // parameter codes for closely related but distinct
+            // reduction methods.
+            Self::Mslp => (3, 192),             // MSLET
             Self::Precipitation1h => (1, 8),    // APCP
             Self::CloudCover => (6, 1),         // TCDC
             Self::GeopotentialHeight => (3, 5), // HGT

@@ -81,7 +81,7 @@ impl forecast_core::provider::ForecastProvider for HrrrProvider {
         let key = crate::keys::object_key(*run, Product::CONUS_SURFACE, forecast_hour);
         let idx_key = crate::keys::idx_key(*run, Product::CONUS_SURFACE, forecast_hour);
 
-        let (idx_variable, idx_level) =
+        let (idx_variable, idx_level, _native_unit, _category, _number) =
             crate::decode::idx_names(request.variable).ok_or_else(|| {
                 HrrrError::FieldNotFoundInIdx {
                     url: idx_key.clone(),

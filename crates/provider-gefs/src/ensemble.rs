@@ -35,6 +35,26 @@
 //! `docs/adr/0011-gefs-grib2-crate-selection-and-limitations.md`, with the
 //! exact byte offsets cross-checked against three real, live-fetched
 //! messages (`gec00`, `gep01`, `geavg`) in this module's tests.
+//!
+//! # Templates 4.11/4.12 (added when decoding `CloudCover`)
+//!
+//! GEFS's `pgrb2sp25` product group has no *instantaneous* cloud-cover
+//! message at all -- every real `TCDC` message observed is a 0-3-hour
+//! time-average, which WMO's spec puts under Template 4.11 ("individual
+//! ensemble forecast ... in a continuous or non-continuous time interval")
+//! for a member/control forecast, or 4.12 (4.2's time-interval
+//! counterpart) for the ensemble mean, never plain 4.1/4.2. Both templates
+//! are documented (WMO Manual on Codes, FM 92 GRIB2, Template 4.11/4.12
+//! definitions) as 4.1/4.2's exact octet-for-octet prefix through the
+//! ensemble-type/perturbation-number (4.11) or derived-type (4.12) field,
+//! with a time-range extension appended *after* that point -- so the same
+//! fixed offsets below apply unchanged. Confirmed empirically, not just
+//! from the spec: a real GEFS `TCDC` `gec00` message decodes template
+//! number 11 with byte 29 = 1 (identical value/offset to a real 4.1 `TMP`
+//! `gec00` message's "unperturbed low-res control"), and a real `TCDC`
+//! `geavg` message decodes template number 12 with byte 29 = 0 (identical
+//! to a real 4.2 `TMP` `geavg` message's "unweighted mean of all
+//! members").
 
 use crate::error::GefsError;
 use forecast_core::ensemble::EnsembleStatistic;
@@ -53,12 +73,29 @@ use forecast_core::ensemble::EnsembleStatistic;
 /// live-fetched messages in this module's tests (`gec00`: byte 29 is 1,
 /// "unperturbed low-res control"; `gep01`: byte 29 is 3, "positively
 /// perturbed", byte 30 is 1, "perturbation number 1").
+/// Also the correct offset for Template 4.11 ("individual ensemble
+/// forecast, control and perturbed, at a horizontal level or in a
+/// horizontal layer, in a continuous or non-continuous time interval") --
+/// WMO defines 4.11 as 4.1's exact octet-for-octet prefix (through the
+/// "number of forecasts in the ensemble" field) with a time-range
+/// extension appended afterward, so the ensemble-type/perturbation-number
+/// fields land at the identical raw offset. Confirmed empirically: a real
+/// GEFS `TCDC` (cloud cover) `gec00` message -- cloud cover is a
+/// 0-3-hour-average quantity, so it necessarily uses 4.11, never plain
+/// 4.1 -- has byte 29 = 1 ("unperturbed low-res control"), the exact same
+/// value a real 4.1 `TMP` `gec00` message has at the same offset.
 const TEMPLATE_4_1_ENSEMBLE_TYPE_OFFSET: usize = 29;
 const TEMPLATE_4_1_PERTURBATION_NUMBER_OFFSET: usize = 30;
 /// Template 4.2 octet 26 (1-based) = template-relative offset 25 + the
 /// same 4-byte prefix = raw offset 29: "derived forecast type" (WMO Code
 /// Table 4.7). Cross-checked against a real `geavg` message: byte 29 = 0
 /// "unweighted mean of all members".
+///
+/// Also the correct offset for Template 4.12 (4.2's time-interval
+/// counterpart, same relationship as 4.1/4.11 above): confirmed
+/// empirically against a real GEFS `TCDC` `geavg` message (byte 29 = 0,
+/// "unweighted mean of all members" -- identical value and offset to a
+/// real 4.2 `TMP` `geavg` message).
 const TEMPLATE_4_2_DERIVED_TYPE_OFFSET: usize = 29;
 
 /// Extract [`EnsembleStatistic`] from a decoded submessage's Product
@@ -72,7 +109,7 @@ pub fn identity_from_prod_def(
     let raw: Vec<u8> = prod_def.iter().copied().collect();
 
     match template_number {
-        1 => {
+        1 | 11 => {
             let ensemble_type = *raw.get(TEMPLATE_4_1_ENSEMBLE_TYPE_OFFSET).ok_or_else(|| {
                 GefsError::TruncatedProductDefinition {
                     url: url.to_string(),
@@ -96,7 +133,7 @@ pub fn identity_from_prod_def(
                 }),
             }
         }
-        2 => {
+        2 | 12 => {
             let derived_type = *raw.get(TEMPLATE_4_2_DERIVED_TYPE_OFFSET).ok_or_else(|| {
                 GefsError::TruncatedProductDefinition {
                     url: url.to_string(),
@@ -152,6 +189,23 @@ mod tests {
         0, 0, 4, 0, 107, 0, 0, 0, 1, 0, 0, 0, 0, 103, 0, 0, 0, 0, 2, 255, 0, 0, 0, 0, 0, 0, 30,
     ];
 
+    // Raw template 4.11 payload bytes, captured verbatim from a real,
+    // live-fetched GEC00 (control) TCDC (cloud cover) f003 message
+    // (gefs.20260913/12/atmos/pgrb2sp25/gec00.t12z.pgrb2s.0p25.f003,
+    // message #28) -- cloud cover has no instantaneous message in this
+    // product group, so this is the only real template 4.11 payload this
+    // crate's own tests can be built from (see this module's doc comment).
+    const REAL_GEC00_TCDC_TEMPLATE_4_11: &[u8] = &[
+        6, 1, 4, 0, 107, 0, 0, 0, 1, 0, 0, 0, 0, 10, 0, 0, 0, 0, 0, 255, 0, 0, 0, 0, 0, 1, 0, 30,
+        7, 234, 9, 13, 15, 0, 0, 1, 0, 0, 0, 0, 0, 2, 1, 0, 0, 0, 3, 255, 0, 0, 0, 0,
+    ];
+    // Same, for a real GEAVG (ensemble mean) TCDC f003 message -- template
+    // 4.12.
+    const REAL_GEAVG_TCDC_TEMPLATE_4_12: &[u8] = &[
+        6, 1, 4, 0, 107, 0, 0, 0, 1, 0, 0, 0, 0, 10, 0, 0, 0, 0, 0, 255, 0, 0, 0, 0, 0, 0, 30, 7,
+        234, 9, 13, 15, 0, 0, 1, 0, 0, 0, 0, 0, 2, 1, 0, 0, 0, 3, 255, 0, 0, 0, 0,
+    ];
+
     #[test]
     fn real_gec00_message_is_identified_as_control() {
         let prod_def = prod_def_from_raw(0, 1, REAL_GEC00_TEMPLATE_4_1);
@@ -173,6 +227,30 @@ mod tests {
     #[test]
     fn real_geavg_message_is_identified_as_mean() {
         let prod_def = prod_def_from_raw(0, 2, REAL_GEAVG_TEMPLATE_4_2);
+        assert_eq!(
+            identity_from_prod_def("u", &prod_def).unwrap(),
+            EnsembleStatistic::Mean
+        );
+    }
+
+    #[test]
+    fn real_tcdc_gec00_template_4_11_message_is_identified_as_control() {
+        // Confirms template 4.11 (time-interval ensemble forecast) is
+        // handled identically to plain 4.1 -- see this module's doc
+        // comment.
+        let prod_def = prod_def_from_raw(0, 11, REAL_GEC00_TCDC_TEMPLATE_4_11);
+        assert_eq!(
+            identity_from_prod_def("u", &prod_def).unwrap(),
+            EnsembleStatistic::Control
+        );
+    }
+
+    #[test]
+    fn real_tcdc_geavg_template_4_12_message_is_identified_as_mean() {
+        // Confirms template 4.12 (time-interval derived-forecast) is
+        // handled identically to plain 4.2 -- see this module's doc
+        // comment.
+        let prod_def = prod_def_from_raw(0, 12, REAL_GEAVG_TCDC_TEMPLATE_4_12);
         assert_eq!(
             identity_from_prod_def("u", &prod_def).unwrap(),
             EnsembleStatistic::Mean

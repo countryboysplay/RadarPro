@@ -82,14 +82,73 @@ const PROD_TEMPLATE_DETERMINISTIC: u16 = 0;
 const COORD_SCALE: f64 = 1e-6;
 
 /// This crate's own mapping from a canonical [`ForecastVariable`] to the
-/// exact `.idx` `VARNAME`/`LEVEL` HRRR's real `.idx` files use for it.
-/// Only `Temperature2m` is supported as of this stage (matching
-/// `provider-gefs`'s own "avoid premature abstractions" precedent -- a
-/// second decoded variable is future work, not this stage's).
-pub fn idx_names(variable: ForecastVariable) -> Option<(&'static str, &'static str)> {
+/// exact `.idx` `VARNAME`/`LEVEL` and native GRIB2 unit HRRR's real `.idx`
+/// files use for it -- matching `provider-gefs::decode::idx_names`'s
+/// already-correct 3-tuple shape exactly (VARNAME, LEVEL, native_unit), so
+/// [`decode_field`] never has to hardcode a unit that only happened to be
+/// right for one variable.
+///
+/// Empirically confirmed (2026-09-13, live bucket, `hrrr.t12z.wrfsfcf00`/
+/// `f01`, `conus` `wrfsfc` product) against a real, current `.idx` file for
+/// every arm below except the two that stay `None`:
+///
+/// - `GeopotentialHeight`: deliberately deferred, unchanged from before this
+///   stage -- needs a new product-group/bucket-key path plus a "level"
+///   concept `FieldRequest` doesn't have yet.
+/// - `Precipitation1h`: also deferred, newly discovered this stage. Every
+///   real HRRR `APCP:surface:*` `.idx` line is an *accumulated* field (e.g.
+///   `0-1 hour acc fcst`), which GRIB2 encodes with Product Definition
+///   Template **4.8** ("statistically processed value in a time interval"),
+///   never PDT 4.0 -- there is no instantaneous-field encoding of an
+///   accumulation. [`decode_field`] hard-requires PDT 4.0 and, even if that
+///   were relaxed, PDT 4.8's octet 19-22 "forecast time" field is the
+///   *start* of the accumulation window (confirmed empirically: a real
+///   `hrrr.t12z.wrfsfcf01.grib2` `APCP:surface:0-1 hour acc fcst` message
+///   decodes with `forecast_time.value == 0`, not `1`) -- the real valid
+///   time (end of the interval) lives in PDT 4.8's separate "end of overall
+///   time interval" date fields, which the `grib` 0.18.5 crate exposes no
+///   typed accessor for. Correctly decoding this variable needs a new
+///   statistically-processed-field decode path (a distinct PDT branch plus
+///   real interval-end time handling), not just a new `idx_names` arm --
+///   the same category of "out of scope for this stage" as
+///   `GeopotentialHeight` above, not a guess.
+///
+/// # `Mslp`: resolved cross-provider conflict
+///
+/// HRRR's real MSLP-family product in this product group is **`MSLMA`**
+/// ("MSLP, MAPS System Reduction"), confirmed live at
+/// `MSLMA:mean sea level:anl:` -- category/number `(3, 198)` when decoded.
+/// GEFS's real MSLP-family product (`MSLET`) decodes as `(3, 192)` --
+/// confirmed live against both buckets; live-checked directly against
+/// HRRR's own `.idx` that it publishes no `PRMSL` message at all (the one
+/// pairing that might otherwise have unified both providers on a single
+/// standard code), so HRRR and GEFS genuinely do not share one GRIB2
+/// parameter pair for this canonical variable. Resolved the same way
+/// `provider-gefs::decode::idx_names` documents its own side of this:
+/// each provider's `idx_names` table carries the `(category, number)`
+/// *it* empirically verified for *its own* real message, and
+/// [`decode_field`] cross-checks against this table's value, never
+/// `forecast_core::variable::ForecastVariable::grib2_parameter()`'s
+/// shared constant -- this project's "provider-specific names and
+/// formats stop at the adapter" rule.
+pub fn idx_names(
+    variable: ForecastVariable,
+) -> Option<(&'static str, &'static str, &'static str, u8, u8)> {
     match variable {
-        ForecastVariable::Temperature2m => Some(("TMP", "2 m above ground")),
-        _ => None,
+        // (idx VARNAME, idx LEVEL, native unit, category, number)
+        ForecastVariable::Temperature2m => Some(("TMP", "2 m above ground", "K", 0, 0)),
+        ForecastVariable::Dewpoint2m => Some(("DPT", "2 m above ground", "K", 0, 6)),
+        ForecastVariable::WindU10m => Some(("UGRD", "10 m above ground", "m/s", 2, 2)),
+        ForecastVariable::WindV10m => Some(("VGRD", "10 m above ground", "m/s", 2, 3)),
+        ForecastVariable::WindGust => Some(("GUST", "surface", "m/s", 2, 22)),
+        // See this function's own doc comment: real HRRR product is
+        // `MSLMA`, empirically `(3, 198)` -- a genuinely different real
+        // message/parameter pair from GEFS's `MSLET` `(3, 192)`, not a
+        // bug in either provider.
+        ForecastVariable::Mslp => Some(("MSLMA", "mean sea level", "Pa", 3, 198)),
+        ForecastVariable::CloudCover => Some(("TCDC", "entire atmosphere", "%", 6, 1)),
+        ForecastVariable::RelativeHumidity => Some(("RH", "2 m above ground", "%", 1, 1)),
+        ForecastVariable::Precipitation1h | ForecastVariable::GeopotentialHeight => None,
     }
 }
 
@@ -100,7 +159,7 @@ pub fn decode_field(
     bytes: &[u8],
     variable: ForecastVariable,
 ) -> Result<ForecastGrid, HrrrError> {
-    let (want_idx_variable, want_idx_level) =
+    let (want_idx_variable, want_idx_level, native_unit, want_category, want_number) =
         idx_names(variable).ok_or_else(|| HrrrError::UnexpectedField {
             url: url.to_string(),
             category: 0,
@@ -119,7 +178,6 @@ pub fn decode_field(
     })?;
 
     let prod_def = submessage.prod_def();
-    let (want_category, want_number) = variable.grib2_parameter();
     let category = prod_def
         .parameter_category()
         .ok_or_else(|| HrrrError::Grib2Parse {
@@ -325,10 +383,10 @@ pub fn decode_field(
         native: NativeVariableMetadata {
             provider_variable_name: want_idx_variable.to_string(),
             provider_level_name: want_idx_level.to_string(),
-            native_unit: "K",
+            native_unit,
         },
         provider_id: "hrrr",
-        unit: "K",
+        unit: native_unit,
         run_time,
         forecast_lead_hours: lead_hours,
         valid_time,
@@ -414,6 +472,224 @@ mod tests {
         // Real, live-verified first point for this exact message.
         assert!((lat - 21.138123).abs() < 1e-3, "lat={lat}");
         assert!((lon.rem_euclid(360.0) - (-122.71953f64).rem_euclid(360.0)).abs() < 1e-3);
+    }
+
+    /// Shared shape for a newly-decoded-this-stage variable's happy path:
+    /// grid geometry/time metadata is identical machinery to
+    /// `Temperature2m`'s own test above, so this only re-checks what's
+    /// actually variable-specific (unit, provider-native name, and a
+    /// physical-plausibility min/max window from the real fixture).
+    fn assert_common_grid_shape(decoded: &ForecastGrid) {
+        assert_eq!(decoded.provider_id, "hrrr");
+        assert_eq!(decoded.ensemble, None, "HRRR is deterministic");
+        assert_eq!(decoded.run_time, UtcTimestamp::new(2026, 9, 13, 12, 0, 0));
+        assert_eq!(decoded.forecast_lead_hours, 0);
+        assert_eq!(decoded.valid_time, decoded.run_time);
+        assert_eq!(decoded.geometry.width(), 1799);
+        assert_eq!(decoded.geometry.height(), 1059);
+        assert_eq!(decoded.values.len(), 1799 * 1059);
+        assert!(matches!(
+            decoded.geometry,
+            GridGeometry::LambertConformal(_)
+        ));
+    }
+
+    #[test]
+    fn decodes_a_real_captured_dewpoint_2m_message() {
+        let bytes = fixture("hrrr_t12z_f00_dpt2m.grib2");
+        let decoded = decode_field("u", &bytes, ForecastVariable::Dewpoint2m).unwrap();
+        assert_eq!(decoded.variable, ForecastVariable::Dewpoint2m);
+        assert_eq!(decoded.unit, "K");
+        assert_common_grid_shape(&decoded);
+
+        // Real min/max from this exact live-fetched fixture.
+        let min = decoded.values.iter().cloned().fold(f32::INFINITY, f32::min);
+        let max = decoded
+            .values
+            .iter()
+            .cloned()
+            .fold(f32::NEG_INFINITY, f32::max);
+        assert!((min - 253.38615).abs() < 0.01, "min={min}");
+        assert!((max - 301.94867).abs() < 0.01, "max={max}");
+    }
+
+    #[test]
+    fn decodes_a_real_captured_wind_u_10m_message() {
+        let bytes = fixture("hrrr_t12z_f00_ugrd10m.grib2");
+        let decoded = decode_field("u", &bytes, ForecastVariable::WindU10m).unwrap();
+        assert_eq!(decoded.variable, ForecastVariable::WindU10m);
+        assert_eq!(decoded.unit, "m/s");
+        assert_common_grid_shape(&decoded);
+
+        let min = decoded.values.iter().cloned().fold(f32::INFINITY, f32::min);
+        let max = decoded
+            .values
+            .iter()
+            .cloned()
+            .fold(f32::NEG_INFINITY, f32::max);
+        assert!((min - (-12.902341)).abs() < 0.01, "min={min}");
+        assert!((max - 18.78516).abs() < 0.01, "max={max}");
+    }
+
+    #[test]
+    fn decodes_a_real_captured_wind_v_10m_message() {
+        let bytes = fixture("hrrr_t12z_f00_vgrd10m.grib2");
+        let decoded = decode_field("u", &bytes, ForecastVariable::WindV10m).unwrap();
+        assert_eq!(decoded.variable, ForecastVariable::WindV10m);
+        assert_eq!(decoded.unit, "m/s");
+        assert_common_grid_shape(&decoded);
+
+        let min = decoded.values.iter().cloned().fold(f32::INFINITY, f32::min);
+        let max = decoded
+            .values
+            .iter()
+            .cloned()
+            .fold(f32::NEG_INFINITY, f32::max);
+        assert!((min - (-13.750067)).abs() < 0.01, "min={min}");
+        assert!((max - 15.874933).abs() < 0.01, "max={max}");
+    }
+
+    #[test]
+    fn decodes_a_real_captured_wind_gust_message() {
+        let bytes = fixture("hrrr_t12z_f00_gust.grib2");
+        let decoded = decode_field("u", &bytes, ForecastVariable::WindGust).unwrap();
+        assert_eq!(decoded.variable, ForecastVariable::WindGust);
+        assert_eq!(decoded.unit, "m/s");
+        assert_common_grid_shape(&decoded);
+
+        let min = decoded.values.iter().cloned().fold(f32::INFINITY, f32::min);
+        let max = decoded
+            .values
+            .iter()
+            .cloned()
+            .fold(f32::NEG_INFINITY, f32::max);
+        assert!((min - 0.030853303).abs() < 0.01, "min={min}");
+        assert!((max - 27.468353).abs() < 0.01, "max={max}");
+    }
+
+    #[test]
+    fn decodes_a_real_captured_cloud_cover_message() {
+        let bytes = fixture("hrrr_t12z_f00_tcdc.grib2");
+        let decoded = decode_field("u", &bytes, ForecastVariable::CloudCover).unwrap();
+        assert_eq!(decoded.variable, ForecastVariable::CloudCover);
+        assert_eq!(decoded.unit, "%");
+        assert_common_grid_shape(&decoded);
+
+        let min = decoded.values.iter().cloned().fold(f32::INFINITY, f32::min);
+        let max = decoded
+            .values
+            .iter()
+            .cloned()
+            .fold(f32::NEG_INFINITY, f32::max);
+        assert!((min - 0.0).abs() < 0.01, "min={min}");
+        assert!((max - 100.0).abs() < 0.01, "max={max}");
+    }
+
+    #[test]
+    fn decodes_a_real_captured_relative_humidity_2m_message() {
+        let bytes = fixture("hrrr_t12z_f00_rh2m.grib2");
+        let decoded = decode_field("u", &bytes, ForecastVariable::RelativeHumidity).unwrap();
+        assert_eq!(decoded.variable, ForecastVariable::RelativeHumidity);
+        assert_eq!(decoded.unit, "%");
+        assert_common_grid_shape(&decoded);
+
+        let min = decoded.values.iter().cloned().fold(f32::INFINITY, f32::min);
+        let max = decoded
+            .values
+            .iter()
+            .cloned()
+            .fold(f32::NEG_INFINITY, f32::max);
+        assert!((min - 3.8).abs() < 0.01, "min={min}");
+        assert!((max - 100.0).abs() < 0.01, "max={max}");
+    }
+
+    /// `Mslp`'s cross-provider parameter conflict is now resolved -- see
+    /// `idx_names`'s own doc comment: this crate's table carries HRRR's own
+    /// empirically-verified `(3, 198)` for `MSLMA`, and `decode_field`
+    /// cross-checks against that, not the shared
+    /// `ForecastVariable::grib2_parameter()` constant (which stays `(3,
+    /// 192)`, GEFS's `MSLET` value, and is simply not consulted for this
+    /// cross-check any more). A real HRRR MSLMA message now decodes
+    /// successfully as `Mslp`.
+    #[test]
+    fn decodes_a_real_captured_mslp_message() {
+        let bytes = fixture("hrrr_t12z_f00_mslma.grib2");
+        let decoded = decode_field("u", &bytes, ForecastVariable::Mslp).unwrap();
+
+        assert_eq!(decoded.variable, ForecastVariable::Mslp);
+        assert_eq!(decoded.unit, "Pa");
+        assert_eq!(decoded.ensemble, None);
+
+        // Same physical sanity band `provider-gefs`'s own MSLP test uses --
+        // mean sea level pressure on Earth is always within a fairly tight
+        // range (~870-1085 hPa at the extremes).
+        let min = decoded.values.iter().cloned().fold(f32::INFINITY, f32::min);
+        let max = decoded
+            .values
+            .iter()
+            .cloned()
+            .fold(f32::NEG_INFINITY, f32::max);
+        assert!(
+            (87000.0..=108500.0).contains(&min),
+            "implausible min {min} Pa"
+        );
+        assert!(
+            (87000.0..=108500.0).contains(&max),
+            "implausible max {max} Pa"
+        );
+    }
+
+    #[test]
+    fn rejects_a_wrong_variable_for_each_newly_decoded_field() {
+        // Cross-check that decode_field's (category, number) validation
+        // catches every newly-decoded-this-stage variable too, not just
+        // Temperature2m (already covered by
+        // `rejects_an_unsupported_variable_cleanly` below).
+        let cases: &[(&str, ForecastVariable, ForecastVariable)] = &[
+            (
+                "hrrr_t12z_f00_dpt2m.grib2",
+                ForecastVariable::Dewpoint2m,
+                ForecastVariable::WindU10m,
+            ),
+            (
+                "hrrr_t12z_f00_ugrd10m.grib2",
+                ForecastVariable::WindU10m,
+                ForecastVariable::WindV10m,
+            ),
+            (
+                "hrrr_t12z_f00_vgrd10m.grib2",
+                ForecastVariable::WindV10m,
+                ForecastVariable::WindGust,
+            ),
+            (
+                "hrrr_t12z_f00_gust.grib2",
+                ForecastVariable::WindGust,
+                ForecastVariable::Temperature2m,
+            ),
+            (
+                "hrrr_t12z_f00_tcdc.grib2",
+                ForecastVariable::CloudCover,
+                ForecastVariable::RelativeHumidity,
+            ),
+            (
+                "hrrr_t12z_f00_rh2m.grib2",
+                ForecastVariable::RelativeHumidity,
+                ForecastVariable::CloudCover,
+            ),
+        ];
+        for (fixture_name, real_variable, wrong_variable) in cases {
+            let bytes = fixture(fixture_name);
+            // Sanity: the real variable still decodes fine.
+            decode_field("u", &bytes, *real_variable).unwrap_or_else(|e| {
+                panic!("{fixture_name} should decode as {real_variable:?}: {e}")
+            });
+            // The mismatch is rejected, never silently mislabeled.
+            let err = decode_field("u", &bytes, *wrong_variable).unwrap_err();
+            assert!(
+                matches!(err, HrrrError::UnexpectedField { .. }),
+                "{fixture_name} decoded as {wrong_variable:?} should be UnexpectedField, got {err:?}"
+            );
+        }
     }
 
     #[test]

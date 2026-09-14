@@ -95,11 +95,13 @@ impl forecast_core::provider::ForecastProvider for GefsProvider {
         let key = crate::keys::object_key(*run, member, ProductGroup::PGRB2S_P25, forecast_hour);
         let idx_key = crate::keys::idx_key(*run, member, ProductGroup::PGRB2S_P25, forecast_hour);
 
-        let (idx_variable, idx_level, _unit) = crate::decode::idx_names(request.variable)
-            .ok_or_else(|| GefsError::FieldNotFoundInIdx {
-                url: idx_key.clone(),
-                variable: request.variable.canonical_name().to_string(),
-                level: String::new(),
+        let (idx_variable, idx_level, _unit, _category, _number) =
+            crate::decode::idx_names(request.variable).ok_or_else(|| {
+                GefsError::FieldNotFoundInIdx {
+                    url: idx_key.clone(),
+                    variable: request.variable.canonical_name().to_string(),
+                    level: String::new(),
+                }
             })?;
 
         let idx_text = self.client.fetch_idx_text(&idx_key).await?;

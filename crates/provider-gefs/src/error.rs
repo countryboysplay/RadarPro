@@ -85,8 +85,9 @@ pub enum GefsError {
 
     #[error(
         "{url}: unsupported Product Definition Template 4.{template_number} (this crate only \
-         supports 4.1, individual ensemble forecast, and 4.2, derived forecast from all \
-         ensemble members -- the two templates GEFS's control/perturbed members and ensemble \
+         supports 4.1/4.11, individual ensemble forecast (instantaneous / over a time \
+         interval), and 4.2/4.12, derived forecast from all ensemble members (instantaneous / \
+         over a time interval) -- the templates GEFS's control/perturbed members and ensemble \
          mean have been empirically observed to use)"
     )]
     UnsupportedProductTemplate { url: String, template_number: u16 },
