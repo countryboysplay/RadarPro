@@ -12,6 +12,14 @@ export interface SidebarSectionProps {
    * a normal self-contained section. */
   open?: boolean;
   onToggle?: (open: boolean) => void;
+  /** Sidebar redesign: `true` for a section nested one level inside a
+   * `SidebarCategory` (or inside the pinned "Live Radar" group) rather
+   * than sitting directly in the sidebar -- e.g. "Legend & Probe" or the
+   * Color Table Editor inside "Live Radar". Only trims this section's own
+   * indent/border so nesting it doesn't compound `SidebarCategory`'s own
+   * indent into an overly-deep stair-step; everything else about the
+   * section (collapse behavior, header, chevron) is identical. */
+  nested?: boolean;
   children: ReactNode;
 }
 
@@ -22,7 +30,7 @@ export interface SidebarSectionProps {
  * which matters for a HUD workstation where a user often wants two tools
  * visible together once the sidebar itself is open.
  */
-export function SidebarSection({ title, defaultOpen = false, open: controlledOpen, onToggle, children }: SidebarSectionProps) {
+export function SidebarSection({ title, defaultOpen = false, open: controlledOpen, onToggle, nested = false, children }: SidebarSectionProps) {
   const [internalOpen, setInternalOpen] = useState(defaultOpen);
   const isControlled = controlledOpen !== undefined;
   const open = isControlled ? controlledOpen : internalOpen;
@@ -34,7 +42,7 @@ export function SidebarSection({ title, defaultOpen = false, open: controlledOpe
   }
 
   return (
-    <div className="sidebar-section">
+    <div className={`sidebar-section${nested ? " sidebar-section-nested" : ""}`}>
       <button type="button" className="sidebar-section-header" onClick={handleToggle} aria-expanded={open}>
         <span className="sidebar-section-chevron" aria-hidden="true">
           {open ? "▾" : "▸"}

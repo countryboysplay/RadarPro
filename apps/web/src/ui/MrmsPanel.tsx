@@ -38,7 +38,6 @@ export interface MrmsPanelProps {
   productId: MrmsProductId;
   onProductChange: (id: MrmsProductId) => void;
   enabled: boolean;
-  onToggle: () => void;
   phase: MrmsPhase;
   error: string | null;
   snapshot: MrmsSnapshotMetadata | null;
@@ -48,10 +47,24 @@ export interface MrmsPanelProps {
 
 /**
  * S09 Phase 3: NOAA MRMS national radar-mosaic overlay control -- product
- * picker (reflectivity / precip rate) + on/off toggle + live status/
- * attribution, mirroring `ForecastPanel`'s status-line shape and
- * `RainbowToggle`'s always-visible-control convention (never hidden just
- * because a feature is off).
+ * picker (reflectivity / precip rate) + live status/attribution, mirroring
+ * `ForecastPanel`'s status-line shape.
+ *
+ * Sidebar redesign: this panel's own enable/disable checkbox is gone --
+ * enabling MRMS is now done from the single "Active Map Layer" dropdown in
+ * the "Map Layers" category (`App.tsx`), which enforces the live-radar/
+ * Rainbow/MRMS mutual exclusivity as the control itself. This component is
+ * rendered only while MRMS *is* the active map layer, so `enabled` is
+ * always `true` whenever it appears -- kept as an explicit prop (rather
+ * than assumed) so the status/meta block below stays exactly as
+ * conditional as it always was. Its own title line carries a teal accent
+ * (`--` distinct from Model Forecast's amber `#ffd27a`, App.css) since an
+ * observation must never share a forecast's accent color (Global
+ * Contract).
+ *
+ * The product picker itself converged from a button row to a `<select>`
+ * dropdown to match `RainbowToggle`'s/`ForecastPanel`'s own single-choice
+ * convention -- same `onProductChange` handler, just a different control.
  *
  * # An observation, never a forecast, never live-sweep radar
  *
@@ -68,7 +81,6 @@ export function MrmsPanel({
   productId,
   onProductChange,
   enabled,
-  onToggle,
   phase,
   error,
   snapshot,
@@ -79,23 +91,22 @@ export function MrmsPanel({
 
   return (
     <div className="mrms-panel">
-      <label className="mrms-toggle-label">
-        <input type="checkbox" checked={enabled} onChange={onToggle} /> NOAA MRMS national mosaic (observation)
-      </label>
+      <div className="mrms-panel-title">NOAA MRMS National Mosaic (observation)</div>
 
-      <div className="mrms-product-switcher" role="group" aria-label="MRMS product">
-        {PRODUCTS.map((p) => (
-          <button
-            key={p.id}
-            type="button"
-            className={`mrms-product-button${productId === p.id ? " mrms-product-button-active" : ""}`}
-            onClick={() => onProductChange(p.id)}
-            disabled={!enabled || (busy && productId === p.id)}
-          >
-            {p.label}
-          </button>
-        ))}
-      </div>
+      <label className="mrms-product-select">
+        <span>Product</span>
+        <select
+          value={productId}
+          disabled={!enabled || busy}
+          onChange={(e) => onProductChange(e.target.value as MrmsProductId)}
+        >
+          {PRODUCTS.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.label}
+            </option>
+          ))}
+        </select>
+      </label>
 
       {enabled && (
         <>

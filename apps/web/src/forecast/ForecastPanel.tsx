@@ -112,21 +112,22 @@ export function ForecastPanel({ canvasRef, forecast }: ForecastPanelProps) {
 
   return (
     <div className="forecast-panel">
-      <div className="forecast-panel-title">Model Forecast (not observed radar)</div>
+      <div className="forecast-panel-title">Model Forecast (GEFS/HRRR) — not observed radar</div>
 
-      <div className="forecast-provider-switcher" role="group" aria-label="Forecast provider">
-        {PROVIDERS.map((p) => (
-          <button
-            key={p.id}
-            type="button"
-            className={`forecast-provider-button${forecast.providerId === p.id ? " forecast-provider-button-active" : ""}`}
-            onClick={() => forecast.selectProvider(p.id)}
-            disabled={busy && forecast.providerId === p.id}
-          >
-            {p.label}
-          </button>
-        ))}
-      </div>
+      <label className="forecast-provider-select">
+        <span>Model</span>
+        <select
+          value={forecast.providerId ?? ""}
+          disabled={busy}
+          onChange={(e) => forecast.selectProvider(e.target.value as ForecastProviderId)}
+        >
+          {PROVIDERS.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.label}
+            </option>
+          ))}
+        </select>
+      </label>
 
       <div className={`forecast-status forecast-status-${forecast.phase}`}>
         {describePhase(forecast.phase, forecast.providerId, forecast.error)}

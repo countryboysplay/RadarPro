@@ -3,7 +3,6 @@ import { RAINBOW_FORECAST_TIME_STEPS, RAINBOW_PALETTES, RAINBOW_TILE_LAYERS, typ
 
 export interface RainbowToggleProps {
   overlay: RainbowOverlay;
-  onToggle: () => void;
 }
 
 function describeStatus(status: RainbowStatus, error: string | null): string | null {
@@ -26,16 +25,20 @@ function describeStatus(status: RainbowStatus, error: string | null): string | n
  * for Rainbow Weather's tile overlay (doc.rainbow.ai) -- an ML/blended
  * *nowcast* product, a third category distinct from both this app's live
  * NEXRAD radar sweep and its GEFS/HRRR NWP forecasts (Global Contract:
- * these must stay distinguishable). Labeled "Rainbow nowcast" everywhere,
- * never "radar" or "forecast", for exactly that reason.
+ * these must stay distinguishable). Labeled "Rainbow Tiles" in the sidebar
+ * category/dropdown that renders this panel, never "radar" or "forecast",
+ * for exactly that reason.
  *
- * Always rendered, even with no key configured (`configured === false`):
- * Global Contract requires the app fail independently for any optional
- * keyed provider -- a visibly-present-but-disabled control with a clear
- * "not configured" reason, never a silently-missing one that leaves a user
- * wondering whether the feature exists at all. Every option control below
- * follows the same convention: always rendered (when applicable to the
- * current layer), just `disabled` while unconfigured.
+ * Sidebar redesign: this panel's own enable/disable checkbox is gone --
+ * enabling "Rainbow Tiles" is now done from the single "Active Map Layer"
+ * dropdown in the "Map Layers" category (`App.tsx`), which enforces the
+ * live-radar/Rainbow/MRMS mutual exclusivity as the control itself instead
+ * of three independent checkboxes. This component (rendered only while
+ * Rainbow Tiles *is* the active map layer) now owns only the layer's own
+ * option controls -- always rendered (when applicable to the current
+ * layer), just `disabled` while unconfigured, per the Global Contract
+ * "visibly-present-but-disabled, never silently missing" convention for an
+ * optional keyed provider.
  *
  * Per this stage's explicit UI decision, every picker here is a plain
  * `<select>` dropdown, not a button row (contrast `MrmsProductId`'s
@@ -47,10 +50,9 @@ function describeStatus(status: RainbowStatus, error: string | null): string | n
  * applicable param (e.g. `color` for `clouds`) has no meaning to configure
  * at all (KB §4.4).
  */
-export function RainbowToggle({ overlay, onToggle }: RainbowToggleProps) {
+export function RainbowToggle({ overlay }: RainbowToggleProps) {
   const {
     configured,
-    enabled,
     status,
     error,
     layer,
@@ -69,11 +71,6 @@ export function RainbowToggle({ overlay, onToggle }: RainbowToggleProps) {
 
   return (
     <div className="rainbow-toggle">
-      <label className={`rainbow-toggle-label${configured ? "" : " rainbow-toggle-label-disabled"}`}>
-        <input type="checkbox" checked={enabled} disabled={!configured} onChange={onToggle} />{" "}
-        Rainbow nowcast{!configured && " (not configured)"}
-      </label>
-
       <div className="rainbow-toggle-options">
         <label className="rainbow-toggle-option">
           <span>Layer</span>{" "}

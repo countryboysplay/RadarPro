@@ -47,6 +47,14 @@ function formatAge(ms: number): string {
  * scan-history cache (`useScanHistory`). None of these buttons ever
  * trigger a network request -- they only move `currentIndex` through
  * already-downloaded frames; see that hook's docs.
+ *
+ * Sidebar/playback redesign: the four transport buttons below are styled
+ * as a tactile "remote control" button cluster (`.remote-cluster`/
+ * `.remote-btn*` in `App.css`) -- chunky, raised, pressable-looking
+ * buttons distinct from this app's other flat controls, since this
+ * cluster is meant to evoke a literal transport remote. Purely a
+ * presentational class change: every handler, `disabled` condition, and
+ * keyboard shortcut below is unchanged from before the redesign.
  */
 export function PlaybackControls({
   playMode,
@@ -65,18 +73,25 @@ export function PlaybackControls({
   const disabled = entriesCount === 0;
   return (
     <div className="playback-controls">
-      <div className="playback-buttons">
-        <button type="button" onClick={onPrevious} disabled={disabled} title="Previous scan (Left arrow)">
+      <div className="playback-buttons remote-cluster">
+        <button type="button" className="remote-btn" onClick={onPrevious} disabled={disabled} title="Previous scan (Left arrow)">
           ⏮ Prev
         </button>
-        <button type="button" onClick={onTogglePlay} disabled={disabled} title="Play/Pause (Space)">
+        <button
+          type="button"
+          className={`remote-btn remote-btn-play${playMode === "playing" ? " remote-btn-pressed" : ""}`}
+          onClick={onTogglePlay}
+          disabled={disabled}
+          title="Play/Pause (Space)"
+        >
           {playMode === "playing" ? "⏸ Pause" : "▶ Play"}
         </button>
-        <button type="button" onClick={onNext} disabled={disabled} title="Next scan (Right arrow)">
+        <button type="button" className="remote-btn" onClick={onNext} disabled={disabled} title="Next scan (Right arrow)">
           Next ⏭
         </button>
         <button
           type="button"
+          className="remote-btn remote-btn-latest"
           onClick={onJumpLatest}
           disabled={disabled || playMode === "live"}
           title="Jump to latest and resume live polling (L)"

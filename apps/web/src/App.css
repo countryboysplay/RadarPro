@@ -117,6 +117,92 @@ body,
   cursor: default;
 }
 
+/* "Remote control" transport cluster (previous/play-pause/next/jump-to-
+ * latest) -- deliberately given real tactile weight (raised bevel, a
+ * pressed-in look while active) so this one cluster reads as a literal
+ * transport remote's buttons, distinct from every other flat control in
+ * this app. Visual/CSS only -- `PlaybackControls.tsx` keeps every existing
+ * handler/disabled-state/keyboard shortcut unchanged; `.remote-btn` layers
+ * on top of (and, via the higher-specificity `.playback-buttons .remote-btn`
+ * selector, overrides) the plain `.playback-buttons button` reset above. */
+.playback-buttons.remote-cluster {
+  gap: 0.55rem;
+  padding: 0.5rem 0.6rem;
+  background: linear-gradient(to bottom, #1b1b1f, #101012);
+  border: 1px solid #3a3a40;
+  border-radius: 10px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.5);
+}
+
+.playback-buttons .remote-btn {
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #e6e6e6;
+  background: linear-gradient(to bottom, #38383f 0%, #232327 100%);
+  border: 1px solid #4a4a52;
+  border-radius: 8px;
+  padding: 0.4rem 0.75rem;
+  cursor: pointer;
+  /* The bevel: a hard drop-shadow "leg" (the button's raised depth), a
+   * softer ambient shadow beneath it, and a thin inner highlight along the
+   * top edge -- together read as a real physical key, not flat web chrome. */
+  box-shadow:
+    0 2px 0 #17171a,
+    0 4px 5px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.09);
+  transition: transform 0.06s ease, box-shadow 0.06s ease, background 0.1s ease;
+}
+
+.playback-buttons .remote-btn:hover:not(:disabled) {
+  border-color: #5c5c66;
+}
+
+/* Pressed look: the button's "leg" collapses (drop-shadow shrinks to 0)
+ * and an inset shadow replaces the top highlight, reading as the key
+ * physically depressing into the housing. */
+.playback-buttons .remote-btn:active:not(:disabled) {
+  transform: translateY(2px);
+  box-shadow: 0 0 0 #17171a, inset 0 2px 5px rgba(0, 0, 0, 0.65);
+}
+
+.playback-buttons .remote-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+  box-shadow: 0 1px 0 #17171a;
+}
+
+/* Play/Pause: the cluster's primary action gets its own accent + a size
+ * bump, matching a remote's larger center transport button. */
+.playback-buttons .remote-btn-play {
+  background: linear-gradient(to bottom, #3d76ad 0%, #2a4f7a 100%);
+  border-color: #5a9bd8;
+  padding: 0.4rem 0.95rem;
+}
+
+.playback-buttons .remote-btn-play:hover:not(:disabled) {
+  border-color: #7ab6ea;
+}
+
+/* While playing, the Play/Pause button stays visually "held down" -- a
+ * physical remote's transport button looks depressed for as long as the
+ * mode it started stays active, not just for the instant of the click. */
+.playback-buttons .remote-btn-play.remote-btn-pressed {
+  background: linear-gradient(to bottom, #2a4f7a 0%, #1c3652 100%);
+  box-shadow: 0 0 0 #17171a, inset 0 2px 5px rgba(0, 0, 0, 0.65);
+  transform: translateY(1px);
+}
+
+.playback-buttons .remote-btn-latest {
+  border-color: #4f8f5a;
+}
+
+.playback-buttons .remote-btn-latest:hover:not(:disabled) {
+  border-color: #6fd66f;
+}
+
 .playback-status {
   display: flex;
   gap: 0.6rem;
@@ -535,15 +621,6 @@ body,
   padding-top: 0.4rem;
 }
 
-.rainbow-toggle-label {
-  cursor: pointer;
-}
-
-.rainbow-toggle-label-disabled {
-  color: #7a7a82;
-  cursor: default;
-}
-
 /* S09d Part A: layer/palette/forecast-time/coverage/use-precip-type
  * controls -- plain `<select>`/checkbox rows per this stage's explicit
  * "dropdown, not button-row" UI decision. */
@@ -691,10 +768,11 @@ body,
 }
 
 /* MRMS national-mosaic overlay panel (S09 Phase 3) -- reuses the same
- * dark-HUD palette as `.forecast-*`/`.rainbow-toggle-*` (amber accent for
- * the product switcher, matching `.forecast-provider-button-active`'s
- * "this is a gridded-field control" color language; green/red status
- * colors matching `.rainbow-toggle-status-ready`/`-error`). */
+ * dark-HUD palette as `.forecast-*`/`.rainbow-toggle-*` (green/red status
+ * colors matching `.rainbow-toggle-status-ready`/`-error`), but its own
+ * teal accent (`.mrms-panel-title`) rather than Model Forecast's amber --
+ * see that rule's own doc comment for why (sidebar-redesign color-collision
+ * fix; Global Contract). */
 
 .mrms-panel {
   display: flex;
@@ -702,33 +780,28 @@ body,
   gap: 0.4rem;
 }
 
-.mrms-toggle-label {
-  cursor: pointer;
+/* MRMS accent: teal, distinct from Model Forecast's amber (`#ffd27a`,
+ * `.forecast-panel-title`/`.forecast-provider-select`) -- Global Contract
+ * requires observations and forecasts stay visually distinguishable, and
+ * MRMS (an observation) sharing GEFS/HRRR's forecast accent used to
+ * undercut exactly that (the sidebar-redesign audit's color-collision
+ * finding). */
+.mrms-panel-title {
+  color: #4fd1c5;
+  font-weight: bold;
 }
 
-.mrms-product-switcher {
+.mrms-product-select {
   display: flex;
-  gap: 0.4rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.85rem;
 }
 
-.mrms-product-button {
-  font: inherit;
-  background: #1c1c20;
-  color: inherit;
-  border: 1px solid #3a3a40;
-  border-radius: 3px;
-  padding: 0.25rem 0.7rem;
-  cursor: pointer;
-}
-
-.mrms-product-button-active {
-  border-color: #ffd27a;
-  color: #ffd27a;
-}
-
-.mrms-product-button:disabled {
-  opacity: 0.5;
-  cursor: default;
+.mrms-product-select select {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .mrms-status {
@@ -860,29 +933,17 @@ body,
   font-weight: bold;
 }
 
-.forecast-provider-switcher {
+.forecast-provider-select {
   display: flex;
-  gap: 0.4rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.85rem;
 }
 
-.forecast-provider-button {
-  font: inherit;
-  background: #1c1c20;
-  color: inherit;
-  border: 1px solid #3a3a40;
-  border-radius: 3px;
-  padding: 0.25rem 0.7rem;
-  cursor: pointer;
-}
-
-.forecast-provider-button-active {
-  border-color: #ffd27a;
-  color: #ffd27a;
-}
-
-.forecast-provider-button:disabled {
-  opacity: 0.5;
-  cursor: default;
+.forecast-provider-select select {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .forecast-status {
@@ -1258,6 +1319,125 @@ body,
   flex-direction: column;
   gap: 0.6rem;
   padding: 0.4rem 0 0.2rem 1.3rem;
+}
+
+/* Sidebar redesign: a `SidebarSection` nested one level inside a
+ * `SidebarCategory` (or inside the pinned "Live Radar" group below) --
+ * e.g. "Legend & Probe", "Storm Motion (SRV)", "Color Table Editor" inside
+ * Live Radar, or the two Rainbow point panels inside "Point Forecasts".
+ * Trims this section's own indent/border so a category's indent doesn't
+ * compound with a section's into an overly-deep stair-step, and drops the
+ * divider border a top-level section uses to separate itself from its
+ * sidebar siblings (a nested section already has its category's own
+ * `.sidebar-category-body` padding for separation). */
+.sidebar-section-nested {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.sidebar-section-nested .sidebar-section-header {
+  font-size: 0.82rem;
+  color: #b8d4e6;
+}
+
+.sidebar-section-nested .sidebar-section-body {
+  padding-left: 0.9rem;
+}
+
+/* Sidebar redesign: the pinned "Live Radar" group -- site/elevation/
+ * moment/opacity, used every session, so unlike everything else in the
+ * sidebar (see `SidebarCategory`) it is never collapsible at all. Visually
+ * distinguished from a plain `SidebarSection` by a solid (not dashed-by-
+ * omission) top accent bar and a static title with no chevron, so it reads
+ * immediately as "always here" rather than "collapsed right now". */
+.sidebar-live-radar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.2rem 0 0.6rem 0;
+  border-bottom: 1px solid #2a2a2e;
+  border-top: 2px solid #8fd0ff;
+}
+
+.sidebar-live-radar-title {
+  color: #8fd0ff;
+  font-size: 0.88rem;
+  font-weight: bold;
+  padding-top: 0.2rem;
+}
+
+/* Sidebar redesign: a top-level, collapsed-by-default category grouping
+ * several sections/panels under one header with a live one-line status
+ * summary (`SidebarCategory.tsx`) -- replaces eight flat, equally-weighted
+ * `SidebarSection`s with real hierarchy ("Map Layers", "Point Forecasts",
+ * "Model Forecast", "Alerts", "Settings"). Deliberately a visually
+ * heavier header than `.sidebar-section-header` (larger, bolder, brighter
+ * chevron) so category > section > field reads at a glance. */
+.sidebar-category {
+  border-bottom: 1px solid #2a2a2e;
+  padding-bottom: 0.5rem;
+}
+
+.sidebar-category:last-child {
+  border-bottom: none;
+}
+
+.sidebar-category-header {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: #cfe8ff;
+  font: inherit;
+  font-size: 0.92rem;
+  font-weight: bold;
+  text-align: left;
+  padding: 0.35rem 0;
+  cursor: pointer;
+  flex-wrap: wrap;
+}
+
+.sidebar-category-chevron {
+  color: #8fd0ff;
+  width: 1em;
+  display: inline-block;
+  font-weight: normal;
+}
+
+.sidebar-category-title {
+  color: #cfe8ff;
+}
+
+.sidebar-category-summary {
+  color: #9a9aa2;
+  font-size: 0.76rem;
+  font-weight: normal;
+}
+
+.sidebar-category-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.4rem 0 0.2rem 1.3rem;
+}
+
+/* Sidebar redesign: the single "Active Map Layer" control inside "Map
+ * Layers" that replaces three independent live-radar/Rainbow/MRMS
+ * checkboxes -- exclusivity is the control itself (one `<select>`, one
+ * value) rather than hidden logic across three separate toggles. */
+.map-layer-select {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.map-layer-select select {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 /* UI polish pass on S09d: right-docked results panel (`RightPanel.tsx`) --
