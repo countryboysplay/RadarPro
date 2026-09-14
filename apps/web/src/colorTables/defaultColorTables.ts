@@ -10,6 +10,7 @@ import spectrumWidthRaw from "../data/color_tables/spectrum_width.json?raw";
 import differentialReflectivityRaw from "../data/color_tables/differential_reflectivity.json?raw";
 import correlationCoefficientRaw from "../data/color_tables/correlation_coefficient.json?raw";
 import differentialPhaseRaw from "../data/color_tables/differential_phase.json?raw";
+import stormRelativeVelocityRaw from "../data/color_tables/storm_relative_velocity.json?raw";
 
 export interface DefaultColorTablePreset {
   /** The moment wire code this default targets, e.g. `"REF"`. */
@@ -27,4 +28,5 @@ export const DEFAULT_COLOR_TABLE_PRESETS: DefaultColorTablePreset[] = [
   { momentCode: "ZDR", label: "ZDR -- Differential Reflectivity (default)", json: differentialReflectivityRaw },
   { momentCode: "CC", label: "CC -- Correlation Coefficient (default)", json: correlationCoefficientRaw },
   { momentCode: "PHI", label: "PHI -- Differential Phase (default)", json: differentialPhaseRaw },
+  { momentCode: "SRV", label: "SRV -- Storm-Relative Velocity (default)", json: stormRelativeVelocityRaw },
 ];

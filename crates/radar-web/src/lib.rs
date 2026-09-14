@@ -23,9 +23,11 @@
 //! cursor-probe/range-ring computation is a `radar_geo` function, all used
 //! unmodified. The only genuinely new code here is:
 //!
-//! 1. [`sweep_select`]/[`render_select`]: which sweep(s) to render and what
-//!    metadata to expose for a picker (pure logic, no `wgpu`/`wasm-bindgen`
-//!    dependency -- see those modules).
+//! 1. [`sweep_select`]/[`render_select`]/[`srv_select`]: which sweep(s) to
+//!    render, what metadata to expose for a picker, and (S11 Phase 2b)
+//!    building a synthetic Storm-Relative Velocity sweep from an already-
+//!    resolved VEL sweep (pure logic, no `wgpu`/`wasm-bindgen` dependency --
+//!    see those modules).
 //! 2. [`browser`] (wasm32-only): acquiring a `wgpu::Surface` from a
 //!    `<canvas>` and presenting frames to it (which the native
 //!    `radar-render` harness never needed -- it renders off-screen and
@@ -44,7 +46,7 @@
 //! `README.md` for how to rebuild the wasm module and run the standalone
 //! test page under `www/`.
 //!
-//! # Why `sweep_select`/`render_select` are not wasm32-gated but `browser` is
+//! # Why `sweep_select`/`render_select`/`srv_select` are not wasm32-gated but `browser` is
 //!
 //! `wgpu`'s `SurfaceTarget::Canvas` variant, and the `web-sys`/
 //! `wasm-bindgen` types this crate's real glue is built from, only exist at
@@ -52,10 +54,10 @@
 //! requires it, and this crate's `Cargo.toml` puts those dependencies under
 //! a matching `[target.'cfg(target_arch = "wasm32")'.dependencies]` table
 //! so a native build never has to resolve a browser GPU stack it cannot
-//! use). [`sweep_select`]/[`render_select`] have no such dependency, so
-//! they stay available and unit-tested on every target -- `cargo build
-//! --workspace` and `cargo test -p radar-web` both exercise them on the
-//! host, alongside every other native crate in this workspace.
+//! use). [`sweep_select`]/[`render_select`]/[`srv_select`] have no such
+//! dependency, so they stay available and unit-tested on every target --
+//! `cargo build --workspace` and `cargo test -p radar-web` both exercise
+//! them on the host, alongside every other native crate in this workspace.
 //! [`render_select`]'s `#[cfg(test)]` module additionally depends on
 //! `nexrad-level2`/`radar-render` as ordinary `[dev-dependencies]` (not
 //! wasm32-gated either) to decode a real fixture and build its GPU-buffer-
@@ -63,6 +65,7 @@
 //! selection freely" property without needing a GPU or a browser.
 
 pub mod render_select;
+pub mod srv_select;
 pub mod sweep_select;
 
 #[cfg(target_arch = "wasm32")]

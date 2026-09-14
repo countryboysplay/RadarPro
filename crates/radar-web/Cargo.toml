@@ -18,6 +18,14 @@ crate-type = ["cdylib", "rlib"]
 # picking/selection logic, unit tested on the host target) depend on
 # `radar_types::{Volume, MomentKind, Sweep}`.
 radar-types = { path = "../radar-types" }
+# Needed unconditionally (S11 Phase 2b): `srv_select` (pure Storm-Relative
+# Velocity sweep-transform logic, unit tested on the host target) depends
+# on `radar_geo::storm_relative_velocity`. `radar-geo` itself has no
+# wasm-specific requirement (it depends only on `radar-types`), so -- like
+# `radar-types` above -- it does not need wasm32-gating; `browser.rs`
+# (wasm32-only) also uses it for cursor-probe/range-ring logic, now via
+# this same unconditional dependency instead of a separate wasm32-only one.
+radar-geo = { path = "../radar-geo" }
 
 # Everything below is real browser/GPU glue and is wasm32-only: `wgpu`'s
 # `SurfaceTarget::Canvas` variant, and every `web-sys`/`wasm-bindgen` type,
@@ -28,13 +36,6 @@ radar-types = { path = "../radar-types" }
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 nexrad-level2 = { path = "../nexrad-level2" }
 radar-render = { path = "../radar-render" }
-# S05 deliverable 3: exposes `radar-geo`'s already-proven, already-tested
-# cursor-probe (`locate_gate_value`) and range-ring (`range_rings`) logic
-# to the browser via wasm-bindgen, rather than reimplementing either. This
-# crate already compiles cleanly to wasm32 with zero changes (confirmed in
-# earlier stages), so no feature-gating inside `radar-geo` itself is
-# needed.
-radar-geo = { path = "../radar-geo" }
 
 # Same pin as `radar-render`, plus the `webgl` feature (not on by default)
 # so a browser without WebGPU still gets the WebGL2 fallback backend --

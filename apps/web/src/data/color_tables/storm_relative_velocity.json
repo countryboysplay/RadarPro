@@ -1,7 +1,7 @@
 {
   "format_version": 1,
-  "name": "RadarPro Default Velocity",
-  "moments": ["VEL"],
+  "name": "RadarPro Default Storm-Relative Velocity",
+  "moments": ["SRV"],
   "units": "m/s",
   "mode": "gradient",
   "domain": { "min": -32.0, "max": 32.0 },

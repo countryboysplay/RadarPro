@@ -233,6 +233,33 @@ export function useRadarRenderer(canvasRef: RefObject<HTMLCanvasElement>) {
   }, []);
 
   /**
+   * Re-render Storm-Relative Velocity (S11 Phase 2b) for `sweepIndex` from
+   * that sweep's VEL moment, applying a uniform storm-motion vector
+   * (`stormSpeedMps` in meters per second, `stormDirectionDeg` the compass
+   * bearing in degrees clockwise from true north the storm is moving
+   * *toward*). Same shape as `selectAndRender` above: returns `false` on
+   * failure (renderer not ready, or the sweep doesn't carry VEL to derive
+   * SRV from) without throwing. Cheap to call repeatedly as the storm-motion
+   * inputs change -- see `radar-web`'s `selectAndRenderStormRelativeVelocity`
+   * doc comment for why a changed motion vector alone still triggers a real
+   * re-render rather than reusing a stale GPU upload.
+   */
+  const selectAndRenderStormRelativeVelocity = useCallback(
+    (sweepIndex: number, stormSpeedMps: number, stormDirectionDeg: number): boolean => {
+      const renderer = rendererRef.current;
+      if (!renderer) return false;
+      try {
+        renderer.selectAndRenderStormRelativeVelocity(sweepIndex, stormSpeedMps, stormDirectionDeg);
+        return true;
+      } catch (err) {
+        console.error("selectAndRenderStormRelativeVelocity failed:", errMessage(err));
+        return false;
+      }
+    },
+    [],
+  );
+
+  /**
    * Parse/validate/apply a user- or preset-supplied color table. Never
    * throws -- a malformed table (structurally invalid JSON, or JSON that
    * fails `ColorTable` validation) comes back as `{ ok: false, error }`
@@ -359,6 +386,7 @@ export function useRadarRenderer(canvasRef: RefObject<HTMLCanvasElement>) {
     momentWireCodesForSweep,
     defaultSweepIndexForMoment,
     selectAndRender,
+    selectAndRenderStormRelativeVelocity,
     loadColorTable,
     resetColorTable,
     activeColorTableJson,

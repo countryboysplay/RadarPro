@@ -294,6 +294,9 @@ pub struct Radial {
 /// Declaration order matches the S01 scope order ("REF first, then VEL,
 /// SW, ZDR, CC, PHI"), which also determines the derived [`Ord`] used to
 /// keep [`MomentMap`] iteration in that same stable order.
+/// [`MomentKind::StormRelativeVelocity`] was added later (S11 Phase 2b) at
+/// the **end** of the enum specifically so it does not renumber/reorder any
+/// of the original six variants relative to each other.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum MomentKind {
     /// Reflectivity ("REF" on the wire).
@@ -310,6 +313,20 @@ pub enum MomentKind {
     CorrelationCoefficient,
     /// Differential phase ("PHI" on the wire).
     DifferentialPhase,
+    /// Storm-Relative Velocity: a *derived* product (base radial velocity
+    /// with a uniform storm-motion vector's radial component subtracted,
+    /// see the `radar-geo` crate's `storm_relative_velocity` module), never
+    /// present in real NEXRAD Archive II wire data -- computed at render
+    /// time from an
+    /// already-decoded [`MomentKind::Velocity`] moment. Kept as its own
+    /// first-class, independently-selectable `MomentKind` (reusing VEL's
+    /// units/physical range via a copy of its color table under a
+    /// distinct id) rather than a display option layered on
+    /// [`MomentKind::Velocity`], so a rendered/selected SRV product is
+    /// never conflated with the real decoded VEL moment it was built
+    /// from. Added at the end of this enum -- see the enum's own doc
+    /// comment.
+    StormRelativeVelocity,
 }
 
 impl MomentKind {
@@ -325,6 +342,17 @@ impl MomentKind {
     /// human-readable way to name a moment kind in JSON/JS, and that
     /// mapping belongs once on `MomentKind` itself rather than duplicated
     /// ad hoc in each of those crates.
+    ///
+    /// `"SRV"` ([`MomentKind::StormRelativeVelocity`]) is a **synthesized-
+    /// only** code: no real NEXRAD Archive II volume ever contains an
+    /// "SRV" moment on the wire (SRV is derived at render time from an
+    /// already-decoded VEL moment, never decoded itself -- see that
+    /// variant's doc comment). This code exists solely as this app's own
+    /// internal selection/UI identifier, reusing the same
+    /// `wire_code`/`from_wire_code` round-trip every other moment already
+    /// uses end-to-end for selection plumbing (color-table lookup, the
+    /// wasm API's moment parameters, the UI's moment picker) -- it is not
+    /// a claim that "SRV" appears in any ICD/Archive II data structure.
     pub const fn wire_code(self) -> &'static str {
         match self {
             MomentKind::Reflectivity => "REF",
@@ -333,6 +361,7 @@ impl MomentKind {
             MomentKind::DifferentialReflectivity => "ZDR",
             MomentKind::CorrelationCoefficient => "CC",
             MomentKind::DifferentialPhase => "PHI",
+            MomentKind::StormRelativeVelocity => "SRV",
         }
     }
 
@@ -349,6 +378,7 @@ impl MomentKind {
             "ZDR" => Some(MomentKind::DifferentialReflectivity),
             "CC" => Some(MomentKind::CorrelationCoefficient),
             "PHI" => Some(MomentKind::DifferentialPhase),
+            "SRV" => Some(MomentKind::StormRelativeVelocity),
             _ => None,
         }
     }
@@ -522,6 +552,7 @@ mod tests {
             MomentKind::DifferentialReflectivity,
             MomentKind::CorrelationCoefficient,
             MomentKind::DifferentialPhase,
+            MomentKind::StormRelativeVelocity,
         ];
         for kind in all {
             let code = kind.wire_code();

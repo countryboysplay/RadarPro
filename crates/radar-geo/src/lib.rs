@@ -40,11 +40,16 @@
 //! - [`beam`]: beam-height and ground-range/slant-range approximations.
 //! - [`lookup`]: azimuth -> radial and slant-range -> gate lookup, and
 //!   the composed cursor-lat/lon -> radial/gate resolution.
+//! - [`storm_relative_velocity`]: Storm-Relative Velocity (SRV) -- a
+//!   uniform storm-motion vector's radial-component subtraction from a
+//!   base velocity (VEL) moment (S11; see
+//!   `Agent Context/reference/algorithms/storm-relative-velocity.md`).
 
 pub mod beam;
 pub mod earth;
 pub mod lookup;
 pub mod spherical;
+pub mod storm_relative_velocity;
 
 pub use beam::{beam_height_km, ground_range_km, slant_range_from_ground_range_km};
 pub use lookup::{
@@ -54,3 +59,4 @@ pub use lookup::{
 pub use spherical::{
     destination_point, distance_bearing, range_ring, range_rings, GreatCircle, LatLon,
 };
+pub use storm_relative_velocity::{storm_relative_velocity, StormMotion};

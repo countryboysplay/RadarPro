@@ -1,9 +1,12 @@
 # Vendored default color tables
 
 Byte-for-byte copies of `crates/radar-render/color_tables/*.json` (this
-project's six shipped default color tables -- one per moment: REF, VEL, SW,
-ZDR, CC, PHI). See `crates/radar-render/COLOR_TABLE_FORMAT.md` for the
-format itself.
+project's seven shipped default color tables -- one per moment: REF, VEL,
+SW, ZDR, CC, PHI, plus the derived SRV -- Storm-Relative Velocity, S11
+Phase 2b, which shares VEL's palette/domain in its own file so each
+`MomentKind`'s `default_color_table` stays an exact one-table-per-kind
+match). See `crates/radar-render/COLOR_TABLE_FORMAT.md` for the format
+itself.
 
 Vendored here (rather than `fetch()`ed at runtime from the repo's
 `crates/` directory) for the same reason `src/data/wsr88d-sites.json` is

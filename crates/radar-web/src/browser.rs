@@ -78,6 +78,7 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::future_to_promise;
 use web_sys::HtmlCanvasElement;
 
+use radar_geo::storm_relative_velocity::StormMotion;
 use radar_render::camera::clip_to_world;
 use radar_render::color_table::{build_lut_from_table, default_color_table, ColorTable};
 use radar_render::gpu::{
@@ -86,10 +87,10 @@ use radar_render::gpu::{
 };
 use radar_render::lookup_texture::{build_radial_lookup, DEFAULT_LOOKUP_TEXEL_COUNT};
 use radar_render::palette::PALETTE_TEXEL_COUNT;
-use radar_render::sweep_buffers::{build_sweep_buffers, GpuRadialMeta};
+use radar_render::sweep_buffers::{build_sweep_buffers, GpuRadialMeta, SweepBufferData};
 use radar_types::{AzimuthResolution, GateValue, MomentKind, Volume};
 
-use crate::{render_select, sweep_select};
+use crate::{render_select, srv_select, sweep_select};
 
 /// Runs once when the wasm module is instantiated (before any exported
 /// function can be called): installs a panic hook that turns a Rust panic
@@ -262,9 +263,17 @@ pub struct RadarWebRenderer {
     /// [`radar_render::color_table::default_color_table`] -- see
     /// [`RadarWebRenderer::active_color_table_for`].
     color_tables: HashMap<MomentKind, ColorTable>,
-    /// The `(sweep_index, MomentKind)` selection [`UploadedSweep`] (if any)
-    /// currently reflects.
-    selection: Option<(usize, MomentKind)>,
+    /// The `(sweep_index, MomentKind, storm_motion)` selection
+    /// [`UploadedSweep`] (if any) currently reflects. `storm_motion` is
+    /// `Some` only for a [`MomentKind::StormRelativeVelocity`] selection
+    /// (`None` for every other moment, where no storm-motion vector
+    /// applies) and is part of the selection's identity: two
+    /// `selectAndRenderStormRelativeVelocity` calls for the same
+    /// `(sweep_index, StormRelativeVelocity)` but a *different* storm
+    /// motion are, correctly, two different selections -- see
+    /// [`RadarWebRenderer::select_and_render_storm_relative_velocity`]'s
+    /// doc comment for why this must not collapse to a stale GPU upload.
+    selection: Option<(usize, MomentKind, Option<StormMotion>)>,
     uploaded: Option<UploadedSweep>,
 }
 
@@ -490,6 +499,15 @@ impl RadarWebRenderer {
     /// sweep `sweep_index` of the most recently decoded volume -- for
     /// building a per-elevation moment picker. Must be called after a
     /// successful [`RadarWebRenderer::decode_volume`].
+    ///
+    /// Never includes `"SRV"`: [`MomentKind::StormRelativeVelocity`] is a
+    /// synthetic, render-time-only product, never present on any radial of
+    /// a real decoded [`Volume`] (see that variant's doc comment) -- a UI
+    /// that wants to offer SRV as a moment-picker option must add it
+    /// itself, gated on whether `"VEL"` is present in this method's result
+    /// (SRV is meaningless without a VEL moment to derive from), and must
+    /// call [`RadarWebRenderer::select_and_render_storm_relative_velocity`]
+    /// rather than pass `"SRV"` here or to `selectAndRender`.
     #[wasm_bindgen(js_name = momentWireCodesForSweep)]
     pub fn moment_wire_codes_for_sweep(&self, sweep_index: u32) -> Result<Vec<String>, JsValue> {
         let volume = self.volume.as_ref().ok_or_else(|| {
@@ -514,6 +532,15 @@ impl RadarWebRenderer {
     /// crate's earlier S04 proof always used ([`crate::sweep_select`]),
     /// exposed as a convenience for a UI's initial pick before the user
     /// has chosen anything.
+    ///
+    /// `"SRV"` parses successfully (it is a valid [`MomentKind::wire_code`]
+    /// as of S11 Phase 2b) but -- since no real decoded [`Volume`] ever
+    /// carries [`MomentKind::StormRelativeVelocity`] on any radial -- always
+    /// resolves to `Ok(None)`, never a sweep index. This is intentionally
+    /// left unchanged rather than special-cased: a caller wanting a default
+    /// sweep for an SRV selection should pass `"VEL"` here instead (SRV is
+    /// only ever offered once VEL is available on a sweep), exactly as the
+    /// `apps/web` UI does.
     #[wasm_bindgen(js_name = defaultSweepIndexForMoment)]
     pub fn default_sweep_index_for_moment(
         &self,
@@ -592,62 +619,89 @@ impl RadarWebRenderer {
         moment_wire_code: &str,
     ) -> Result<(), JsValue> {
         let moment = resolve_moment(moment_wire_code)?;
-        let selection = (sweep_index as usize, moment);
+        let selection = (sweep_index as usize, moment, None);
 
         if self.uploaded.is_none() || self.selection != Some(selection) {
-            self.upload_selection(selection.0, moment, moment_wire_code)?;
+            let buffer_data = {
+                let volume = self.volume.as_ref().ok_or_else(|| {
+                    JsValue::from_str("selectAndRender called before a successful decodeVolume")
+                })?;
+                let sweep =
+                    render_select::resolve_sweep(volume, selection.0, moment).ok_or_else(|| {
+                        JsValue::from_str(&format!(
+                            "sweep {sweep_index} does not carry moment {moment_wire_code}"
+                        ))
+                    })?;
+                build_sweep_buffers(sweep, moment)
+            };
+            self.upload_selection(buffer_data, moment)?;
             self.selection = Some(selection);
         }
-        let bind_group = &self
-            .uploaded
-            .as_ref()
-            .expect("just populated above if it was empty")
-            .bind_group;
+        self.render_and_present()
+    }
 
-        // Off-screen `radar-render` renders into a plain `RenderTarget` it
-        // owns; a canvas has no such texture to own ahead of time -- one
-        // must be acquired fresh from the surface each frame, presented,
-        // and dropped. That acquisition/present pair is this function's
-        // only code `radar-render`'s native harness has no equivalent of.
-        let surface_texture = match self.surface.get_current_texture() {
-            wgpu::CurrentSurfaceTexture::Success(texture)
-            | wgpu::CurrentSurfaceTexture::Suboptimal(texture) => texture,
-            other => {
-                return Err(JsValue::from_str(&format!(
-                    "surface texture unavailable: {other:?}"
-                )))
-            }
+    /// Render + present one frame of Storm-Relative Velocity (S11 Phase 2b)
+    /// for the given `sweep_index` and uniform storm-motion vector
+    /// (`storm_speed_mps` in meters per second, `storm_direction_deg` the
+    /// compass bearing in degrees clockwise from true north the storm is
+    /// moving *toward* -- see [`StormMotion`]'s doc comment for the exact
+    /// convention).
+    ///
+    /// Resolves `sweep_index`'s [`MomentKind::Velocity`] sweep (SRV has no
+    /// wire presence of its own -- it is derived entirely from an
+    /// already-decoded VEL sweep, so this fails the same way
+    /// [`RadarWebRenderer::select_and_render`] would for `"VEL"` if that
+    /// sweep does not carry it), builds the synthetic SRV sweep via
+    /// [`crate::srv_select::build_storm_relative_velocity_sweep`], and
+    /// uploads/renders it through the same GPU path every other moment
+    /// uses, keyed under [`MomentKind::StormRelativeVelocity`] for buffer-
+    /// building and color-table lookup.
+    ///
+    /// Caching note: unlike every other moment, an SRV selection is not
+    /// fully identified by `(sweep_index, moment)` alone -- the storm-motion
+    /// vector is part of what was rendered. This method's cached
+    /// [`RadarWebRenderer::selection`] includes the storm motion, so calling
+    /// this again for the same `sweep_index` with a *different*
+    /// `storm_speed_mps`/`storm_direction_deg` correctly rebuilds and
+    /// re-uploads rather than silently reusing the previous motion's stale
+    /// GPU buffers.
+    #[wasm_bindgen(js_name = selectAndRenderStormRelativeVelocity)]
+    pub fn select_and_render_storm_relative_velocity(
+        &mut self,
+        sweep_index: u32,
+        storm_speed_mps: f32,
+        storm_direction_deg: f32,
+    ) -> Result<(), JsValue> {
+        let storm_motion = StormMotion {
+            speed_mps: storm_speed_mps,
+            direction_deg: storm_direction_deg,
         };
-        let view = surface_texture
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
-        // `RenderTarget::texture` is not actually read by `gpu::render_frame`
-        // (only `.view` is), but cloning it (a cheap handle clone, not a GPU
-        // copy) keeps this a fully-typed, honestly-constructed
-        // `RenderTarget` rather than a field left semantically wrong.
-        let target = RenderTarget {
-            texture: surface_texture.texture.clone(),
-            view,
-            width: self.width,
-            height: self.height,
-        };
+        let moment = MomentKind::StormRelativeVelocity;
+        let selection = (sweep_index as usize, moment, Some(storm_motion));
 
-        gpu::render_frame(
-            &self.device,
-            &self.queue,
-            &self.pipeline.pipeline,
-            bind_group,
-            &target,
-        );
-        // Deliberately no `gpu::wait_for_gpu` here: on the WebGPU backend
-        // `Device::poll` is documented as a no-op (the browser polls the
-        // device automatically), and this presentation path has no
-        // readback that would need to wait for completion either way --
-        // unlike `radar-render`'s harness, which waits only to measure
-        // real GPU frame time.
-        self.queue.present(surface_texture);
-
-        Ok(())
+        if self.uploaded.is_none() || self.selection != Some(selection) {
+            let buffer_data = {
+                let volume = self.volume.as_ref().ok_or_else(|| {
+                    JsValue::from_str(
+                        "selectAndRenderStormRelativeVelocity called before a successful decodeVolume",
+                    )
+                })?;
+                let vel_sweep =
+                    render_select::resolve_sweep(volume, selection.0, MomentKind::Velocity)
+                        .ok_or_else(|| {
+                            JsValue::from_str(&format!(
+                                "sweep {sweep_index} does not carry moment VEL (required to \
+                                 derive Storm-Relative Velocity)"
+                            ))
+                        })?;
+                let srv_sweep =
+                    srv_select::build_storm_relative_velocity_sweep(vel_sweep, storm_motion);
+                build_sweep_buffers(&srv_sweep, moment)
+            };
+            self.upload_selection(buffer_data, moment)?;
+            self.selection = Some(selection);
+        }
+        self.render_and_present()
     }
 
     /// Given the site's lat/lon, which sweep/moment is being probed, and a
@@ -726,43 +780,26 @@ impl RadarWebRenderer {
     /// [`RadarWebRenderer::reset_color_table`] change what "active
     /// palette" means for that moment.
     fn invalidate_upload_if_selected(&mut self, moment: MomentKind) {
-        if let Some((_, selected_moment)) = self.selection {
+        if let Some((_, selected_moment, _)) = self.selection {
             if selected_moment == moment {
                 self.uploaded = None;
             }
         }
     }
 
-    /// Build the CPU-side sweep buffers/lookup texture/palette for
-    /// `(sweep_index, moment)` and upload them as a fresh
-    /// [`UploadedSweep`], replacing `self.uploaded`. The only code path
-    /// that touches `self.volume`/`nexrad_level2` state for a render --
-    /// [`RadarWebRenderer::select_and_render`] calls this only when the
-    /// selection or active palette actually changed.
+    /// Build the CPU-side lookup texture/palette for already-built
+    /// `buffer_data` (the caller has already resolved -- or, for Storm-
+    /// Relative Velocity, resolved and transformed -- the sweep this data
+    /// came from) and upload everything as a fresh [`UploadedSweep`],
+    /// replacing `self.uploaded`. Called by
+    /// [`RadarWebRenderer::select_and_render`]/
+    /// [`RadarWebRenderer::select_and_render_storm_relative_velocity`] only
+    /// when the selection or active palette actually changed.
     fn upload_selection(
         &mut self,
-        sweep_index: usize,
+        buffer_data: SweepBufferData,
         moment: MomentKind,
-        moment_wire_code: &str,
     ) -> Result<(), JsValue> {
-        // Scoped so the borrow of `self.volume` ends before this function
-        // needs `&self.color_tables`/`&mut self` again -- `build_sweep_buffers`
-        // returns an owned `SweepBufferData` (it clones each matching
-        // radial), so nothing below depends on `volume`/`sweep` staying
-        // borrowed.
-        let buffer_data = {
-            let volume = self.volume.as_ref().ok_or_else(|| {
-                JsValue::from_str("selectAndRender called before a successful decodeVolume")
-            })?;
-            let sweep =
-                render_select::resolve_sweep(volume, sweep_index, moment).ok_or_else(|| {
-                    JsValue::from_str(&format!(
-                        "sweep {sweep_index} does not carry moment {moment_wire_code}"
-                    ))
-                })?;
-            build_sweep_buffers(sweep, moment)
-        };
-
         let azimuth_resolution = buffer_data
             .source_radials
             .first()
@@ -809,6 +846,66 @@ impl RadarWebRenderer {
             _uniforms_gpu: uniforms_gpu,
             bind_group,
         });
+        Ok(())
+    }
+
+    /// Render + present one frame using whatever [`UploadedSweep`]
+    /// `self.uploaded` currently holds (the caller -- `select_and_render`/
+    /// `select_and_render_storm_relative_velocity` -- has already ensured
+    /// it reflects the requested selection, rebuilding/uploading first if
+    /// needed). Factored out since both callers share this exact
+    /// surface-acquisition/present sequence, with nothing selection- or
+    /// moment-specific left in it.
+    fn render_and_present(&mut self) -> Result<(), JsValue> {
+        let bind_group = &self
+            .uploaded
+            .as_ref()
+            .expect("caller populated this above if it was empty")
+            .bind_group;
+
+        // Off-screen `radar-render` renders into a plain `RenderTarget` it
+        // owns; a canvas has no such texture to own ahead of time -- one
+        // must be acquired fresh from the surface each frame, presented,
+        // and dropped. That acquisition/present pair is this function's
+        // only code `radar-render`'s native harness has no equivalent of.
+        let surface_texture = match self.surface.get_current_texture() {
+            wgpu::CurrentSurfaceTexture::Success(texture)
+            | wgpu::CurrentSurfaceTexture::Suboptimal(texture) => texture,
+            other => {
+                return Err(JsValue::from_str(&format!(
+                    "surface texture unavailable: {other:?}"
+                )))
+            }
+        };
+        let view = surface_texture
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        // `RenderTarget::texture` is not actually read by `gpu::render_frame`
+        // (only `.view` is), but cloning it (a cheap handle clone, not a GPU
+        // copy) keeps this a fully-typed, honestly-constructed
+        // `RenderTarget` rather than a field left semantically wrong.
+        let target = RenderTarget {
+            texture: surface_texture.texture.clone(),
+            view,
+            width: self.width,
+            height: self.height,
+        };
+
+        gpu::render_frame(
+            &self.device,
+            &self.queue,
+            &self.pipeline.pipeline,
+            bind_group,
+            &target,
+        );
+        // Deliberately no `gpu::wait_for_gpu` here: on the WebGPU backend
+        // `Device::poll` is documented as a no-op (the browser polls the
+        // device automatically), and this presentation path has no
+        // readback that would need to wait for completion either way --
+        // unlike `radar-render`'s harness, which waits only to measure
+        // real GPU frame time.
+        self.queue.present(surface_texture);
+
         Ok(())
     }
 }

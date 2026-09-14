@@ -344,13 +344,14 @@ impl From<serde_json::Error> for ColorTableError {
 /// as this format's worked examples -- there is exactly one copy of each
 /// default, not a Rust literal duplicating a JSON example elsewhere).
 ///
-/// The `expect` here is not a "trust untrusted input" violation: these six
-/// files are developer-authored, compiled into the binary, and covered by
-/// this module's own tests (`default_color_table_is_valid_for_every_moment_kind`)
-/// -- a parse/validation failure here is a build-time programmer error to
-/// be caught immediately, not a possible runtime outcome of loading a
-/// user-supplied file (that path is [`ColorTable::from_json`], which
-/// always returns a `Result`).
+/// The `expect` here is not a "trust untrusted input" violation: these
+/// seven files are developer-authored, compiled into the binary, and
+/// covered by this module's own tests
+/// (`default_color_table_is_valid_for_every_moment_kind`) -- a parse/
+/// validation failure here is a build-time programmer error to be caught
+/// immediately, not a possible runtime outcome of loading a user-supplied
+/// file (that path is [`ColorTable::from_json`], which always returns a
+/// `Result`).
 pub fn default_color_table(kind: MomentKind) -> ColorTable {
     let json: &str = match kind {
         MomentKind::Reflectivity => include_str!("../color_tables/reflectivity.json"),
@@ -363,6 +364,15 @@ pub fn default_color_table(kind: MomentKind) -> ColorTable {
             include_str!("../color_tables/correlation_coefficient.json")
         }
         MomentKind::DifferentialPhase => include_str!("../color_tables/differential_phase.json"),
+        // A copy of `velocity.json` under a distinct id/name -- SRV is a
+        // first-class, independently-selectable `MomentKind` (see that
+        // variant's doc comment), not "VEL" itself, so it must keep its own
+        // `"moments": ["SRV"]` table rather than being folded into VEL's
+        // (which must keep exactly `["VEL"]` -- see
+        // `default_color_table_is_valid_for_every_moment_kind` below).
+        MomentKind::StormRelativeVelocity => {
+            include_str!("../color_tables/storm_relative_velocity.json")
+        }
     };
     ColorTable::from_json(json).expect(
         "built-in default color table must be valid JSON satisfying this crate's own format",
@@ -479,13 +489,14 @@ mod tests {
     use super::*;
     use crate::palette::lerp_color;
 
-    const ALL_MOMENT_KINDS: [MomentKind; 6] = [
+    const ALL_MOMENT_KINDS: [MomentKind; 7] = [
         MomentKind::Reflectivity,
         MomentKind::Velocity,
         MomentKind::SpectrumWidth,
         MomentKind::DifferentialReflectivity,
         MomentKind::CorrelationCoefficient,
         MomentKind::DifferentialPhase,
+        MomentKind::StormRelativeVelocity,
     ];
 
     // --- built-in defaults: valid for every moment kind ------------------

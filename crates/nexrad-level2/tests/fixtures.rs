@@ -53,6 +53,16 @@ fn assert_moment_values_in_documented_range(kind: MomentKind, values: &[f32]) {
         MomentKind::DifferentialReflectivity => (-15.0, 25.0),
         MomentKind::CorrelationCoefficient => (-0.1, 1.2),
         MomentKind::DifferentialPhase => (-5.0, 365.0),
+        // Storm-Relative Velocity is never decoded from a real Archive II
+        // fixture -- it is a derived product computed only at render time
+        // from an already-decoded VEL moment (see
+        // `radar_types::MomentKind::StormRelativeVelocity`'s doc comment),
+        // so `decode_volume`'s output can never contain this kind and this
+        // arm is realistically unreachable here. It exists only so this
+        // match stays exhaustive; SRV shares VEL's documented range since
+        // it is VEL with a uniform vector subtracted (same units, not
+        // independently range-bounded by anything in the spec).
+        MomentKind::StormRelativeVelocity => (-100.0, 100.0),
     };
     for &v in values {
         assert!(v.is_finite(), "{kind:?} gate value is not finite: {v}");
