@@ -61,6 +61,7 @@ export function useScanPoller(
     let lastArchiveKey: string | null = null;
 
     const emit = (bytes: Uint8Array, volume: ChunkedVolume) => {
+      if (cancelled) return; // a fetch that finished after a site switch belongs to the old site.
       const described = volume.describe();
       if (!described) return;
       onVolumeBytesRef.current(bytes, described);

@@ -356,7 +356,10 @@ export function useScanHistory(icao: string, maxEntries: number = MAX_HISTORY_SC
               : [...(await discoverDay(icao, utcDay(new Date(now.getTime() - 86_400_000)), controller.signal)), ...today];
           const picked = listed.slice(-maxEntriesRef.current).reverse();
           for (const volume of picked) {
-            onVolumeBytes(await downloadVolume(volume.key, controller.signal), volume);
+            const bytes = await downloadVolume(volume.key, controller.signal);
+            // A download can finish just after a site switch; it belongs to the old site.
+            if (controller.signal.aborted) return;
+            onVolumeBytes(bytes, volume);
           }
         } catch (err) {
           if (err instanceof DOMException && err.name === "AbortError") return;
@@ -383,6 +386,7 @@ export function useScanHistory(icao: string, maxEntries: number = MAX_HISTORY_SC
         for (const [i, volume] of picked.entries()) {
           setArchiveStatus(`downloading scan ${i + 1} of ${picked.length}…`);
           const bytes = await downloadVolume(volume.key, controller.signal);
+          if (controller.signal.aborted) return;
           onVolumeBytes(bytes, volume);
         }
         setArchiveStatus(`${picked.length} archived scans loaded`);
