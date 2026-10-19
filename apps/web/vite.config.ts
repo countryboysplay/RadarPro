@@ -76,13 +76,25 @@ function copyMapLibreWorkerPlugin(): Plugin {
 // the next free one if 5173 is busy; `clearScreen: false` keeps Vite from
 // wiping Tauri's own CLI/Rust build output from the shared terminal. Both
 // are no-ops for the standalone `npm run dev` browser workflow.
+// NWS tgftp sends no CORS headers; the browser build reaches it through
+// this proxy (the desktop app uses its `nws_radar_product` command instead).
+const tgftpProxy = {
+  "/tgftp": {
+    target: "https://tgftp.nws.noaa.gov",
+    changeOrigin: true,
+    rewrite: (path: string) => path.replace(/^\/tgftp/, ""),
+  },
+};
+
 export default defineConfig({
   plugins: [react(), copyMapLibreWorkerPlugin()],
   clearScreen: false,
   server: {
     port: 5173,
     strictPort: true,
+    proxy: tgftpProxy,
   },
+  preview: { proxy: tgftpProxy },
   // MapLibre GL JS loads its tile-parsing code in a module Web Worker,
   // constructed internally via `new Worker(new URL(..., import.meta.url))`.
   // Vite's dev-server dependency pre-bundling (`optimizeDeps`) rewrites

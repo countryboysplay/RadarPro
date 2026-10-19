@@ -15,6 +15,11 @@ export interface CrossSectionPanelProps {
   picking: boolean;
   onStartPick: () => void;
   onClear: () => void;
+}
+
+export interface CrossSectionSliceProps {
+  a: LatLonPoint;
+  b: LatLonPoint;
   /** Re-render trigger: changes whenever the volume/moment/palette does. */
   renderKey: string;
   render: (a: LatLonPoint, b: LatLonPoint, cols: number, rows: number, topKm: number) => Uint8Array | null;
@@ -31,27 +36,10 @@ export function legLengthAndBearing(a: LatLonPoint, b: LatLonPoint): { km: numbe
   return { km, deg: ((Math.atan2(y, x) / rad) + 360) % 360 };
 }
 
-/** Vertical slice through the current radar volume along two map-picked
- * points, 0-18 km MSL. Gaps between tilts are left empty, never filled. */
-export function CrossSectionPanel({ line, picking, onStartPick, onClear, renderKey, render }: CrossSectionPanelProps) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+/** The course-leg controls: set/clear the leg, its length and bearing. The
+ * slice itself is `CrossSectionSlice`, shown in the map's right panel. */
+export function CrossSectionPanel({ line, picking, onStartPick, onClear }: CrossSectionPanelProps) {
   const complete = line?.b ? { a: line.a, b: line.b } : null;
-
-  // Ref, not a dep: callers pass a fresh closure every render, and the slice
-  // should only recompute when the line or `renderKey` changes.
-  const renderRef = useRef(render);
-  renderRef.current = render;
-  const [sliced, setSliced] = useState(true);
-
-  useEffect(() => {
-    const ctx = canvasRef.current?.getContext("2d");
-    if (!ctx || !line?.b) return;
-    ctx.clearRect(0, 0, COLS, ROWS);
-    const bytes = renderRef.current(line.a, line.b, COLS, ROWS, TOP_KM);
-    if (bytes) ctx.putImageData(new ImageData(new Uint8ClampedArray(bytes), COLS, ROWS), 0, 0);
-    setSliced(bytes !== null);
-  }, [line, renderKey]);
-
   const hint = picking ? (line ? "Click the finish on the map" : "Click the start on the map") : null;
   const leg = complete ? legLengthAndBearing(complete.a, complete.b) : null;
 
@@ -83,19 +71,35 @@ export function CrossSectionPanel({ line, picking, onStartPick, onClear, renderK
           </tbody>
         </table>
       )}
-      {complete && (
-        <>
-          <canvas
-            ref={canvasRef}
-            width={COLS}
-            height={ROWS}
-            className="cross-section-canvas"
-            aria-label="Radar vertical cross-section"
-          />
-          {!sliced && <div className="segment-empty">No decoded scan to slice yet.</div>}
-          <div className="cross-section-axis">0–{TOP_KM} km MSL · start at left, finish at right · gaps between tilts left empty</div>
-        </>
-      )}
     </div>
+  );
+}
+
+/** Vertical slice through the current radar volume along two map-picked
+ * points, 0-18 km MSL. Gaps between tilts are left empty, never filled. */
+export function CrossSectionSlice({ a, b, renderKey, render }: CrossSectionSliceProps) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  // Ref, not a dep: callers pass a fresh closure every render, and the slice
+  // should only recompute when the leg or `renderKey` changes.
+  const renderRef = useRef(render);
+  renderRef.current = render;
+  const [sliced, setSliced] = useState(true);
+
+  useEffect(() => {
+    const ctx = canvasRef.current?.getContext("2d");
+    if (!ctx) return;
+    ctx.clearRect(0, 0, COLS, ROWS);
+    const bytes = renderRef.current(a, b, COLS, ROWS, TOP_KM);
+    if (bytes) ctx.putImageData(new ImageData(new Uint8ClampedArray(bytes), COLS, ROWS), 0, 0);
+    setSliced(bytes !== null);
+  }, [a, b, renderKey]);
+
+  return (
+    <>
+      <canvas ref={canvasRef} width={COLS} height={ROWS} className="cross-section-canvas" aria-label="Radar vertical cross-section" />
+      {!sliced && <div className="segment-empty">No decoded scan to slice yet.</div>}
+      <div className="cross-section-axis">0–{TOP_KM} km MSL · start at left, finish at right · gaps between tilts left empty</div>
+    </>
   );
 }

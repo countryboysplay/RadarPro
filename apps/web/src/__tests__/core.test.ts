@@ -1,4 +1,7 @@
+// @ts-expect-error -- the app tsconfig has no Node types; vitest runs under Node.
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { parseNst } from "../storms/nst";
 import { parseObjectKey } from "../nexrad/keys";
 import { clampHistoryLimit, historyReducer, initialState } from "../scan/useScanHistory";
 import { alertNearSite, pointInAlertGeometry } from "../alerts/geometryHitTest";
@@ -150,5 +153,52 @@ describe("real-time chunk feed", () => {
     s = historyReducer(s, { type: "SCAN_ADDED", key: "k", startTimeMillis: 1, revision: 250 });
     expect(s.entries).toEqual([{ key: "k", startTimeMillis: 1, revision: 250 }]);
     expect(historyReducer(s, { type: "SCAN_ADDED", key: "k", startTimeMillis: 1, revision: 250 })).toBe(s);
+  });
+});
+
+describe("parseNst", () => {
+  // Real KBYX product; expected values come from its own text table.
+  const bytes = new Uint8Array(readFileSync(new URL("../../../../fixtures/nexrad-level3/KBYX_NST_20261019_2005", import.meta.url)));
+  const tracks = parseNst(bytes);
+  const radar = { lat: 24.597, lon: -81.703 };
+
+  it("reads every cell, the scan time and the average motion", () => {
+    expect(tracks.cells.map((c) => c.id)).toEqual(["Q8", "S3", "H9", "F2", "Z3", "D6", "M9", "X6", "N4", "H8"]);
+    expect(tracks.scanTimeMs).toBe(Date.UTC(2026, 9, 19, 20, 5, 30));
+    expect(tracks.avgMotion).toEqual({ speedKts: 8, fromDeg: 50 });
+  });
+
+  it("places cells where the table says (Q8 at 108 deg / 121 nm)", () => {
+    const q8 = tracks.cells[0];
+    const { km, deg } = legLengthAndBearing(radar, { lon: q8.at[0], lat: q8.at[1] });
+    expect(deg).toBeCloseTo(108, 0);
+    expect(km / 1.852).toBeCloseTo(121, 0);
+    expect(q8.forecast).toHaveLength(5);
+    expect(q8.forecast[0]).toEqual(q8.at);
+    // M9 moves from 28 deg, so its 60-minute forecast is farther south.
+    const m9 = tracks.cells[6];
+    expect(m9.forecast[4][1]).toBeLessThan(m9.at[1]);
+  });
+
+  it("gives new cells no track", () => {
+    const h9 = tracks.cells[2];
+    expect(h9.past).toEqual([]);
+    expect(h9.forecast).toEqual([]);
+    expect(h9.motion).toBeNull();
+  });
+
+  it("derives each cell's motion close to the table's FCST MVT", () => {
+    // Table: M9 28/8, X6 3/11, N4 75/28, H8 37/8 (deg from / kt).
+    const table: Record<string, [number, number]> = { M9: [28, 8], X6: [3, 11], N4: [75, 28], H8: [37, 8] };
+    for (const cell of tracks.cells.filter((c) => c.id in table)) {
+      const [fromDeg, speedKts] = table[cell.id];
+      const dDeg = Math.abs(((cell.motion!.fromDeg - fromDeg + 540) % 360) - 180);
+      expect(dDeg, cell.id).toBeLessThanOrEqual(10);
+      expect(Math.abs(cell.motion!.speedKts - speedKts), cell.id).toBeLessThanOrEqual(2);
+    }
+  });
+
+  it("rejects other products", () => {
+    expect(() => parseNst(new Uint8Array(100))).toThrow(/NST/);
   });
 });

@@ -39,16 +39,19 @@ const DEFAULT_SITE_KEY = "defaultSiteIcao";
 // never call `isDesktop()` truthily.
 const settingsStore = new LazyStore(SETTINGS_STORE_PATH);
 
+/** Browser-tab stand-in for the desktop store, for the last-used site only. */
+const BROWSER_SITE_KEY = "radarpro.defaultSiteIcao";
+
 /**
- * Load the persisted default radar site ICAO, if any. Resolves to `null`
- * in a browser tab, on first run, or if the stored value is not a
- * well-formed 4-letter ICAO (defensively -- a hand-edited or corrupted
- * `settings.json` must never crash the app or select a bogus site).
+ * Load the persisted default radar site ICAO, if any (the desktop store, or
+ * `localStorage` in a browser tab). Resolves to `null` on first run, or if
+ * the stored value is not a well-formed 4-letter ICAO (defensively -- a
+ * hand-edited or corrupted `settings.json` must never crash the app or
+ * select a bogus site).
  */
 export async function loadPersistedDefaultSite(): Promise<string | null> {
-  if (!isDesktop()) return null;
   try {
-    const value = await settingsStore.get<string>(DEFAULT_SITE_KEY);
+    const value = isDesktop() ? await settingsStore.get<string>(DEFAULT_SITE_KEY) : localStorage.getItem(BROWSER_SITE_KEY);
     if (typeof value === "string" && /^[A-Za-z0-9]{3,4}$/.test(value)) {
       return value.toUpperCase();
     }
@@ -59,11 +62,14 @@ export async function loadPersistedDefaultSite(): Promise<string | null> {
   }
 }
 
-/** Persist `icao` as the default radar site for next launch. No-op in a
- * browser tab. Fire-and-forget from the caller's perspective, but errors
- * are logged rather than silently swallowed. */
+/** Persist `icao` as the default radar site for next launch. Fire-and-forget
+ * from the caller's perspective, but errors are logged rather than silently
+ * swallowed. */
 export function persistDefaultSite(icao: string): void {
-  if (!isDesktop()) return;
+  if (!isDesktop()) {
+    localStorage.setItem(BROWSER_SITE_KEY, icao);
+    return;
+  }
   settingsStore
     .set(DEFAULT_SITE_KEY, icao)
     .then(() => settingsStore.save())

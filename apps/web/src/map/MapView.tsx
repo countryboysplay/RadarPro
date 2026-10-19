@@ -2,13 +2,14 @@ import { useEffect, useRef, type RefObject } from "react";
 // MapLibre GL JS >=5 has no default export; `MapLibreMap` is the library's
 // own non-colliding alias for its `Map` class (distinct from the global
 // JS `Map`).
-import { MapLibreMap, type ExpressionSpecification } from "maplibre-gl";
+import { LngLatBounds, MapLibreMap, type ExpressionSpecification } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { RADAR_SITES, type RadarSite } from "../sites";
 import type { AlertFeatureCollection } from "../alerts/types";
 import { SEVERITY_COLORS, severityRank } from "../alerts/types";
 import { pointInAlertGeometry } from "../alerts/geometryHitTest";
 import type { MyLocation } from "../location/useMyLocation";
+import type { StormCell, StormTracks } from "../storms/nst";
 import type { MrmsViewport } from "../mrms/types";
 import { isDesktop } from "../platform/desktop";
 import { registerDesktopRainbowProtocol } from "../rainbow/desktopTiles";
@@ -274,6 +275,80 @@ function drawMyLocation(map: MapLibreMap, canvas: HTMLCanvasElement, loc: MyLoca
   ctx.restore();
 }
 
+const PAPER_INK = "#ecebe4";
+const ACCENT = "#739bd0";
+const FORECAST_AMBER = "#f0b84a";
+
+/**
+ * NWS storm cells: observed track in Paper Ink, the NWS 15-60 min forecast
+ * in Forecast Amber (it is forecast time, see DESIGN.md), each cell's ID by
+ * its dot. Same casing as the course so tracks read over any echo.
+ */
+function drawStormTracks(map: MapLibreMap, canvas: HTMLCanvasElement, tracks: StormTracks | null, selectedId: string | null) {
+  const ctx = canvas.getContext("2d");
+  if (!ctx || !tracks) return;
+  ctx.save();
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  const line = (points: [number, number][], color: string) => {
+    if (points.length < 2) return;
+    ctx.beginPath();
+    points.forEach((pt, i) => {
+      const p = map.project(pt);
+      if (i === 0) ctx.moveTo(p.x, p.y);
+      else ctx.lineTo(p.x, p.y);
+    });
+    ctx.strokeStyle = COURSE_CASING;
+    ctx.lineWidth = 5;
+    ctx.stroke();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    // Position ticks, skipping the shared current point.
+    for (const pt of points.slice(1)) {
+      const p = map.project(pt);
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 3, 0, 2 * Math.PI);
+      ctx.fillStyle = color;
+      ctx.fill();
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = COURSE_CASING;
+      ctx.stroke();
+    }
+  };
+  for (const cell of tracks.cells) {
+    line(cell.past, PAPER_INK);
+    line(cell.forecast, FORECAST_AMBER);
+  }
+  ctx.font = "700 13px 'Roboto Condensed Variable', 'Roboto Condensed', 'Arial Narrow', sans-serif";
+  ctx.textBaseline = "middle";
+  for (const cell of tracks.cells) {
+    const p = map.project(cell.at);
+    if (cell.id === selectedId) {
+      // Steel blue: the storm SRV is using (DESIGN.md's selection ink).
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 10, 0, 2 * Math.PI);
+      ctx.lineWidth = 5;
+      ctx.strokeStyle = COURSE_CASING;
+      ctx.stroke();
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = ACCENT;
+      ctx.stroke();
+    }
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 5, 0, 2 * Math.PI);
+    ctx.fillStyle = PAPER_INK;
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = COURSE_CASING;
+    ctx.stroke();
+    ctx.lineWidth = 4;
+    ctx.strokeText(cell.id, p.x + 9, p.y - 9);
+    ctx.fillText(cell.id, p.x + 9, p.y - 9);
+  }
+  ctx.restore();
+}
+
 const RAINBOW_SOURCE_ID = "rainbow-precip-source";
 const RAINBOW_LAYER_ID = "rainbow-precip-layer";
 
@@ -376,6 +451,21 @@ const MAP_STYLE_URL = "https://tiles.openfreemap.org/styles/dark";
 const SITE_HIT_RADIUS_PX = 10;
 
 /** Nearest radar site to screen point `px` within `SITE_HIT_RADIUS_PX`. */
+/** The storm cell nearest `px`, within the site-dot hit radius. */
+function stormAtPoint(map: MapLibreMap, tracks: StormTracks | null, px: { x: number; y: number }): StormCell | null {
+  let best: StormCell | null = null;
+  let bestD2 = SITE_HIT_RADIUS_PX * SITE_HIT_RADIUS_PX;
+  for (const cell of tracks?.cells ?? []) {
+    const p = map.project(cell.at);
+    const d2 = (p.x - px.x) ** 2 + (p.y - px.y) ** 2;
+    if (d2 <= bestD2) {
+      best = cell;
+      bestD2 = d2;
+    }
+  }
+  return best;
+}
+
 function siteAtPoint(map: MapLibreMap, px: { x: number; y: number }): RadarSite | null {
   let best: RadarSite | null = null;
   let bestD2 = SITE_HIT_RADIUS_PX * SITE_HIT_RADIUS_PX;
@@ -453,7 +543,7 @@ export interface MapViewProps {
   /** Fired on every map `mousemove`, with the cursor resolved to a map
    * lat/lon via MapLibre's own `unproject` (exposed as `event.lngLat`) --
    * the geographic half of S05's data-probe/cursor-readout feature. */
-  onCursorMove?: (lat: number, lon: number) => void;
+  onCursorMove?: (lat: number, lon: number, x: number, y: number) => void;
   onCursorLeave?: () => void;
   /** S06: currently-active NWS alerts (`useAlertPoller`'s `geojson`),
    * drawn as a severity-colored overlay -- `null` until the first poll
@@ -519,6 +609,11 @@ export interface MapViewProps {
   myLocation?: MyLocation | null;
   /** Bumped to pan the map to `myLocation` (the "Center on me" button). */
   centerOnMeRequest?: number;
+  /** NWS storm cells and their tracks, or null when off. */
+  stormTracks?: StormTracks | null;
+  /** Storm cell SRV takes its motion from, ringed on the map. Clicking any
+   * storm centers the map on it, which is how SRV picks its storm. */
+  selectedStormId?: string | null;
   /** The cross-section leg, drawn on the map in course ink. */
   course?: CourseLeg | null;
   /** The painted model-field canvas, drawn on the map (in place of the radar) while `forecastOnMap`. */
@@ -578,6 +673,8 @@ export function MapView({
   course = null,
   myLocation = null,
   centerOnMeRequest = 0,
+  stormTracks = null,
+  selectedStormId = null,
   forecastCanvasRef,
   forecastOnMap = false,
   forecastKey = "",
@@ -605,6 +702,10 @@ export function MapView({
   selectedAlertKeyRef.current = selectedAlertKey;
   const myLocationRef = useRef<MyLocation | null>(myLocation);
   myLocationRef.current = myLocation;
+  const stormTracksRef = useRef<StormTracks | null>(stormTracks);
+  stormTracksRef.current = stormTracks;
+  const selectedStormIdRef = useRef<string | null>(selectedStormId);
+  selectedStormIdRef.current = selectedStormId;
   const appliedRainbowUrlRef = useRef<string | null>(null);
   const onMrmsViewportChangeRef = useRef(onMrmsViewportChange);
   onMrmsViewportChangeRef.current = onMrmsViewportChange;
@@ -735,6 +836,7 @@ export function MapView({
           alertsCanvas.style.height = mapCanvas.style.height;
         }
         drawAlerts(map, alertsCanvas, alertsRef.current, selectedAlertKeyRef.current);
+        drawStormTracks(map, alertsCanvas, stormTracksRef.current, selectedStormIdRef.current);
         drawMyLocation(map, alertsCanvas, myLocationRef.current);
       }
 
@@ -826,7 +928,7 @@ export function MapView({
     if (map && overlay) drawForecastField(map, overlay, forecastFieldRef.current);
   }, [forecastOnMap, forecastKey]);
 
-  // Redraw alert polygons and the user's position whenever the active set,
+  // Redraw alert polygons, storm tracks and the user's position whenever the active set,
   // selection or position changes (map pan/zoom/resize is handled by
   // `updateOverlay` above).
   useEffect(() => {
@@ -834,8 +936,23 @@ export function MapView({
     const alertsCanvas = alertsCanvasRef.current;
     if (!map || !alertsCanvas) return;
     drawAlerts(map, alertsCanvas, alerts, selectedAlertKey);
+    drawStormTracks(map, alertsCanvas, stormTracks, selectedStormId);
     drawMyLocation(map, alertsCanvas, myLocation);
-  }, [alerts, selectedAlertKey, myLocation]);
+  }, [alerts, selectedAlertKey, myLocation, stormTracks, selectedStormId]);
+
+  // Bring a newly selected warning into view (a list click may pick one far
+  // off screen); left alone when it is already fully visible.
+  useEffect(() => {
+    const map = mapRef.current;
+    const geometry = alertsRef.current?.features.find((f) => f.id === selectedAlertKey)?.geometry;
+    if (!map || !geometry) return;
+    const rings = geometry.type === "Polygon" ? geometry.coordinates : geometry.coordinates.flat();
+    const bounds = new LngLatBounds();
+    for (const ring of rings) for (const [lon, lat] of ring) bounds.extend([lon, lat]);
+    const view = map.getBounds();
+    if (view.contains(bounds.getSouthWest()) && view.contains(bounds.getNorthEast())) return;
+    map.fitBounds(bounds, { padding: 80, maxZoom: 9, duration: 600 });
+  }, [selectedAlertKey]);
 
   // Pan to the user's position on request; reads the ref so later fixes don't re-pan.
   useEffect(() => {
@@ -882,6 +999,12 @@ export function MapView({
         onPointPickRef.current?.(e.lngLat.lat, e.lngLat.lng);
         return;
       }
+      // Storm dots sit on top of alert polygons, so they win.
+      const storm = stormAtPoint(map!, stormTracksRef.current, e.point);
+      if (storm) {
+        map!.easeTo({ center: storm.at, duration: 400 });
+        return;
+      }
       // Alerts win over nearby site dots: switching sites wipes scan history.
       const alertKey = alertAtPoint(e.lngLat);
       const clickedSite = !alertKey && onSiteClickRef.current ? siteAtPoint(map!, e.point) : null;
@@ -896,7 +1019,10 @@ export function MapView({
         map!.getCanvas().style.cursor = "crosshair";
         return;
       }
-      const hit = alertAtPoint(e.lngLat) || (onSiteClickRef.current && siteAtPoint(map!, e.point));
+      const hit =
+        stormAtPoint(map!, stormTracksRef.current, e.point) ||
+        alertAtPoint(e.lngLat) ||
+        (onSiteClickRef.current && siteAtPoint(map!, e.point));
       map!.getCanvas().style.cursor = hit ? "pointer" : "";
     }
 
@@ -927,8 +1053,8 @@ export function MapView({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !onCursorMove) return;
-    function handleMove(e: { lngLat: { lat: number; lng: number } }) {
-      onCursorMove?.(e.lngLat.lat, e.lngLat.lng);
+    function handleMove(e: { lngLat: { lat: number; lng: number }; point: { x: number; y: number } }) {
+      onCursorMove?.(e.lngLat.lat, e.lngLat.lng, e.point.x, e.point.y);
     }
     function handleLeave() {
       onCursorLeave?.();

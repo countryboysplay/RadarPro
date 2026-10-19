@@ -11,6 +11,14 @@ export interface ProbePanelProps {
   probe: ProbeResult | null;
 }
 
+/** The gate's state in words; shared by this panel and the map's cursor label. */
+export function probeText(probe: ProbeResult | null): string {
+  if (!probe) return "off sweep coverage";
+  if (probe.state === "valid") return `${probe.value?.toFixed(2)} ${probe.units ?? ""}`;
+  if (probe.state === "missing") return "missing / below threshold";
+  return "range-folded (ambiguous)";
+}
+
 /**
  * The cursor's gate as a course row (control symbol, value, slant range,
  * azimuth from the site) plus its lat/lon, rendered so
@@ -29,10 +37,7 @@ export function ProbePanel({ cursor, probe }: ProbePanelProps) {
               <Icon name="control" size={16} />
             </td>
             <td className={`probe-value probe-value-${probe?.state ?? "none"}`}>
-              {!probe && "off sweep coverage"}
-              {probe?.state === "valid" && `${probe.value?.toFixed(2)} ${probe.units ?? ""}`}
-              {probe?.state === "missing" && "missing / below threshold"}
-              {probe?.state === "range_folded" && "range-folded (ambiguous)"}
+              {probeText(probe)}
             </td>
             <td className="num">{probe ? `${probe.slantRangeKm.toFixed(1)} km` : ""}</td>
             <td className="num">{probe ? `${probe.azimuthDeg.toFixed(0).padStart(3, "0")}°` : ""}</td>

@@ -57,3 +57,12 @@ Single GRIB2 messages byte-range-fetched from the public HRRR bucket
 `hrrr_20261019_t12z_f06_refc.grib2` (~378 KB) is the first message of
 `hrrr.20261019/conus/hrrr.t12z.wrfsfcf06.grib2`: `REFC:entire atmosphere`
 (simulated composite reflectivity), PDT 4.0, parameter (16, 196), DRT 5.3.
+
+## nexrad-level3/
+
+| File | Product | Volume (UTC) | Source |
+|---|---|---|---|
+| `KBYX_NST_20261019_2005` | Storm Tracking Information (58, NST), 10 cells | 2026-10-19 20:05:30 | NWS tgftp `DS.58sti/SI.kbyx/sn.last`, unmodified (WMO/AWIPS header included) |
+
+Used by `apps/web`'s NST parser test. Its text table (Q8 at 108°/121 nm,
+average motion 8 kt from 50°) is what the test checks against.

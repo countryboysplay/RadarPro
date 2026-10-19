@@ -31,8 +31,8 @@ import { MAX_HISTORY_SCANS, useScanHistory } from "./scan/useScanHistory";
 import { InfoPanel } from "./ui/InfoPanel";
 import { PlaybackControls } from "./ui/PlaybackControls";
 import { ArchiveLoader } from "./ui/ArchiveLoader";
-import { CrossSectionPanel, legLengthAndBearing, type LatLonPoint } from "./ui/CrossSectionPanel";
-import { ProbePanel } from "./ui/ProbePanel";
+import { CrossSectionPanel, CrossSectionSlice, legLengthAndBearing, type LatLonPoint } from "./ui/CrossSectionPanel";
+import { ProbePanel, probeText } from "./ui/ProbePanel";
 import { Legend } from "./ui/Legend";
 import { ColorTableEditor } from "./ui/ColorTableEditor";
 import { AlertsPanel } from "./ui/AlertsPanel";
@@ -60,6 +60,8 @@ import { SidebarSection } from "./ui/SidebarSection";
 import { SidebarCategory } from "./ui/SidebarCategory";
 import { UnifiedTimeline } from "./timeline/UnifiedTimeline";
 import { Icon } from "./ui/Icon";
+import { useStormTracks } from "./storms/useStormTracks";
+import type { StormCell } from "./storms/nst";
 
 /** Fixed reference radii (km) for the range rings drawn around the
  * selected site -- a documented, reasonable default (not derived from any
@@ -184,6 +186,18 @@ function summarizeAlerts(nearCount: number, activeCount: number, icao: string): 
   return activeCount > 0 ? `${activeCount} US · ${nearCount} polygons near ${icao}` : "none active";
 }
 
+/** A yes/no setting remembered across launches (`localStorage`; the desktop webview keeps it too). */
+function useRememberedFlag(key: string, fallback: boolean) {
+  const [value, setValue] = useState(() => {
+    const stored = localStorage.getItem(key);
+    return stored === null ? fallback : stored === "1";
+  });
+  useEffect(() => {
+    localStorage.setItem(key, value ? "1" : "0");
+  }, [key, value]);
+  return [value, setValue] as const;
+}
+
 /** A native toast in the desktop app, a web Notification in a browser tab. */
 function showNotification(title: string, body: string, tag: string, sticky: boolean, onClick: () => void) {
   if (isDesktop()) return void notifyDesktop(title, body);
@@ -203,6 +217,15 @@ function summarizeMyLocation(on: boolean, { location, error }: ReturnType<typeof
   return coveringCount > 0 ? `inside ${coveringCount} alert${coveringCount === 1 ? "" : "s"}` : "no alerts here";
 }
 
+/** One-line summary for "Storm tracks". */
+function summarizeStormTracks(on: boolean, { tracks, error }: ReturnType<typeof useStormTracks>): string {
+  if (!on) return "off";
+  if (error) return error;
+  if (!tracks) return "loading…";
+  const time = new Date(tracks.scanTimeMs).toISOString().slice(11, 16);
+  return `${tracks.cells.length} cell${tracks.cells.length === 1 ? "" : "s"} · ${time}Z`;
+}
+
 /** One-line summary for "Settings". */
 function summarizeSettings(cacheEntriesCount: number, cacheLimit: number): string {
   return `cache ${cacheEntriesCount}/${cacheLimit} scans`;
@@ -220,21 +243,22 @@ export default function App() {
     [site],
   );
 
-  // S10 desktop shell: restore the last-selected default radar site on
-  // launch. Resolves to `null` (no-op) in a plain browser tab -- see
-  // `platform/desktop.ts`'s doc comment -- so this has no effect on the
-  // standalone web app. Only overrides the built-in `DEFAULT_SITE_ICAO`
+  // Restore the last-selected radar site on launch (desktop store, or
+  // `localStorage` in a browser tab). Only overrides the built-in `DEFAULT_SITE_ICAO`
   // if a persisted, still-valid site was actually found. `siteHydrated`
   // gates the persist effect below so a slow initial load can never race
   // with (and get clobbered by) an eager write of the just-mounted
   // built-in default -- see this effect pair's combined doc comment.
   const [siteHydrated, setSiteHydrated] = useState(false);
+  // The site the app opened on; the first GPS fix replaces it with the nearest one.
+  const launchIcaoRef = useRef(DEFAULT_SITE_ICAO);
   useEffect(() => {
     let cancelled = false;
     loadPersistedDefaultSite().then((savedIcao) => {
       if (cancelled) return;
       if (savedIcao && findSite(savedIcao)) {
         setIcao(savedIcao);
+        launchIcaoRef.current = savedIcao;
       }
       setSiteHydrated(true);
     });
@@ -246,7 +270,7 @@ export default function App() {
   // Persist every site change as the new default -- but only once the
   // effect above has finished trying to load a previous one, so we never
   // overwrite a saved site with the built-in default before we've had a
-  // chance to read it. No-op in a browser tab regardless.
+  // chance to read it.
   useEffect(() => {
     if (!siteHydrated) return;
     persistDefaultSite(icao);
@@ -555,11 +579,31 @@ export default function App() {
   }, []);
 
   // Your own position, and a desktop notification (plus optional tone) when
-  // an alert polygon starts covering it. Off by default: it asks for location.
-  const [showMyLocation, setShowMyLocation] = useState(false);
-  const [notifyCovering, setNotifyCovering] = useState(false);
-  const [notifySound, setNotifySound] = useState(true);
+  // an alert polygon starts covering it. On by default and remembered: a
+  // chaser shouldn't have to switch these on each launch.
+  const [showMyLocation, setShowMyLocation] = useRememberedFlag("radarpro.showMyLocation", true);
+  const [notifyCovering, setNotifyCovering] = useRememberedFlag("radarpro.notifyCovering", true);
+  const [notifySound, setNotifySound] = useRememberedFlag("radarpro.notifySound", true);
   const myLocation = useMyLocation(showMyLocation);
+  // A browser only shows the notification permission prompt after a user
+  // gesture, so ask on the first click anywhere.
+  useEffect(() => {
+    if (!notifyCovering || isDesktop() || !("Notification" in window) || Notification.permission !== "default") return;
+    const ask = () => void Notification.requestPermission();
+    window.addEventListener("pointerdown", ask, { once: true });
+    return () => window.removeEventListener("pointerdown", ask);
+  }, [notifyCovering]);
+  // First GPS fix of the session: switch to the radar nearest you, unless
+  // you've already picked a different site since launch.
+  const firstFixHandledRef = useRef(false);
+  useEffect(() => {
+    const here = myLocation.location;
+    if (!here || !siteHydrated || firstFixHandledRef.current) return;
+    firstFixHandledRef.current = true;
+    if (icao !== launchIcaoRef.current) return;
+    const nearest = RADAR_SITES.reduce((best, s) => (legLengthAndBearing(here, s).km < legLengthAndBearing(here, best).km ? s : best));
+    setIcao(nearest.icao);
+  }, [myLocation.location, siteHydrated]);
   const [centerOnMeRequest, setCenterOnMeRequest] = useState(0);
   const coveringMe = useMemo(
     () => (myLocation.location ? coveringAlerts(myLocation.location, alerts.activeAlerts, new Set()).covering : []),
@@ -622,6 +666,32 @@ export default function App() {
   } | null>(null);
   const [sweepIndex, setSweepIndex] = useState<number | null>(null);
   const [momentCode, setMomentCode] = useState<string | null>(null);
+  // NWS storm cells, on by default; SRV needs them even when hidden.
+  const [showStormTracks, setShowStormTracks] = useState(true);
+  const stormTracks = useStormTracks(icao, showStormTracks || momentCode === "SRV");
+  // SRV follows the on-screen storm nearest the map center (pan to a storm to
+  // pick it), else the NWS average, until the user types their own values.
+  const selectedStorm = useMemo(() => {
+    if (!mrmsViewport) return null;
+    const { centerLon, centerLat, halfExtentLon, halfExtentLat } = mrmsViewport;
+    let best: StormCell | null = null;
+    let bestD = Infinity;
+    for (const cell of stormTracks.tracks?.cells ?? []) {
+      const [dx, dy] = [(cell.at[0] - centerLon) / halfExtentLon, (cell.at[1] - centerLat) / halfExtentLat];
+      const d = dx * dx + dy * dy;
+      if (cell.motion && Math.abs(dx) <= 1 && Math.abs(dy) <= 1 && d < bestD) [best, bestD] = [cell, d];
+    }
+    return best;
+  }, [mrmsViewport, stormTracks.tracks]);
+  const nwsMotion = selectedStorm?.motion ?? stormTracks.tracks?.avgMotion ?? null;
+  const [manualStormMotion, setManualStormMotion] = useState(false);
+  const { setSpeedMps: setStormSpeedMps, setDirectionDeg: setStormDirectionDeg } = stormMotion;
+  useEffect(() => {
+    if (manualStormMotion || !nwsMotion) return;
+    setStormSpeedMps(Math.round(nwsMotion.speedKts * 0.514444));
+    setStormDirectionDeg((nwsMotion.fromDeg + 180) % 360); // NWS reports where storms move from.
+  }, [manualStormMotion, nwsMotion?.speedKts, nwsMotion?.fromDeg, setStormSpeedMps, setStormDirectionDeg]);
+  const stormMotionSource = manualStormMotion || !nwsMotion ? "manual" : selectedStorm ? `storm ${selectedStorm.id}` : "NWS average";
   const [dealias, setDealiasState] = useState(false);
   const [hideNonWeather, setHideNonWeatherState] = useState(false);
   const [sweepMoments, setSweepMoments] = useState<string[]>([]);
@@ -693,12 +763,29 @@ export default function App() {
     [resolveMomentForSweep, renderSelection],
   );
 
+  // A product the current tilt lacks (VEL/SRV live on split-cut tilts) jumps
+  // to the tilt nearest in elevation that carries it.
   const changeMoment = useCallback(
     (newMoment: string) => {
-      setMomentCode(newMoment);
-      if (sweepIndexRef.current !== null) renderSelection(sweepIndexRef.current, newMoment);
+      const current = sweepIndexRef.current;
+      if (current === null || !volumeMeta) return;
+      const wire = newMoment === "SRV" ? "VEL" : newMoment;
+      if (momentWireCodesForSweep(current).includes(wire)) {
+        setMomentCode(newMoment);
+        renderSelection(current, newMoment);
+        return;
+      }
+      const elevations = volumeMeta.elevationDegs;
+      let target: number | null = null;
+      for (let i = 0; i < elevations.length; i++) {
+        if (!momentWireCodesForSweep(i).includes(wire)) continue;
+        if (target === null || Math.abs(elevations[i] - elevations[current]) < Math.abs(elevations[target] - elevations[current])) target = i;
+      }
+      if (target === null) return;
+      momentCodeRef.current = newMoment;
+      changeSweep(target);
     },
-    [renderSelection],
+    [renderSelection, changeSweep, momentWireCodesForSweep, volumeMeta],
   );
 
   const stepElevation = useCallback(
@@ -780,13 +867,13 @@ export default function App() {
   }, [status, site.lat, site.lon, rangeRings]);
 
   // Data probe + geographic cursor readout.
-  const [cursor, setCursor] = useState<{ lat: number; lon: number } | null>(null);
+  const [cursor, setCursor] = useState<{ lat: number; lon: number; x: number; y: number } | null>(null);
   const [probe, setProbe] = useState<ProbeResult | null>(null);
   const lastProbeAtRef = useRef(0);
 
   const handleCursorMove = useCallback(
-    (lat: number, lon: number) => {
-      setCursor({ lat, lon });
+    (lat: number, lon: number, x: number, y: number) => {
+      setCursor({ lat, lon, x, y });
       const now = performance.now();
       // Throttle the actual wasm probe call (~30/s) -- the lat/lon readout
       // itself stays smooth since `setCursor` above runs on every event.
@@ -936,6 +1023,38 @@ export default function App() {
   // each entry so the dock never appears before the user has pressed "Get
   // Nowcast"/"Get Forecast" at least once.
   const rightPanelSections: RightPanelSection[] = [];
+  // In the right panel, not the rail: opening them there shifted every control
+  // below. The short cross-section goes above a possibly long warning text.
+  if (xsLine?.b) {
+    rightPanelSections.push({
+      key: "cross-section",
+      title: "Cross-section",
+      onDismiss: () => {
+        setXsLine(null);
+        setXsPicking(false);
+      },
+      children: (
+        <CrossSectionSlice
+          a={xsLine.a}
+          b={xsLine.b}
+          renderKey={`${currentEntry?.key ?? ""}|${momentCode ?? ""}|${activeTableJson ?? ""}|${dealias}|${hideNonWeather}`}
+          render={(a, b, cols, rows, topKm) =>
+            // SRV is derived per tilt for display and isn't in the decoded volume; slice (raw or dealiased) velocity.
+            momentCode ? crossSection(momentCode === "SRV" ? "VEL" : momentCode, a, b, cols, rows, topKm) : null
+          }
+        />
+      ),
+    });
+  }
+  if (selectedAlert) {
+    rightPanelSections.push({
+      key: "alert-detail",
+      title: "Warning",
+      children: (
+        <AlertDetail alert={selectedAlert} isActive={selectedActiveEntry !== null} onClose={() => setSelectedAlertKey(null)} />
+      ),
+    });
+  }
   if (nowcastHasContent(rainbowNowcast) && !nowcastDismissed) {
     rightPanelSections.push({
       key: "rainbow-nowcast",
@@ -953,13 +1072,15 @@ export default function App() {
     });
   }
 
+  // Every product in the volume, current tilt's first; `changeMoment` finds the tilt.
+  const volumeMoments = [...new Set([...sweepMoments, ...(volumeMeta ? volumeMeta.elevationDegs.flatMap((_, i) => momentWireCodesForSweep(i)) : [])])];
   const elevationDeg = sweepIndex !== null ? (volumeMeta?.elevationDegs[sweepIndex] ?? null) : null;
   // S11 Phase 2b: "SRV" is offered in the Moment picker only when "VEL" is
   // present on the current sweep (SRV is meaningless without a VEL moment
   // to derive from) -- a display-only addition to `sweepMoments`, which
   // itself stays exactly the real wire codes `radar-web` reports (used
   // as-is for default-sweep-index resolution and the favorites row above).
-  const momentOptions = sweepMoments.includes("VEL") ? [...sweepMoments, "SRV"] : sweepMoments;
+  const momentOptions = volumeMoments.includes("VEL") ? [...volumeMoments, "SRV"] : volumeMoments;
   // Sidebar redesign: one-line live status summaries shown next to each
   // collapsed category header -- see each `summarize*` function's doc
   // comment above. Plain derived values recomputed every render, never
@@ -973,6 +1094,9 @@ export default function App() {
   const modelForecastSummary = summarizeModelForecast(forecast.providerId, forecast.phase);
   const mapLayersSummary = summarizeMapLayers(activeMapLayer);
   const nearAlerts = alerts.activeAlerts.filter(({ alert }) => alertNearSite(alert.geometry, site));
+  // Warnings near this radar first (each group stays severity-sorted), so a
+  // local Tornado Warning never sits below hundreds of alerts elsewhere.
+  const alertList = nearAlertsOnly ? nearAlerts : [...nearAlerts, ...alerts.activeAlerts.filter((a) => !nearAlerts.includes(a))];
   const alertsSummary = summarizeAlerts(nearAlerts.length, alerts.activeAlerts.length, site.icao);
   const settingsSummary = summarizeSettings(history.entries.length, cacheLimit);
 
@@ -1164,11 +1288,6 @@ export default function App() {
               setXsLine(null);
               setXsPicking(false);
             }}
-            renderKey={`${currentEntry?.key ?? ""}|${momentCode ?? ""}|${activeTableJson ?? ""}|${dealias}|${hideNonWeather}`}
-            render={(a, b, cols, rows, topKm) =>
-              // SRV is derived per tilt for display and isn't in the decoded volume; slice (raw or dealiased) velocity.
-              momentCode ? crossSection(momentCode === "SRV" ? "VEL" : momentCode, a, b, cols, rows, topKm) : null
-            }
           />
           {momentCode && <Legend activeColorTableJson={activeTableJson} momentCode={momentCode} />}
         </section>
@@ -1183,20 +1302,20 @@ export default function App() {
           <AlertsPanel
             status={alerts.status}
             error={alerts.error}
-            alerts={nearAlertsOnly ? nearAlerts : alerts.activeAlerts}
+            alerts={alertList}
             emptyText={nearAlertsOnly ? "no polygon warnings within 460 km; zone-only watches are not placed" : undefined}
             selectedKey={selectedAlertKey}
             onSelect={handleAlertClick}
             lastPolledAt={alerts.lastPolledAt}
             heldCount={alerts.heldCount}
           />
-          {selectedAlert && (
-            <AlertDetail
-              alert={selectedAlert}
-              isActive={selectedActiveEntry !== null}
-              onClose={() => setSelectedAlertKey(null)}
-            />
-          )}
+        </SidebarCategory>
+
+        <SidebarCategory title="Storm tracks" summary={summarizeStormTracks(showStormTracks, stormTracks)}>
+          <label className="check-field">
+            <input type="checkbox" checked={showStormTracks} onChange={(e) => setShowStormTracks(e.target.checked)} />
+            <span>Show NWS storm cells, past tracks and 60-minute forecasts</span>
+          </label>
         </SidebarCategory>
 
         <SidebarCategory title="My location" summary={summarizeMyLocation(showMyLocation, myLocation, coveringMe.length)}>
@@ -1351,7 +1470,7 @@ export default function App() {
         {momentCode === "SRV" && (
           <SidebarCategory
             title="Storm motion"
-            summary={`${stormMotion.speedMps} m/s toward ${stormMotion.directionDeg}°`}
+            summary={`${stormMotion.speedMps} m/s toward ${stormMotion.directionDeg}° · ${stormMotionSource}`}
             defaultOpen
           >
             <div className="rainbow-panel-point">
@@ -1362,7 +1481,10 @@ export default function App() {
                   min={0}
                   step="1"
                   value={stormMotion.speedMps}
-                  onChange={(e) => stormMotion.setSpeedMps(Number(e.target.value))}
+                  onChange={(e) => {
+                    setManualStormMotion(true);
+                    stormMotion.setSpeedMps(Number(e.target.value));
+                  }}
                 />
               </label>
               <label
@@ -1376,10 +1498,23 @@ export default function App() {
                   max={359.999}
                   step="1"
                   value={stormMotion.directionDeg}
-                  onChange={(e) => stormMotion.setDirectionDeg(Number(e.target.value))}
+                  onChange={(e) => {
+                    setManualStormMotion(true);
+                    stormMotion.setDirectionDeg(Number(e.target.value));
+                  }}
                 />
               </label>
             </div>
+            <p className="settings-field-note">
+              {stormMotionSource === "manual"
+                ? "Using your values."
+                : `Using ${stormMotionSource} (${nwsMotion!.speedKts} kt from ${nwsMotion!.fromDeg}°). Follows the storm nearest the map center.`}
+            </p>
+            {manualStormMotion && nwsMotion && (
+              <button type="button" onClick={() => setManualStormMotion(false)}>
+                Back to automatic
+              </button>
+            )}
           </SidebarCategory>
         )}
 
@@ -1441,6 +1576,8 @@ export default function App() {
           course={xsLine}
           myLocation={myLocation.location}
           centerOnMeRequest={centerOnMeRequest}
+          stormTracks={showStormTracks || momentCode === "SRV" ? stormTracks.tracks : null}
+          selectedStormId={momentCode === "SRV" && !manualStormMotion ? (selectedStorm?.id ?? null) : null}
           forecastCanvasRef={forecastCanvasRef}
           forecastOnMap={forecastOnMap}
           forecastKey={`${forecast.providerId}|${forecast.variable}|${forecast.leadHours}|${forecast.phase}`}
@@ -1458,6 +1595,12 @@ export default function App() {
         )}
 
         <RightPanel sections={rightPanelSections} />
+        {cursor && momentCode && (
+          <div className="map-probe-tip" style={{ left: cursor.x + 14, top: cursor.y + 14 }} aria-hidden="true">
+            <strong>{probeText(probe)}</strong>
+            {probe && ` · ${probe.slantRangeKm.toFixed(0)} km ${probe.azimuthDeg.toFixed(0).padStart(3, "0")}°`}
+          </div>
+        )}
 
         {/* Forecasts live with time, never in the rail: model fields and
             Rainbow point forecasts open from the time strip. Hidden rather
