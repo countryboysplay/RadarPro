@@ -280,11 +280,14 @@ pub struct RadarWebRenderer {
     /// Whether VEL (and so SRV, probe, cross-section) shows dealiased
     /// velocity -- see [`RadarWebRenderer::set_dealias`].
     dealias: bool,
-    /// Raw VEL moments (radial order) of each sweep of `volume` that has
-    /// been dealiased in place, keyed by sweep index. Sweeps are dealiased
-    /// lazily, only when viewed, so decoding stays fast for loops/live
-    /// chunk updates.
-    raw_velocity: HashMap<usize, Vec<Moment>>,
+    /// Whether REF hides non-weather echo -- see
+    /// [`RadarWebRenderer::set_hide_non_weather`].
+    hide_non_weather: bool,
+    /// Raw moments (radial order) of each `(sweep index, moment)` of
+    /// `volume` that has been transformed in place (VEL dealiased, REF
+    /// filtered). Done lazily, only for what is viewed, so decoding stays
+    /// fast for loops/live chunk updates; restored when the toggle goes off.
+    raw_moments: HashMap<(usize, MomentKind), Vec<Moment>>,
 }
 
 #[wasm_bindgen(js_name = initGpu)]
@@ -434,7 +437,8 @@ impl RadarWebRenderer {
             selection: None,
             uploaded: None,
             dealias: false,
-            raw_velocity: HashMap::new(),
+            hide_non_weather: false,
+            raw_moments: HashMap::new(),
         })
     }
 
@@ -499,7 +503,7 @@ impl RadarWebRenderer {
         };
 
         self.volume = Some(volume);
-        self.raw_velocity.clear();
+        self.raw_moments.clear();
         // A new decode invalidates any GPU resources uploaded for the
         // previous volume's selection; `select_and_render` rebuilds them
         // lazily on the next call.
@@ -531,17 +535,25 @@ impl RadarWebRenderer {
         }
         self.dealias = enabled;
         if !enabled {
-            if let Some(volume) = self.volume.as_mut() {
-                for (index, raw) in self.raw_velocity.drain() {
-                    let velocity = volume.sweeps[index]
-                        .radials
-                        .iter_mut()
-                        .filter_map(|r| r.moments.get_mut(&MomentKind::Velocity));
-                    for (m, raw) in velocity.zip(raw) {
-                        *m = raw;
-                    }
-                }
-            }
+            self.restore_raw(MomentKind::Velocity);
+        }
+        self.uploaded = None;
+        self.selection = None;
+    }
+
+    /// Hide (`true`) or show (`false`) non-weather reflectivity -- gates
+    /// whose correlation coefficient marks them as insects, birds or clutter
+    /// (see `radar_geo::non_weather`) -- in every later REF render, probe
+    /// and cross-section, for this volume and every volume decoded
+    /// afterward.
+    #[wasm_bindgen(js_name = setHideNonWeather)]
+    pub fn set_hide_non_weather(&mut self, enabled: bool) {
+        if enabled == self.hide_non_weather {
+            return;
+        }
+        self.hide_non_weather = enabled;
+        if !enabled {
+            self.restore_raw(MomentKind::Reflectivity);
         }
         self.uploaded = None;
         self.selection = None;
@@ -659,9 +671,7 @@ impl RadarWebRenderer {
     ) -> Result<(), JsValue> {
         let moment = resolve_moment(moment_wire_code)?;
         let selection = (sweep_index as usize, moment, None);
-        if moment == MomentKind::Velocity {
-            self.dealias_sweeps_if_enabled([selection.0]);
-        }
+        self.transform_sweeps_if_enabled(moment, [selection.0]);
 
         if self.uploaded.is_none() || self.selection != Some(selection) {
             let buffer_data = {
@@ -720,7 +730,7 @@ impl RadarWebRenderer {
         };
         let moment = MomentKind::StormRelativeVelocity;
         let selection = (sweep_index as usize, moment, Some(storm_motion));
-        self.dealias_sweeps_if_enabled([selection.0]);
+        self.transform_sweeps_if_enabled(MomentKind::Velocity, [selection.0]);
 
         if self.uploaded.is_none() || self.selection != Some(selection) {
             let buffer_data = {
@@ -778,10 +788,8 @@ impl RadarWebRenderer {
         top_km: f64,
     ) -> Result<Vec<u8>, JsValue> {
         let moment = resolve_moment(moment_wire_code)?;
-        if moment == MomentKind::Velocity {
-            let count = self.volume.as_ref().map_or(0, |v| v.sweeps.len());
-            self.dealias_sweeps_if_enabled(0..count);
-        }
+        let count = self.volume.as_ref().map_or(0, |v| v.sweeps.len());
+        self.transform_sweeps_if_enabled(moment, 0..count);
         let volume = self.volume.as_ref().ok_or_else(|| {
             JsValue::from_str("crossSection called before a successful decodeVolume")
         })?;
@@ -846,9 +854,7 @@ impl RadarWebRenderer {
         cursor_lon_deg: f64,
     ) -> Result<Option<GateProbeResult>, JsValue> {
         let moment = resolve_moment(moment_wire_code)?;
-        if moment == MomentKind::Velocity {
-            self.dealias_sweeps_if_enabled([sweep_index as usize]);
-        }
+        self.transform_sweeps_if_enabled(moment, [sweep_index as usize]);
         let volume = self.volume.as_ref().ok_or_else(|| {
             JsValue::from_str("probeGate called before a successful decodeVolume")
         })?;
@@ -895,27 +901,61 @@ impl RadarWebRenderer {
 }
 
 impl RadarWebRenderer {
-    /// While dealiasing is on, dealias each of `sweeps` not already done,
-    /// keeping its raw VEL moments so [`RadarWebRenderer::set_dealias`] can
-    /// restore them.
-    fn dealias_sweeps_if_enabled(&mut self, sweeps: impl IntoIterator<Item = usize>) {
-        let Some(volume) = self.volume.as_mut().filter(|_| self.dealias) else {
+    /// If `moment` has a display transform switched on (VEL dealiasing, REF
+    /// non-weather filter), apply it in place to each of `sweeps` not
+    /// already done, keeping the raw moments so
+    /// [`RadarWebRenderer::restore_raw`] can put them back. No-op otherwise.
+    fn transform_sweeps_if_enabled(
+        &mut self,
+        moment: MomentKind,
+        sweeps: impl IntoIterator<Item = usize>,
+    ) {
+        let enabled = match moment {
+            MomentKind::Velocity => self.dealias,
+            MomentKind::Reflectivity => self.hide_non_weather,
+            _ => false,
+        };
+        let Some(volume) = self.volume.as_mut().filter(|_| enabled) else {
             return;
         };
         for index in sweeps {
-            let Some(sweep) = volume.sweeps.get_mut(index) else {
-                continue;
-            };
-            if self.raw_velocity.contains_key(&index) {
+            if index >= volume.sweeps.len() || self.raw_moments.contains_key(&(index, moment)) {
                 continue;
             }
-            let raw = sweep
+            let raw = volume.sweeps[index]
                 .radials
                 .iter()
-                .filter_map(|r| r.moments.get(&MomentKind::Velocity).cloned())
+                .filter_map(|r| r.moments.get(&moment).cloned())
                 .collect();
-            radar_geo::dealias_velocity_sweep(sweep);
-            self.raw_velocity.insert(index, raw);
+            if moment == MomentKind::Velocity {
+                radar_geo::dealias_velocity_sweep(&mut volume.sweeps[index]);
+            } else {
+                radar_geo::hide_non_weather_reflectivity(volume, index);
+            }
+            self.raw_moments.insert((index, moment), raw);
+        }
+    }
+
+    /// Put back every raw `moment` saved by
+    /// [`RadarWebRenderer::transform_sweeps_if_enabled`].
+    fn restore_raw(&mut self, moment: MomentKind) {
+        let keys: Vec<_> = self
+            .raw_moments
+            .keys()
+            .filter(|(_, kind)| *kind == moment)
+            .copied()
+            .collect();
+        for key in keys {
+            let raw = self.raw_moments.remove(&key).unwrap_or_default();
+            if let Some(sweep) = self.volume.as_mut().and_then(|v| v.sweeps.get_mut(key.0)) {
+                let current = sweep
+                    .radials
+                    .iter_mut()
+                    .filter_map(|r| r.moments.get_mut(&moment));
+                for (m, raw) in current.zip(raw) {
+                    *m = raw;
+                }
+            }
         }
     }
 

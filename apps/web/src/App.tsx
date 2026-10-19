@@ -324,6 +324,7 @@ export default function App() {
     renderedRangeKm,
     crossSection,
     setDealias,
+    setHideNonWeather,
   } = useRadarRenderer(canvasRef);
 
   // S11 Phase 2b: Storm-Relative Velocity's storm-motion input state -- see
@@ -566,6 +567,7 @@ export default function App() {
   const [sweepIndex, setSweepIndex] = useState<number | null>(null);
   const [momentCode, setMomentCode] = useState<string | null>(null);
   const [dealias, setDealiasState] = useState(false);
+  const [hideNonWeather, setHideNonWeatherState] = useState(false);
   const [sweepMoments, setSweepMoments] = useState<string[]>([]);
   const [colorTableVersion, setColorTableVersion] = useState(0);
 
@@ -1106,7 +1108,7 @@ export default function App() {
               setXsLine(null);
               setXsPicking(false);
             }}
-            renderKey={`${currentEntry?.key ?? ""}|${momentCode ?? ""}|${activeTableJson ?? ""}|${dealias}`}
+            renderKey={`${currentEntry?.key ?? ""}|${momentCode ?? ""}|${activeTableJson ?? ""}|${dealias}|${hideNonWeather}`}
             render={(a, b, cols, rows, topKm) =>
               // SRV is derived per tilt for display and isn't in the decoded volume; slice (raw or dealiased) velocity.
               momentCode ? crossSection(momentCode === "SRV" ? "VEL" : momentCode, a, b, cols, rows, topKm) : null
@@ -1185,6 +1187,26 @@ export default function App() {
             />
           )}
         </SidebarCategory>
+
+        {momentCode === "REF" && (
+          <SidebarCategory title="Reflectivity" summary={hideNonWeather ? "weather only" : "all echo"} defaultOpen>
+            <label
+              className="check-field"
+              title="Hide weak echo that dual-pol marks as insects, birds or ground clutter (low correlation coefficient, or insect-like ZDR under 30 dBZ). Echo of 35 dBZ and up is always shown, so hail and tornado debris stay visible."
+            >
+              <input
+                type="checkbox"
+                checked={hideNonWeather}
+                onChange={(e) => {
+                  setHideNonWeather(e.target.checked);
+                  setHideNonWeatherState(e.target.checked);
+                  if (sweepIndex !== null && momentCode) renderSelection(sweepIndex, momentCode);
+                }}
+              />
+              <span>Hide non-weather echo</span>
+            </label>
+          </SidebarCategory>
+        )}
 
         {(momentCode === "VEL" || momentCode === "SRV") && (
           <SidebarCategory title="Velocity" summary={dealias ? "dealiased" : "raw"} defaultOpen>

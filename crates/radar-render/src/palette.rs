@@ -71,10 +71,11 @@ pub fn default_ref_palette_stops() -> Vec<PaletteStop> {
     vec![
         PaletteStop::new(DEFAULT_REF_MIN_DBZ, [0, 0, 0, 0]), // fully transparent floor
         PaletteStop::new(5.0, [0, 0, 0, 0]),                 // still transparent just below signal
-        PaletteStop::new(5.01, [64, 170, 64, 255]),          // faint returns: dark green
-        PaletteStop::new(25.0, [0, 220, 0, 255]),            // green
-        PaletteStop::new(40.0, [230, 220, 0, 255]),          // yellow
-        PaletteStop::new(55.0, [230, 90, 0, 255]),           // orange
+        PaletteStop::new(5.01, [60, 80, 60, 40]), // faint (clear-air) returns: dim grey, see-through
+        PaletteStop::new(15.0, [50, 120, 50, 120]), // still subdued; full green at 25 dBZ (light rain)
+        PaletteStop::new(25.0, [0, 220, 0, 255]),   // green
+        PaletteStop::new(40.0, [230, 220, 0, 255]), // yellow
+        PaletteStop::new(55.0, [230, 90, 0, 255]),  // orange
         PaletteStop::new(DEFAULT_REF_MAX_DBZ, [200, 0, 0, 255]), // red, most intense
     ]
 }

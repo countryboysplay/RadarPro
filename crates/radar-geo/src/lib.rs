@@ -49,6 +49,7 @@ pub mod beam;
 pub mod dealias;
 pub mod earth;
 pub mod lookup;
+pub mod non_weather;
 pub mod spherical;
 pub mod storm_relative_velocity;
 
@@ -58,6 +59,7 @@ pub use lookup::{
     cursor_to_polar, find_gate_index, find_radial_index, find_radial_index_for_sweep,
     locate_gate_value, locate_radial_gate, PolarCoord, RadialGate,
 };
+pub use non_weather::hide_non_weather_reflectivity;
 pub use spherical::{
     destination_point, distance_bearing, range_ring, range_rings, GreatCircle, LatLon,
 };

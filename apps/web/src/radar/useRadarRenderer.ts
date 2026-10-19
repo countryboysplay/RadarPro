@@ -306,6 +306,17 @@ export function useRadarRenderer(canvasRef: RefObject<HTMLCanvasElement>) {
     }
   }, []);
 
+  /** Hide (`true`) or show (`false`) non-weather reflectivity (low-CC
+   * insects/birds/clutter) in later REF renders, probes and cross-sections.
+   * Re-render the selection afterward. */
+  const setHideNonWeather = useCallback((enabled: boolean): void => {
+    try {
+      rendererRef.current?.setHideNonWeather(enabled);
+    } catch (err) {
+      console.error("setHideNonWeather failed:", errMessage(err));
+    }
+  }, []);
+
   /** The active color table for `momentCode`, as its original JSON text --
    * for the color-table editor to display/edit. `null` if unavailable. */
   const activeColorTableJson = useCallback((momentCode: string): string | null => {
@@ -431,6 +442,7 @@ export function useRadarRenderer(canvasRef: RefObject<HTMLCanvasElement>) {
     loadColorTable,
     resetColorTable,
     setDealias,
+    setHideNonWeather,
     activeColorTableJson,
     probeGate,
     rangeRings,
