@@ -682,8 +682,14 @@ export function MapView({
     }
   }, [rainbowTileUrlTemplate, rainbowMaxZoom]);
 
-  // Recenter on the selected site, and keep the radar canvas's on-screen
-  // position/size synchronized to the map viewport (pan/zoom/resize).
+  // Recenter only when the site changes. Not on a new sweep range: that
+  // changes with product, tilt and live scans, and would undo the user's pan.
+  useEffect(() => {
+    mapRef.current?.easeTo({ center: [site.lon, site.lat], duration: 600 });
+  }, [site.lon, site.lat]);
+
+  // Keep the radar canvas's on-screen position/size synchronized to the
+  // map viewport (pan/zoom/resize).
   useEffect(() => {
     const map = mapRef.current;
     const canvas = canvasRef.current;
@@ -762,8 +768,6 @@ export function MapView({
       // worth actually re-rendering for (debounced, generation-guarded).
       onMrmsViewportChangeRef.current?.(viewportFromMapBounds(map));
     }
-
-    map.easeTo({ center: [site.lon, site.lat], duration: 600 });
 
     // MapLibre fires `move` continuously during pan/zoom/fly animations,
     // `zoom` specifically on zoom changes, and `resize` when the map
