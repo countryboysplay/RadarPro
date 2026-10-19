@@ -283,7 +283,8 @@ const FORECAST_AMBER = "#f0b84a";
 /**
  * NWS storm cells: observed track in Paper Ink, the NWS 15-60 min forecast
  * in Forecast Amber (it is forecast time, see DESIGN.md), each cell's ID by
- * its dot, plus hazards in Danger Red: severe hail size and TVS triangles. Same casing as the course so tracks read over any echo.
+ * its dot, plus hazards in Danger Red: severe hail size, mesocyclone circles
+ * and TVS triangles. Same casing as the course so tracks read over any echo.
  */
 function drawStormTracks(map: MapLibreMap, canvas: HTMLCanvasElement, tracks: StormTracks | null, selectedId: string | null) {
   const ctx = canvas.getContext("2d");
@@ -355,6 +356,23 @@ function drawStormTracks(map: MapLibreMap, canvas: HTMLCanvasElement, tracks: St
       ctx.fillText(size, x, p.y - 9);
     }
   }
+  // Mesocyclones: a danger-red circle at the circulation's own size (never
+  // under 9px); solid when its base is near the ground, dashed when aloft.
+  for (const meso of tracks.mesos) {
+    const p = map.project(meso.at);
+    const r = Math.max(9, radiusPx(map, { lon: meso.at[0], lat: meso.at[1] }, meso.radiusKm));
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, r, 0, 2 * Math.PI);
+    ctx.setLineDash([]);
+    ctx.lineWidth = 6;
+    ctx.strokeStyle = COURSE_CASING;
+    ctx.stroke();
+    ctx.setLineDash(meso.lowLevel ? [] : [5, 4]);
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = DANGER_RED;
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
   // TVS: a point-down triangle in danger red, on top of everything else;
   // hollow for an elevated TVS (rotation aloft, not yet near the ground).
   for (const tvs of tracks.tvs) {

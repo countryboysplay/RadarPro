@@ -1,7 +1,8 @@
 // @ts-expect-error -- the app tsconfig has no Node types; vitest runs under Node.
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { parseHail, parseNst, parseTvs } from "../storms/nst";
+import { parseHail, parseMeso, parseNst, parseTvs } from "../storms/nst";
+import { nearbyHazards } from "../storms/nearbyHazards";
 import { parseObjectKey } from "../nexrad/keys";
 import { clampHistoryLimit, historyReducer, initialState } from "../scan/useScanHistory";
 import { alertNearSite, pointInAlertGeometry } from "../alerts/geometryHitTest";
@@ -235,5 +236,38 @@ describe("TVS and hail (KVWX, Owensboro KY hail event, 2025-03-15 10:01Z)", () =
 
   it("rejects the wrong product", () => {
     expect(() => parseTvs(fixture("KVWX_NHI_20250315_1001"))).toThrow(/NTV/);
+  });
+
+  it("ties the TVS to its storm", () => {
+    expect(parseTvs(fixture("KVWX_NTV_20250315_1001")).tvs[0].stormId).toBe("L8");
+  });
+
+  it("reads mesocyclones where the table says (284 at 096/57, 677 at 136/49, 350 at 126/51)", () => {
+    const { mesos, scanTimeMs: t } = parseMeso(fixture("KVWX_NMD_20250315_1001"));
+    expect(t).toBe(scanTimeMs);
+    expect(mesos.map((m) => m.id)).toEqual(["284", "677", "350"]);
+    expect(mesos.every((m) => m.lowLevel)).toBe(true);
+    const table: Record<string, [number, number]> = { "284": [96, 57], "677": [136, 49], "350": [126, 51] };
+    for (const m of mesos) {
+      const { km, deg } = legLengthAndBearing(radar, { lon: m.at[0], lat: m.at[1] });
+      expect(Math.abs(deg - table[m.id][0]), m.id).toBeLessThanOrEqual(1);
+      expect(Math.abs(km / 1.852 - table[m.id][1]), m.id).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it("alerts on the TVS, mesocyclones and hail near Owensboro, and nothing far away", () => {
+    const tracks = parseNst(fixture("KVWX_NST_20250315_1001"));
+    tracks.tvs = parseTvs(fixture("KVWX_NTV_20250315_1001")).tvs;
+    tracks.mesos = parseMeso(fixture("KVWX_NMD_20250315_1001")).mesos;
+    const hail = parseHail(fixture("KVWX_NHI_20250315_1001")).hail;
+    for (const cell of tracks.cells) cell.hail = hail.get(cell.id) ?? null;
+
+    const owensboro = { lat: 37.774, lon: -87.113 };
+    const keys = nearbyHazards(owensboro, tracks).map((h) => h.key);
+    expect(keys).toContain("tvs:L8");
+    expect(keys).toContain("meso:677");
+    expect(keys).toContain("hail:L8");
+    expect(keys).not.toContain("meso:284"); // 096 deg, well north-east of town
+    expect(nearbyHazards({ lat: 35.0, lon: -97.0 }, tracks)).toEqual([]);
   });
 });

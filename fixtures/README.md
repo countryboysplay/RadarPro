@@ -66,11 +66,13 @@ Single GRIB2 messages byte-range-fetched from the public HRRR bucket
 | `KVWX_NST_20250315_1001` | Storm Tracking Information (58, NST), 28 cells | 2025-03-15 10:01:50 | NOAA Level 3 archive on Google Cloud (`gcp-public-data-nexrad-l3`, KVWX daily tar), unmodified |
 | `KVWX_NHI_20250315_1001` | Hail Index (59, NHI) | same volume | same |
 | `KVWX_NTV_20250315_1001` | Tornado Vortex Signature (61, NTV), 1 TVS | same volume | same |
+| `KVWX_NMD_20250315_1001` | Mesocyclone (141, NMD), 3 rank 5+ circulations | same volume | same |
 
 Used by `apps/web`'s NST parser test. Its text table (Q8 at 108°/121 nm,
 average motion 8 kt from 50°) is what the test checks against.
 
 The KVWX trio is the March 15, 2025 Owensboro, KY severe hail event: cell L8
-with a 2.75" hail estimate and a TVS at 131°/47 nm, A0 2.25", L5 1.25". The
-TVS/hail tests check against those text tables. (The Unidata Level 3 bucket
+with a 2.75" hail estimate and a TVS at 131°/47 nm, A0 2.25", L5 1.25", and
+mesocyclones 284, 677 and 350. The TVS/hail/mesocyclone tests check against
+those text tables. (The Unidata Level 3 bucket
 has no NHI/NTV after 2021; NOAA's Google Cloud archive has them.)

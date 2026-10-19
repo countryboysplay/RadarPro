@@ -1,7 +1,8 @@
 // NWS Level 3 storm products. Storm Tracking Information (58, "NST"): each
 // storm cell's current position, past track and 15-60 min forecast track,
-// plus the average storm motion. Tornado Vortex Signature (61, "NTV") and
-// Hail Index (59, "NHI") add TVS markers and hail estimates. Latest issue
+// plus the average storm motion. Tornado Vortex Signature (61, "NTV"), Hail
+// Index (59, "NHI") and Mesocyclone (141, "NMD") add TVS markers, hail
+// estimates and mesocyclone circles. Latest issue
 // only, from tgftp (see `fetchStormProduct`).
 
 import { isDesktop } from "../platform/desktop";
@@ -40,6 +41,8 @@ export interface HailEstimate {
 }
 
 export interface TvsDetection {
+  /** Storm cell ID the TVS belongs to. */
+  stormId: string;
   at: LonLat;
   /** An elevated TVS (ETVS): rotation aloft, not yet near the ground. */
   elevated: boolean;
@@ -51,6 +54,18 @@ export interface StormTracks {
   avgMotion: StormMotionReport | null;
   /** From the TVS product; empty when none, or when that product is unavailable. */
   tvs: TvsDetection[];
+  /** From the mesocyclone product, likewise. */
+  mesos: Mesocyclone[];
+}
+
+/** A strength rank 5+ circulation from the Mesocyclone Detection Algorithm. */
+export interface Mesocyclone {
+  /** NWS circulation ID, e.g. "284". */
+  id: string;
+  at: LonLat;
+  radiusKm: number;
+  /** Base within 1 km of the ground (or on the lowest tilt): the dangerous kind. */
+  lowLevel: boolean;
 }
 
 const EARTH_RADIUS_KM = 6371;
@@ -139,6 +154,7 @@ export function parseNst(bytes: Uint8Array): StormTracks {
     cells,
     avgMotion: avg ? { speedKts: Number(avg[1]), fromDeg: Number(avg[2]) } : null,
     tvs: [],
+    mesos: [],
   };
 }
 
@@ -146,10 +162,32 @@ export function parseNst(bytes: Uint8Array): StormTracks {
 export function parseTvs(bytes: Uint8Array): { scanTimeMs: number; tvs: TvsDetection[] } {
   const { scanTimeMs, point, packets } = readProduct(bytes, 61, "tornado vortex signature (NTV)");
   const tvs: TvsDetection[] = [];
+  // Each TVS is followed by its storm ID packet (15).
   packets((code, start) => {
-    if (code === 12 || code === 26) tvs.push({ at: point(start), elevated: code === 26 });
+    if (code === 12 || code === 26) tvs.push({ stormId: "", at: point(start), elevated: code === 26 });
+    else if (code === 15 && tvs.length > 0) tvs[tvs.length - 1].stormId = String.fromCharCode(bytes[start + 4], bytes[start + 5]);
   });
   return { scanTimeMs, tvs };
+}
+
+/** Parse a raw mesocyclone product (141, NMD): each rank 5+ circulation, as a
+ * point feature (20) of type 9 (low base) or 10 (higher base) followed by
+ * its ID in a text packet (8). Weaker circulations (type 11) are left out. */
+export function parseMeso(bytes: Uint8Array): { scanTimeMs: number; mesos: Mesocyclone[] } {
+  const { v, scanTimeMs, point, packets } = readProduct(bytes, 141, "mesocyclone (NMD)");
+  const mesos: Mesocyclone[] = [];
+  let last: Mesocyclone | null = null;
+  packets((code, start, length) => {
+    if (code === 20) {
+      const type = v.getUint16(start + 4);
+      last = type === 9 || type === 10 ? { id: "", at: point(start), radiusKm: v.getUint16(start + 6) / 4, lowLevel: type === 9 } : null;
+      if (last) mesos.push(last);
+    } else if (code === 8 && last) {
+      last.id = String.fromCharCode(...bytes.subarray(start + 6, start + length)).trim();
+      last = null;
+    }
+  });
+  return { scanTimeMs, mesos };
 }
 
 /** Parse a raw hail index product (59, NHI) into estimates by storm cell ID. Its
@@ -167,7 +205,7 @@ export function parseHail(bytes: Uint8Array): { scanTimeMs: number; hail: Map<st
 }
 
 /** NWS radar products this app reads, by their tgftp directory name. */
-export type StormProduct = "58sti" | "61tvs" | "p59hi";
+export type StormProduct = "58sti" | "61tvs" | "p59hi" | "141md";
 
 /** Latest issue of `product` for `icao`. tgftp has no CORS: desktop relays it, the browser build goes through Vite's `/tgftp` proxy. */
 export async function fetchStormProduct(product: StormProduct, icao: string, signal?: AbortSignal): Promise<Uint8Array> {

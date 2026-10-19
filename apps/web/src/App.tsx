@@ -62,6 +62,7 @@ import { UnifiedTimeline } from "./timeline/UnifiedTimeline";
 import { Icon } from "./ui/Icon";
 import { useStormTracks } from "./storms/useStormTracks";
 import type { StormCell } from "./storms/nst";
+import { nearbyHazards } from "./storms/nearbyHazards";
 
 /** Fixed reference radii (km) for the range rings drawn around the
  * selected site -- a documented, reasonable default (not derived from any
@@ -225,9 +226,10 @@ function summarizeStormTracks(on: boolean, { tracks, error }: ReturnType<typeof 
   const time = new Date(tracks.scanTimeMs).toISOString().slice(11, 16);
   const parts = [`${tracks.cells.length} cell${tracks.cells.length === 1 ? "" : "s"}`];
   // Hazards first in the heading, so they read even with the section closed.
+  if (tracks.mesos.length > 0) parts.unshift(`${tracks.mesos.length} meso`);
   if (tracks.tvs.length > 0) parts.unshift(`${tracks.tvs.length} TVS`);
   const maxHail = Math.max(0, ...tracks.cells.map((c) => c.hail?.sizeIn ?? 0));
-  if (maxHail >= 1) parts.splice(tracks.tvs.length > 0 ? 1 : 0, 0, `hail to ${maxHail.toFixed(2)}″`);
+  if (maxHail >= 1) parts.splice(parts.length - 1, 0, `hail to ${maxHail.toFixed(2)}″`);
   return `${parts.join(" · ")} · ${time}Z`;
 }
 
@@ -674,6 +676,24 @@ export default function App() {
   // NWS storm cells, on by default; SRV needs them even when hidden.
   const [showStormTracks, setShowStormTracks] = useState(true);
   const stormTracks = useStormTracks(icao, showStormTracks || momentCode === "SRV");
+  // Same notification and sound as a covering warning when a TVS, mesocyclone
+  // or severe hail comes within ~15 mi of you; each hazard once while it stays near.
+  // shortcut: only the selected radar's storms; check nearby radars too if chasers
+  // often watch a site other than their own.
+  const notifiedHazardsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!notifyCovering) {
+      notifiedHazardsRef.current = new Set();
+      return;
+    }
+    if (!myLocation.location || !stormTracks.tracks) return;
+    const hazards = nearbyHazards(myLocation.location, stormTracks.tracks);
+    const fresh = hazards.filter(({ key }) => !notifiedHazardsRef.current.has(key));
+    notifiedHazardsRef.current = new Set(hazards.map(({ key }) => key));
+    if (fresh.length === 0) return;
+    if (notifySound) playAlertTone();
+    for (const hazard of fresh) showNotification(hazard.title, hazard.body, hazard.key, hazard.urgent, () => {});
+  }, [myLocation.location, stormTracks.tracks, notifyCovering, notifySound]);
   // SRV follows the on-screen storm nearest the map center (pan to a storm to
   // pick it), else the NWS average, until the user types their own values.
   const selectedStorm = useMemo(() => {
@@ -1319,7 +1339,7 @@ export default function App() {
         <SidebarCategory title="Storm tracks" summary={summarizeStormTracks(showStormTracks, stormTracks)}>
           <label className="check-field">
             <input type="checkbox" checked={showStormTracks} onChange={(e) => setShowStormTracks(e.target.checked)} />
-            <span>Show NWS storm cells, tracks, TVS and severe hail</span>
+            <span>Show NWS storm cells, tracks, TVS, mesocyclones and severe hail</span>
           </label>
         </SidebarCategory>
 
@@ -1345,7 +1365,7 @@ export default function App() {
                 setNotifyCovering(on);
               }}
             />
-            <span>Notify me when a warning covers my location</span>
+            <span>Notify me when a warning covers my location, or a TVS, mesocyclone or severe hail is within 15 mi</span>
           </label>
           <label className="check-field">
             <input type="checkbox" checked={notifySound} disabled={!notifyCovering} onChange={(e) => setNotifySound(e.target.checked)} />
