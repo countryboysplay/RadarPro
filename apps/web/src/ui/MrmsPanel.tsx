@@ -8,6 +8,7 @@ const PRODUCTS: { id: MrmsProductId; label: string }[] = [
   { id: "hail_size_60min", label: "Max Hail Size, 60 min (mm)" },
   { id: "echo_top_18", label: "Echo Tops, 18 dBZ (km)" },
   { id: "vil", label: "VIL (kg/m²)" },
+  { id: "lightning_5min", label: "Lightning, 5 min (flashes/km²)" },
 ];
 
 function formatTime(iso: string | undefined): string {

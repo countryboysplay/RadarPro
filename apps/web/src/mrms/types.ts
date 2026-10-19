@@ -12,7 +12,7 @@
 // naming" discipline this mirrors.
 
 /** The two concrete products `mrms-web`'s `MrmsHandle` accepts. */
-export type MrmsProductId = "reflectivity" | "precip_rate" | "hail_size_60min" | "echo_top_18" | "vil" | "qpe_1h";
+export type MrmsProductId = "reflectivity" | "precip_rate" | "hail_size_60min" | "echo_top_18" | "vil" | "qpe_1h" | "lightning_5min";
 
 /** Mirrors `SnapshotMetadataJson` -- the snapshot `discoverLatestSnapshot`
  * resolved to (not yet fetched/decoded). */

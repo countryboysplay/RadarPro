@@ -54,6 +54,60 @@ const CALL_TIMEOUT_MS = 35_000;
  * to never visibly affect any real viewport. */
 const MIN_HALF_EXTENT_DEG = 1e-4;
 
+/** Products drawn as one fixed-size marker per cell (via
+ * `MrmsHandle.valuePoints`) instead of a GPU raster: a lightning strike is a
+ * single ~1 km cell, which a per-pixel raster drops entirely once a screen
+ * pixel covers more than a cell. */
+const POINT_PRODUCTS: ReadonlySet<MrmsProductId> = new Set(["lightning_5min"]);
+
+/** Strike marker fill by flash density (flashes/km^2 -- one flash in a cell
+ * reads ~0.9), matching `mrms::palette`'s lightning ramp stops. */
+function strikeColor(value: number): string {
+  if (value >= 10) return "#ffffff";
+  if (value >= 5) return "#dc0000";
+  if (value >= 2) return "#e67800";
+  return "#e6dc00";
+}
+
+/** Lightning-bolt outline, unit half-height, centered on the strike. */
+const BOLT: readonly [number, number][] = [
+  [0.35, -1], [-0.6, 0.15], [-0.05, 0.15], [-0.35, 1], [0.65, -0.25], [0.1, -0.25],
+];
+
+function mercatorY(latDeg: number): number {
+  const lat = (latDeg * Math.PI) / 180;
+  return Math.log(Math.tan(Math.PI / 4 + lat / 2));
+}
+
+/** Draw `points` (flat `[lon, lat, value, ...]`) as bolts on `canvas`,
+ * which covers exactly `vp`. Uses Web Mercator for y (the map's own
+ * projection), so markers sit exactly where the basemap puts them. */
+function drawPoints(canvas: HTMLCanvasElement, vp: MrmsViewport, points: Float32Array) {
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  const { width, height } = canvas;
+  ctx.clearRect(0, 0, width, height);
+  const dpr = canvas.clientWidth > 0 ? width / canvas.clientWidth : 1;
+  const west = vp.centerLon - vp.halfExtentLon;
+  const yNorth = mercatorY(vp.centerLat + vp.halfExtentLat);
+  const ySouth = mercatorY(vp.centerLat - vp.halfExtentLat);
+  ctx.lineWidth = dpr;
+  ctx.lineJoin = "round";
+  ctx.strokeStyle = "rgba(0, 0, 0, 0.85)";
+  for (let i = 0; i + 2 < points.length; i += 3) {
+    const x = ((points[i] - west) / (2 * vp.halfExtentLon)) * width;
+    const y = ((yNorth - mercatorY(points[i + 1])) / (yNorth - ySouth)) * height;
+    const r = (8 + 2 * Math.min(points[i + 2], 4)) * dpr; // ~20 css px tall for one flash
+    if (x < -r || y < -r || x > width + r || y > height + r) continue;
+    ctx.beginPath();
+    for (const [bx, by] of BOLT) ctx.lineTo(x + bx * r, y + by * r);
+    ctx.closePath();
+    ctx.fillStyle = strikeColor(points[i + 2]);
+    ctx.fill();
+    ctx.stroke();
+  }
+}
+
 function withTimeout<T>(promise: Promise<T>, label: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(() => {
@@ -189,6 +243,8 @@ export function useMrmsOverlay(
   const handleRef = useRef<MrmsHandle | null>(null);
   const generationRef = useRef(0);
   const boundsRef = useRef<MrmsSignedBounds | null>(null);
+  /** Set (after a fetch) only for `POINT_PRODUCTS`; drawn instead of rendered. */
+  const pointsRef = useRef<Float32Array | null>(null);
   const viewportRef = useRef<MrmsViewport | null>(viewport);
   viewportRef.current = viewport;
   const debounceTimerRef = useRef<number | null>(null);
@@ -256,6 +312,12 @@ export function useMrmsOverlay(
       const height = canvas.height;
       if (width === 0 || height === 0) return; // canvas not laid out yet.
 
+      if (pointsRef.current) {
+        drawPoints(canvas, vp, pointsRef.current);
+        setState((s) => (generation === generationRef.current ? { ...s, phase: "ready", error: null } : s));
+        return;
+      }
+
       setState((s) => (generation === generationRef.current ? { ...s, phase: "rendering", error: null } : s));
       try {
         const pixels = (await withTimeout(
@@ -307,6 +369,7 @@ export function useMrmsOverlay(
       clearDebounceTimer();
       freeHandle();
       boundsRef.current = null;
+      pointsRef.current = null;
       clearCanvas();
       setState({ phase: "loading-module", error: null, snapshot: null, grid: null });
 
@@ -331,6 +394,7 @@ export function useMrmsOverlay(
           if (generation !== generationRef.current) return;
           const grid = JSON.parse(gridJson) as MrmsGridMetadata;
           boundsRef.current = signedBoundsFromGeometry(grid.geometry);
+          pointsRef.current = POINT_PRODUCTS.has(product) ? handle.valuePoints() : null;
 
           const vp = viewportRef.current;
           setState((s) => (generation === generationRef.current ? { ...s, grid, phase: vp ? "rendering" : "ready" } : s));
@@ -357,6 +421,7 @@ export function useMrmsOverlay(
       clearDebounceTimer();
       freeHandle();
       boundsRef.current = null;
+      pointsRef.current = null;
       clearCanvas();
       setState({ phase: "idle", error: null, snapshot: null, grid: null });
       return;

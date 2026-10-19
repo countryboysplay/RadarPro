@@ -88,7 +88,7 @@ use radar_render::gpu::{
 use radar_render::lookup_texture::{build_radial_lookup, DEFAULT_LOOKUP_TEXEL_COUNT};
 use radar_render::palette::PALETTE_TEXEL_COUNT;
 use radar_render::sweep_buffers::{build_sweep_buffers, GpuRadialMeta, SweepBufferData};
-use radar_types::{AzimuthResolution, GateValue, MomentKind, Volume};
+use radar_types::{AzimuthResolution, GateValue, Moment, MomentKind, Volume};
 
 use crate::{render_select, srv_select, sweep_select};
 
@@ -277,6 +277,14 @@ pub struct RadarWebRenderer {
     /// doc comment for why this must not collapse to a stale GPU upload.
     selection: Option<(usize, MomentKind, Option<StormMotion>)>,
     uploaded: Option<UploadedSweep>,
+    /// Whether VEL (and so SRV, probe, cross-section) shows dealiased
+    /// velocity -- see [`RadarWebRenderer::set_dealias`].
+    dealias: bool,
+    /// Raw VEL moments (radial order) of each sweep of `volume` that has
+    /// been dealiased in place, keyed by sweep index. Sweeps are dealiased
+    /// lazily, only when viewed, so decoding stays fast for loops/live
+    /// chunk updates.
+    raw_velocity: HashMap<usize, Vec<Moment>>,
 }
 
 #[wasm_bindgen(js_name = initGpu)]
@@ -425,6 +433,8 @@ impl RadarWebRenderer {
             color_tables: HashMap::new(),
             selection: None,
             uploaded: None,
+            dealias: false,
+            raw_velocity: HashMap::new(),
         })
     }
 
@@ -489,6 +499,7 @@ impl RadarWebRenderer {
         };
 
         self.volume = Some(volume);
+        self.raw_velocity.clear();
         // A new decode invalidates any GPU resources uploaded for the
         // previous volume's selection; `select_and_render` rebuilds them
         // lazily on the next call.
@@ -510,6 +521,32 @@ impl RadarWebRenderer {
     /// (SRV is meaningless without a VEL moment to derive from), and must
     /// call [`RadarWebRenderer::select_and_render_storm_relative_velocity`]
     /// rather than pass `"SRV"` here or to `selectAndRender`.
+    /// Show dealiased (`true`) or raw (`false`) radial velocity in every
+    /// later VEL/SRV render, VEL probe and VEL cross-section, for this
+    /// volume and every volume decoded afterward.
+    #[wasm_bindgen(js_name = setDealias)]
+    pub fn set_dealias(&mut self, enabled: bool) {
+        if enabled == self.dealias {
+            return;
+        }
+        self.dealias = enabled;
+        if !enabled {
+            if let Some(volume) = self.volume.as_mut() {
+                for (index, raw) in self.raw_velocity.drain() {
+                    let velocity = volume.sweeps[index]
+                        .radials
+                        .iter_mut()
+                        .filter_map(|r| r.moments.get_mut(&MomentKind::Velocity));
+                    for (m, raw) in velocity.zip(raw) {
+                        *m = raw;
+                    }
+                }
+            }
+        }
+        self.uploaded = None;
+        self.selection = None;
+    }
+
     #[wasm_bindgen(js_name = momentWireCodesForSweep)]
     pub fn moment_wire_codes_for_sweep(&self, sweep_index: u32) -> Result<Vec<String>, JsValue> {
         let volume = self.volume.as_ref().ok_or_else(|| {
@@ -622,6 +659,9 @@ impl RadarWebRenderer {
     ) -> Result<(), JsValue> {
         let moment = resolve_moment(moment_wire_code)?;
         let selection = (sweep_index as usize, moment, None);
+        if moment == MomentKind::Velocity {
+            self.dealias_sweeps_if_enabled([selection.0]);
+        }
 
         if self.uploaded.is_none() || self.selection != Some(selection) {
             let buffer_data = {
@@ -680,6 +720,7 @@ impl RadarWebRenderer {
         };
         let moment = MomentKind::StormRelativeVelocity;
         let selection = (sweep_index as usize, moment, Some(storm_motion));
+        self.dealias_sweeps_if_enabled([selection.0]);
 
         if self.uploaded.is_none() || self.selection != Some(selection) {
             let buffer_data = {
@@ -726,7 +767,7 @@ impl RadarWebRenderer {
     #[wasm_bindgen(js_name = crossSection)]
     #[allow(clippy::too_many_arguments)]
     pub fn cross_section(
-        &self,
+        &mut self,
         moment_wire_code: &str,
         start_lat: f64,
         start_lon: f64,
@@ -737,6 +778,10 @@ impl RadarWebRenderer {
         top_km: f64,
     ) -> Result<Vec<u8>, JsValue> {
         let moment = resolve_moment(moment_wire_code)?;
+        if moment == MomentKind::Velocity {
+            let count = self.volume.as_ref().map_or(0, |v| v.sweeps.len());
+            self.dealias_sweeps_if_enabled(0..count);
+        }
         let volume = self.volume.as_ref().ok_or_else(|| {
             JsValue::from_str("crossSection called before a successful decodeVolume")
         })?;
@@ -792,7 +837,7 @@ impl RadarWebRenderer {
 
     #[wasm_bindgen(js_name = probeGate)]
     pub fn probe_gate(
-        &self,
+        &mut self,
         site_lat_deg: f64,
         site_lon_deg: f64,
         sweep_index: u32,
@@ -801,6 +846,9 @@ impl RadarWebRenderer {
         cursor_lon_deg: f64,
     ) -> Result<Option<GateProbeResult>, JsValue> {
         let moment = resolve_moment(moment_wire_code)?;
+        if moment == MomentKind::Velocity {
+            self.dealias_sweeps_if_enabled([sweep_index as usize]);
+        }
         let volume = self.volume.as_ref().ok_or_else(|| {
             JsValue::from_str("probeGate called before a successful decodeVolume")
         })?;
@@ -847,6 +895,30 @@ impl RadarWebRenderer {
 }
 
 impl RadarWebRenderer {
+    /// While dealiasing is on, dealias each of `sweeps` not already done,
+    /// keeping its raw VEL moments so [`RadarWebRenderer::set_dealias`] can
+    /// restore them.
+    fn dealias_sweeps_if_enabled(&mut self, sweeps: impl IntoIterator<Item = usize>) {
+        let Some(volume) = self.volume.as_mut().filter(|_| self.dealias) else {
+            return;
+        };
+        for index in sweeps {
+            let Some(sweep) = volume.sweeps.get_mut(index) else {
+                continue;
+            };
+            if self.raw_velocity.contains_key(&index) {
+                continue;
+            }
+            let raw = sweep
+                .radials
+                .iter()
+                .filter_map(|r| r.moments.get(&MomentKind::Velocity).cloned())
+                .collect();
+            radar_geo::dealias_velocity_sweep(sweep);
+            self.raw_velocity.insert(index, raw);
+        }
+    }
+
     /// If `moment` is the moment of the currently-uploaded selection,
     /// invalidate the upload so the next `selectAndRender` call rebuilds
     /// it with the (now-changed) active color table -- called after

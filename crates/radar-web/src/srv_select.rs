@@ -79,6 +79,7 @@ fn transform_radial(radial: &Radial, storm_motion: StormMotion) -> Radial {
         elevation_angle_deg: radial.elevation_angle_deg,
         radial_status: radial.radial_status,
         collection_time: radial.collection_time,
+        nyquist_velocity_mps: radial.nyquist_velocity_mps,
         moments,
     }
 }
@@ -117,6 +118,7 @@ mod tests {
                 bad_data: false,
             },
             collection_time: Timestamp::from_epoch_millis(0),
+            nyquist_velocity_mps: None,
             moments,
         }
     }
@@ -132,6 +134,7 @@ mod tests {
                 bad_data: false,
             },
             collection_time: Timestamp::from_epoch_millis(0),
+            nyquist_velocity_mps: None,
             moments: BTreeMap::new(),
         }
     }

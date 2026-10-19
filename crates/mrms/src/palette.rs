@@ -131,6 +131,13 @@ pub fn palette_for(product: crate::keys::MrmsProduct) -> MrmsPalette {
             (75.0, [220, 0, 0, 255]),
             (100.0, [200, 0, 220, 255]),
         ]),
+        crate::keys::MrmsProduct::LightningCg5min => ramp_palette(&[
+            (0.0, [0, 0, 0, 0]),       // no flashes: transparent
+            (0.5, [230, 220, 0, 255]), // ~1 flash per cell
+            (2.0, [230, 120, 0, 255]),
+            (5.0, [220, 0, 0, 255]),
+            (10.0, [255, 255, 255, 255]),
+        ]),
     }
 }
 

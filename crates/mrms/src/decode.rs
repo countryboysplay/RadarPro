@@ -79,7 +79,8 @@ const PRECIP_RATE_NO_COVERAGE_SENTINEL: f32 = -3.0;
 /// empirically (2026-10-19 live snapshots): -3 fills exactly the same cell
 /// count as reflectivity's -999 no-coverage area for MESH/echo top/VIL.
 const DERIVED_NO_COVERAGE_SENTINEL: f32 = -3.0;
-/// MESH/echo-top/VIL "covered, no echo" sentinel (same live verification;
+/// MESH/echo-top/VIL/lightning "covered, no echo" sentinel (same live
+/// verification; NLDN density uses -1 for "no flashes" and never -3;
 /// never present in 1-hour QPE, where 0.0 mm is a genuine reading).
 const DERIVED_MISSING_SENTINEL: f32 = -1.0;
 
@@ -108,7 +109,10 @@ fn classify_raw_value(product: MrmsProduct, raw: f32) -> MrmsCellValue {
                 MrmsCellValue::Value(raw)
             }
         }
-        MrmsProduct::MeshMax60min | MrmsProduct::EchoTop18 | MrmsProduct::Vil => {
+        MrmsProduct::MeshMax60min
+        | MrmsProduct::EchoTop18
+        | MrmsProduct::Vil
+        | MrmsProduct::LightningCg5min => {
             if (raw - DERIVED_NO_COVERAGE_SENTINEL).abs() < SENTINEL_TOLERANCE {
                 MrmsCellValue::NoCoverage
             } else if (raw - DERIVED_MISSING_SENTINEL).abs() < SENTINEL_TOLERANCE {

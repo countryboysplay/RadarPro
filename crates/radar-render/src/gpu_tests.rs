@@ -73,6 +73,7 @@ fn synthetic_test_sweep() -> Sweep {
                 bad_data: false,
             },
             collection_time: Timestamp::from_epoch_millis(0),
+            nyquist_velocity_mps: None,
             moments,
         });
     }

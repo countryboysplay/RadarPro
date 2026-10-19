@@ -296,6 +296,16 @@ export function useRadarRenderer(canvasRef: RefObject<HTMLCanvasElement>) {
     }
   }, []);
 
+  /** Show dealiased (`true`) or raw (`false`) velocity in later VEL/SRV
+   * renders, probes and cross-sections. Re-render the selection afterward. */
+  const setDealias = useCallback((enabled: boolean): void => {
+    try {
+      rendererRef.current?.setDealias(enabled);
+    } catch (err) {
+      console.error("setDealias failed:", errMessage(err));
+    }
+  }, []);
+
   /** The active color table for `momentCode`, as its original JSON text --
    * for the color-table editor to display/edit. `null` if unavailable. */
   const activeColorTableJson = useCallback((momentCode: string): string | null => {
@@ -420,6 +430,7 @@ export function useRadarRenderer(canvasRef: RefObject<HTMLCanvasElement>) {
     selectAndRenderStormRelativeVelocity,
     loadColorTable,
     resetColorTable,
+    setDealias,
     activeColorTableJson,
     probeGate,
     rangeRings,

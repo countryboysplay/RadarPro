@@ -18,13 +18,14 @@ Working desktop (Windows, Tauri) and web workstation, through stage S11:
 - **Live NEXRAD Level II** for ~160 WSR-88D sites, from the real-time
   chunk feed (the newest scan fills in tilt by tilt within seconds; falls
   back to the archive): REF, VEL, SW, ZDR, CC, PHI, plus derived
-  Storm-Relative Velocity; every tilt; GPU rendering; probe readout; range
+  Storm-Relative Velocity; optional velocity dealiasing; every tilt; GPU
+  rendering; probe readout; range
   rings; custom color tables; a scan loop backfilled from the archive on
   site switch; historical archive loading by date; vertical cross-sections;
   site search, nearby-site buttons, and clickable site dots.
 - **MRMS national mosaic**: composite reflectivity, precip rate, 1-hour
   multi-sensor rainfall, 60-minute max hail size (MESH), 18 dBZ echo tops,
-  and VIL.
+  VIL, and NLDN cloud-to-ground lightning density (5 min).
 - **Forecast radar**: HRRR simulated composite reflectivity, hourly to
   +18 h, shown on the map past NOW on the timeline and playable as a loop;
   hours not yet published are greyed out.

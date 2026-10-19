@@ -128,6 +128,7 @@ pub(crate) fn parse_message31(
 
     let mut site_location = None;
     let mut volume_coverage_pattern = None;
+    let mut nyquist_velocity_mps = None;
     let mut moments: MomentMap = MomentMap::new();
 
     for pointer in pointers {
@@ -152,7 +153,8 @@ pub(crate) fn parse_message31(
                     parse_elv_block(payload, pointer, data_header_start)?;
                 }
                 b"RAD" => {
-                    parse_rad_block(payload, pointer, data_header_start)?;
+                    nyquist_velocity_mps =
+                        Some(parse_rad_block(payload, pointer, data_header_start)?);
                 }
                 _ => {
                     return Err(DecodeError::UnknownDataBlockType {
@@ -187,6 +189,7 @@ pub(crate) fn parse_message31(
         elevation_angle_deg,
         radial_status,
         collection_time,
+        nyquist_velocity_mps,
         moments,
     };
 
@@ -312,13 +315,13 @@ fn parse_elv_block(
 
 /// Radial Data Constant Block ("RAD", Table XVII-H), 28 bytes.
 ///
-/// Not retained by this stage's canonical model; parsed only to
-/// bounds-check its declared extent and confirm the tag matches.
+/// Only the Nyquist velocity (m/s) is retained, for velocity dealiasing;
+/// the rest is parsed to bounds-check the block's declared extent.
 fn parse_rad_block(
     payload: &[u8],
     pointer: usize,
     data_header_start: usize,
-) -> Result<(), DecodeError> {
+) -> Result<f32, DecodeError> {
     const RAD_BLOCK_LEN: usize = 28;
     let block = require_block(payload, pointer, RAD_BLOCK_LEN, data_header_start)?;
     let mut cursor = Cursor::new(block, data_header_start + pointer);
@@ -327,11 +330,11 @@ fn parse_rad_block(
     cursor.take(2)?; // unambiguous range
     cursor.take(4)?; // noise level horizontal
     cursor.take(4)?; // noise level vertical
-    cursor.take(2)?; // nyquist velocity
+    let nyquist_raw = cursor.read_u16()?; // scaled 0.01 m/s
     cursor.take(2)?; // radial flags (spare)
     cursor.take(4)?; // calibration constant horizontal
     cursor.take(4)?; // calibration constant vertical
-    Ok(())
+    Ok(f32::from(nyquist_raw) * 0.01)
 }
 
 /// Fixed length of a Data Moment Block's generic header (Table XVII-B,

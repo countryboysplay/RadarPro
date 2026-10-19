@@ -278,6 +278,9 @@ pub struct Radial {
     pub radial_status: RadialStatus,
     /// Collection time (UTC) for this radial.
     pub collection_time: Timestamp,
+    /// Nyquist (maximum unambiguous) velocity in m/s, from the radial's
+    /// RAD block; `None` when the block was absent.
+    pub nyquist_velocity_mps: Option<f32>,
     /// Moments present on this radial, keyed by moment kind. A moment
     /// absent from this map was not present on the wire for this radial
     /// (the Data Block Pointer for it was zero).

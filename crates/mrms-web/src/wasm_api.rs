@@ -185,6 +185,23 @@ impl MrmsHandle {
         })
     }
 
+    /// Every real-valued cell of the snapshot most recently decoded by
+    /// [`Self::fetch_snapshot`], as flat `[lon, lat, value, ...]` triples
+    /// (see `mrms::grid::MrmsGrid::value_points`) -- for drawing sparse
+    /// products (lightning) as fixed-size markers instead of a raster, where
+    /// a single ~1 km cell would otherwise vanish at regional zoom.
+    #[wasm_bindgen(js_name = valuePoints)]
+    pub fn value_points(&self) -> Result<js_sys::Float32Array, JsValue> {
+        let state = self.state.borrow();
+        let grid = state.last_grid.as_ref().ok_or_else(|| {
+            JsValue::from_str("no snapshot fetched yet; call fetchSnapshot first")
+        })?;
+        let points = grid
+            .value_points()
+            .ok_or_else(|| JsValue::from_str("valuePoints needs a regular lat/lon grid"))?;
+        Ok(js_sys::Float32Array::from(points.as_slice()))
+    }
+
     /// Render the snapshot most recently decoded by [`Self::fetch_snapshot`],
     /// via `mrms::palette::render_mrms_grid` (which itself calls
     /// `forecast_core::gpu::render_forecast_grid` -- the same shared GPU
@@ -272,6 +289,7 @@ fn product_id_str(product: MrmsProduct) -> &'static str {
         MrmsProduct::EchoTop18 => "echo_top_18",
         MrmsProduct::Vil => "vil",
         MrmsProduct::Qpe01h => "qpe_1h",
+        MrmsProduct::LightningCg5min => "lightning_5min",
     }
 }
 

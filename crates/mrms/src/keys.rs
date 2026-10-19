@@ -62,16 +62,21 @@ pub enum MrmsProduct {
     /// `CONUS/MultiSensor_QPE_01H_Pass2_00.00/` -- 1-hour multi-sensor
     /// precipitation accumulation, mm.
     Qpe01h,
+    /// `CONUS/NLDN_CG_005min_AvgDensity_00.00/` -- NLDN cloud-to-ground
+    /// lightning flash density over the past 5 minutes. Unit inferred from
+    /// live data: one flash in a 0.01 deg cell reads 1/cell-area (~0.87-0.98).
+    LightningCg5min,
 }
 
 impl MrmsProduct {
-    pub const ALL: [MrmsProduct; 6] = [
+    pub const ALL: [MrmsProduct; 7] = [
         MrmsProduct::ReflectivityQcComposite,
         MrmsProduct::PrecipRate,
         MrmsProduct::MeshMax60min,
         MrmsProduct::EchoTop18,
         MrmsProduct::Vil,
         MrmsProduct::Qpe01h,
+        MrmsProduct::LightningCg5min,
     ];
 
     /// The `<Product>_<height>` component of this product's key path and
@@ -85,6 +90,7 @@ impl MrmsProduct {
             MrmsProduct::EchoTop18 => "EchoTop_18_00.50",
             MrmsProduct::Vil => "VIL_00.50",
             MrmsProduct::Qpe01h => "MultiSensor_QPE_01H_Pass2_00.00",
+            MrmsProduct::LightningCg5min => "NLDN_CG_005min_AvgDensity_00.00",
         }
     }
 
@@ -98,6 +104,7 @@ impl MrmsProduct {
             MrmsProduct::EchoTop18 => "km",
             MrmsProduct::Vil => "kg/m^2",
             MrmsProduct::Qpe01h => "mm",
+            MrmsProduct::LightningCg5min => "flashes/km^2",
         }
     }
 
@@ -110,6 +117,7 @@ impl MrmsProduct {
             MrmsProduct::EchoTop18 => "MRMS echo tops (18 dBZ)",
             MrmsProduct::Vil => "MRMS vertically integrated liquid",
             MrmsProduct::Qpe01h => "MRMS 1-hour rainfall (multi-sensor)",
+            MrmsProduct::LightningCg5min => "MRMS NLDN lightning density (5 min)",
         }
     }
 }

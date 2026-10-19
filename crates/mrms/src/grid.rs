@@ -132,6 +132,26 @@ impl MrmsGrid {
         }
     }
 
+    /// Every [`MrmsCellValue::Value`] cell as flat `[lon, lat, value, ...]`
+    /// triples (cell center, longitude in -180..180), for drawing sparse
+    /// products like lightning as point markers. `None` for a non-lat/lon
+    /// grid. Dense products would return millions of points -- don't.
+    pub fn value_points(&self) -> Option<Vec<f32>> {
+        let GridGeometry::RegularLatLon(g) = &self.geometry else {
+            return None;
+        };
+        let mut out = Vec::new();
+        for (i, cell) in self.values.iter().enumerate() {
+            if let MrmsCellValue::Value(v) = cell {
+                let (row, col) = ((i as u32) / g.width, (i as u32) % g.width);
+                let lon = g.lon_for_col(col);
+                let lon = if lon > 180.0 { lon - 360.0 } else { lon };
+                out.extend([lon as f32, g.lat_for_row(row) as f32, *v]);
+            }
+        }
+        Some(out)
+    }
+
     /// Build a plain `Vec<f32>` suitable for
     /// `forecast_core::gpu::render_forecast_grid`'s `display_values`
     /// parameter: every [`MrmsCellValue::Value`] passes through unchanged,
@@ -181,6 +201,17 @@ mod tests {
                 MrmsCellValue::Missing,
                 MrmsCellValue::Value(40.0),
             ],
+        }
+    }
+
+    #[test]
+    fn value_points_lists_only_real_values_with_signed_longitude() {
+        let points = sample_grid().value_points().unwrap();
+        // (row 0, col 0) and (row 1, col 1); 230.0E is -130.0.
+        let expected = [-130.0, 55.0, 20.0, -129.99, 54.99, 40.0];
+        assert_eq!(points.len(), expected.len());
+        for (got, want) in points.iter().zip(expected) {
+            assert!((got - want).abs() < 1e-3, "{points:?}");
         }
     }
 

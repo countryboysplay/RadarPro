@@ -46,12 +46,14 @@
 //!   `Agent Context/reference/algorithms/storm-relative-velocity.md`).
 
 pub mod beam;
+pub mod dealias;
 pub mod earth;
 pub mod lookup;
 pub mod spherical;
 pub mod storm_relative_velocity;
 
 pub use beam::{beam_height_km, ground_range_km, slant_range_from_ground_range_km};
+pub use dealias::dealias_velocity_sweep;
 pub use lookup::{
     cursor_to_polar, find_gate_index, find_radial_index, find_radial_index_for_sweep,
     locate_gate_value, locate_radial_gate, PolarCoord, RadialGate,

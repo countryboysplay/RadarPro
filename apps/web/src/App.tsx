@@ -323,6 +323,7 @@ export default function App() {
     rangeRings,
     renderedRangeKm,
     crossSection,
+    setDealias,
   } = useRadarRenderer(canvasRef);
 
   // S11 Phase 2b: Storm-Relative Velocity's storm-motion input state -- see
@@ -564,6 +565,7 @@ export default function App() {
   } | null>(null);
   const [sweepIndex, setSweepIndex] = useState<number | null>(null);
   const [momentCode, setMomentCode] = useState<string | null>(null);
+  const [dealias, setDealiasState] = useState(false);
   const [sweepMoments, setSweepMoments] = useState<string[]>([]);
   const [colorTableVersion, setColorTableVersion] = useState(0);
 
@@ -1104,9 +1106,9 @@ export default function App() {
               setXsLine(null);
               setXsPicking(false);
             }}
-            renderKey={`${currentEntry?.key ?? ""}|${momentCode ?? ""}|${activeTableJson ?? ""}`}
+            renderKey={`${currentEntry?.key ?? ""}|${momentCode ?? ""}|${activeTableJson ?? ""}|${dealias}`}
             render={(a, b, cols, rows, topKm) =>
-              // SRV is derived per tilt for display and isn't in the decoded volume; slice raw velocity.
+              // SRV is derived per tilt for display and isn't in the decoded volume; slice (raw or dealiased) velocity.
               momentCode ? crossSection(momentCode === "SRV" ? "VEL" : momentCode, a, b, cols, rows, topKm) : null
             }
           />
@@ -1183,6 +1185,26 @@ export default function App() {
             />
           )}
         </SidebarCategory>
+
+        {(momentCode === "VEL" || momentCode === "SRV") && (
+          <SidebarCategory title="Velocity" summary={dealias ? "dealiased" : "raw"} defaultOpen>
+            <label
+              className="check-field"
+              title="Unfold velocities that wrapped past the radar's Nyquist limit. Corrected values can be wrong where echo is noisy or disconnected."
+            >
+              <input
+                type="checkbox"
+                checked={dealias}
+                onChange={(e) => {
+                  setDealias(e.target.checked);
+                  setDealiasState(e.target.checked);
+                  if (sweepIndex !== null && momentCode) renderSelection(sweepIndex, momentCode);
+                }}
+              />
+              <span>Dealias velocity</span>
+            </label>
+          </SidebarCategory>
+        )}
 
         {/* Storm motion only means something while SRV is the product. */}
         {momentCode === "SRV" && (
