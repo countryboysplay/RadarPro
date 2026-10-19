@@ -277,12 +277,13 @@ function drawMyLocation(map: MapLibreMap, canvas: HTMLCanvasElement, loc: MyLoca
 
 const PAPER_INK = "#ecebe4";
 const ACCENT = "#739bd0";
+const DANGER_RED = "#ef6a5a";
 const FORECAST_AMBER = "#f0b84a";
 
 /**
  * NWS storm cells: observed track in Paper Ink, the NWS 15-60 min forecast
  * in Forecast Amber (it is forecast time, see DESIGN.md), each cell's ID by
- * its dot. Same casing as the course so tracks read over any echo.
+ * its dot, plus hazards in Danger Red: severe hail size and TVS triangles. Same casing as the course so tracks read over any echo.
  */
 function drawStormTracks(map: MapLibreMap, canvas: HTMLCanvasElement, tracks: StormTracks | null, selectedId: string | null) {
   const ctx = canvas.getContext("2d");
@@ -345,6 +346,34 @@ function drawStormTracks(map: MapLibreMap, canvas: HTMLCanvasElement, tracks: St
     ctx.lineWidth = 4;
     ctx.strokeText(cell.id, p.x + 9, p.y - 9);
     ctx.fillText(cell.id, p.x + 9, p.y - 9);
+    // Severe hail (1"+ by NWS's estimate) as its size, in danger red after the ID.
+    if (cell.hail && cell.hail.sizeIn >= 1) {
+      const size = `${cell.hail.sizeIn.toFixed(2)}″`;
+      const x = p.x + 13 + ctx.measureText(cell.id).width;
+      ctx.fillStyle = DANGER_RED;
+      ctx.strokeText(size, x, p.y - 9);
+      ctx.fillText(size, x, p.y - 9);
+    }
+  }
+  // TVS: a point-down triangle in danger red, on top of everything else;
+  // hollow for an elevated TVS (rotation aloft, not yet near the ground).
+  for (const tvs of tracks.tvs) {
+    const p = map.project(tvs.at);
+    ctx.beginPath();
+    ctx.moveTo(p.x - 9, p.y - 7);
+    ctx.lineTo(p.x + 9, p.y - 7);
+    ctx.lineTo(p.x, p.y + 9);
+    ctx.closePath();
+    ctx.lineWidth = 5;
+    ctx.strokeStyle = COURSE_CASING;
+    ctx.stroke();
+    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = DANGER_RED;
+    ctx.stroke();
+    if (!tvs.elevated) {
+      ctx.fillStyle = DANGER_RED;
+      ctx.fill();
+    }
   }
   ctx.restore();
 }

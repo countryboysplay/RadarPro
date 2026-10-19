@@ -223,7 +223,12 @@ function summarizeStormTracks(on: boolean, { tracks, error }: ReturnType<typeof 
   if (error) return error;
   if (!tracks) return "loading…";
   const time = new Date(tracks.scanTimeMs).toISOString().slice(11, 16);
-  return `${tracks.cells.length} cell${tracks.cells.length === 1 ? "" : "s"} · ${time}Z`;
+  const parts = [`${tracks.cells.length} cell${tracks.cells.length === 1 ? "" : "s"}`];
+  // Hazards first in the heading, so they read even with the section closed.
+  if (tracks.tvs.length > 0) parts.unshift(`${tracks.tvs.length} TVS`);
+  const maxHail = Math.max(0, ...tracks.cells.map((c) => c.hail?.sizeIn ?? 0));
+  if (maxHail >= 1) parts.splice(tracks.tvs.length > 0 ? 1 : 0, 0, `hail to ${maxHail.toFixed(2)}″`);
+  return `${parts.join(" · ")} · ${time}Z`;
 }
 
 /** One-line summary for "Settings". */
@@ -1314,7 +1319,7 @@ export default function App() {
         <SidebarCategory title="Storm tracks" summary={summarizeStormTracks(showStormTracks, stormTracks)}>
           <label className="check-field">
             <input type="checkbox" checked={showStormTracks} onChange={(e) => setShowStormTracks(e.target.checked)} />
-            <span>Show NWS storm cells, past tracks and 60-minute forecasts</span>
+            <span>Show NWS storm cells, tracks, TVS and severe hail</span>
           </label>
         </SidebarCategory>
 

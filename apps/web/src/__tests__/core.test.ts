@@ -1,7 +1,7 @@
 // @ts-expect-error -- the app tsconfig has no Node types; vitest runs under Node.
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { parseNst } from "../storms/nst";
+import { parseHail, parseNst, parseTvs } from "../storms/nst";
 import { parseObjectKey } from "../nexrad/keys";
 import { clampHistoryLimit, historyReducer, initialState } from "../scan/useScanHistory";
 import { alertNearSite, pointInAlertGeometry } from "../alerts/geometryHitTest";
@@ -200,5 +200,40 @@ describe("parseNst", () => {
 
   it("rejects other products", () => {
     expect(() => parseNst(new Uint8Array(100))).toThrow(/NST/);
+  });
+});
+
+describe("TVS and hail (KVWX, Owensboro KY hail event, 2025-03-15 10:01Z)", () => {
+  // Expected values come from each product's own text table.
+  const fixture = (name: string) => new Uint8Array(readFileSync(new URL(`../../../../fixtures/nexrad-level3/${name}`, import.meta.url)));
+  const radar = { lat: 38.26, lon: -87.725 };
+  const scanTimeMs = Date.UTC(2025, 2, 15, 10, 1, 50);
+
+  it("places the TVS where the table says (L8 at 131 deg / 47 nm)", () => {
+    const { tvs, scanTimeMs: t } = parseTvs(fixture("KVWX_NTV_20250315_1001"));
+    expect(t).toBe(scanTimeMs);
+    expect(tvs).toHaveLength(1);
+    expect(tvs[0].elevated).toBe(false);
+    const { km, deg } = legLengthAndBearing(radar, { lon: tvs[0].at[0], lat: tvs[0].at[1] });
+    expect(deg).toBeCloseTo(131, 0);
+    expect(km / 1.852).toBeCloseTo(47, 0);
+  });
+
+  it("reads hail estimates by cell, including under-half-inch rows", () => {
+    const { hail, scanTimeMs: t } = parseHail(fixture("KVWX_NHI_20250315_1001"));
+    expect(t).toBe(scanTimeMs);
+    expect(hail.get("L8")).toEqual({ severeChance: 100, chance: 100, sizeIn: 2.75 });
+    expect(hail.get("A0")).toEqual({ severeChance: 100, chance: 100, sizeIn: 2.25 });
+    expect(hail.get("L5")).toEqual({ severeChance: 70, chance: 100, sizeIn: 1.25 });
+    expect(hail.get("U1")).toEqual({ severeChance: 0, chance: 80, sizeIn: 0 });
+  });
+
+  it("uses the same cell IDs as the storm tracks", () => {
+    const ids = new Set(parseNst(fixture("KVWX_NST_20250315_1001")).cells.map((c) => c.id));
+    expect(["L8", "A0", "F1"].every((id) => ids.has(id))).toBe(true);
+  });
+
+  it("rejects the wrong product", () => {
+    expect(() => parseTvs(fixture("KVWX_NHI_20250315_1001"))).toThrow(/NTV/);
   });
 });
