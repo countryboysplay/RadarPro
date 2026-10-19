@@ -141,6 +141,9 @@ pub fn run() {
         // app), unneeded surface for what this feature actually needs (see
         // GLOBAL_CONTRACT's "narrowest verb possible" IPC rule).
         .plugin(tauri_plugin_process::init())
+        // "A warning covers your location" toasts; see `notifyDesktop` in
+        // `apps/web/src/platform/desktop.ts`.
+        .plugin(tauri_plugin_notification::init())
         .invoke_handler(tauri::generate_handler![
             get_diagnostics,
             rainbow::rainbow_get_snapshot,

@@ -376,3 +376,22 @@ export async function getDesktopDiagnostics(): Promise<DesktopDiagnostics | null
     return null;
   }
 }
+
+/**
+ * Show a native Windows toast via `tauri-plugin-notification`. Resolves to
+ * `false` in a browser tab (the caller uses the web `Notification` API
+ * there) or if permission is refused.
+ * shortcut: no click-to-select on desktop (the plugin's click events are mobile-only), add if the plugin gains it.
+ */
+export async function notifyDesktop(title: string, body: string): Promise<boolean> {
+  if (!isDesktop()) return false;
+  try {
+    const n = await import("@tauri-apps/plugin-notification");
+    if (!(await n.isPermissionGranted()) && (await n.requestPermission()) !== "granted") return false;
+    n.sendNotification({ title, body });
+    return true;
+  } catch (err) {
+    console.error("[desktop] notification failed:", err);
+    return false;
+  }
+}

@@ -47,6 +47,9 @@ tauri-plugin-store = "2"
 # restart into the newly-installed version after an update completes.
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
+# Native Windows toasts for "a warning covers your location" (WebView2's own
+# web Notification API is not relied on).
+tauri-plugin-notification = "2"
 
 # Native (CORS-free) HTTP transport for Rainbow Weather tile fetches -- see
 # `src/rainbow.rs`'s module doc comment. `api.rainbow.ai` sends no CORS

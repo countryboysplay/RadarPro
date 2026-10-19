@@ -23,6 +23,8 @@ import {
   persistCacheLimit,
   loadPersistedRadarOpacity,
   persistRadarOpacity,
+  isDesktop,
+  notifyDesktop,
 } from "./platform/desktop";
 import { type PollEvent } from "./scan/useScanPoller";
 import { MAX_HISTORY_SCANS, useScanHistory } from "./scan/useScanHistory";
@@ -180,6 +182,17 @@ function summarizeModelForecast(providerId: ForecastProviderId | null, phase: Fo
  * by default). */
 function summarizeAlerts(nearCount: number, activeCount: number, icao: string): string {
   return activeCount > 0 ? `${activeCount} US · ${nearCount} polygons near ${icao}` : "none active";
+}
+
+/** A native toast in the desktop app, a web Notification in a browser tab. */
+function showNotification(title: string, body: string, tag: string, sticky: boolean, onClick: () => void) {
+  if (isDesktop()) return void notifyDesktop(title, body);
+  if (!("Notification" in window) || Notification.permission !== "granted") return;
+  const n = new Notification(title, { body, tag, requireInteraction: sticky });
+  n.onclick = () => {
+    window.focus();
+    onClick();
+  };
 }
 
 /** One-line summary for "My location". */
@@ -564,17 +577,14 @@ export default function App() {
     notifiedKeysRef.current = new Set(covering.map(({ key }) => key));
     if (fresh.length === 0) return;
     if (notifySound) playAlertTone();
-    if (!("Notification" in window) || Notification.permission !== "granted") return;
     for (const { key, alert } of fresh) {
-      const n = new Notification(`${alert.event} covers your location`, {
-        body: alert.headline ?? alert.affectedAreas.join("; "),
-        tag: key,
-        requireInteraction: alert.severity === "Extreme" || alert.severity === "Severe",
-      });
-      n.onclick = () => {
-        window.focus();
-        setSelectedAlertKey(key);
-      };
+      showNotification(
+        `${alert.event} covers your location`,
+        alert.headline ?? alert.affectedAreas.join("; "),
+        key,
+        alert.severity === "Extreme" || alert.severity === "Severe",
+        () => setSelectedAlertKey(key),
+      );
     }
   }, [myLocation.location, alerts.activeAlerts, notifyCovering, notifySound]);
 
@@ -1205,7 +1215,7 @@ export default function App() {
               onChange={async (e) => {
                 const on = e.target.checked;
                 // Ask first, so alerts already covering you are notified, not just sounded.
-                if (on && "Notification" in window && Notification.permission === "default") {
+                if (on && !isDesktop() && "Notification" in window && Notification.permission === "default") {
                   await Notification.requestPermission();
                 }
                 setNotifyCovering(on);
@@ -1217,7 +1227,18 @@ export default function App() {
             <input type="checkbox" checked={notifySound} disabled={!notifyCovering} onChange={(e) => setNotifySound(e.target.checked)} />
             <span>Play a sound with the notification</span>
           </label>
-          {notifyCovering && (!("Notification" in window) || Notification.permission === "denied") && (
+          {notifyCovering && (
+            <button
+              type="button"
+              onClick={() => {
+                if (notifySound) playAlertTone();
+                showNotification("RadarPro test notification", "Warnings that cover your location will look like this.", "radarpro-test", false, () => {});
+              }}
+            >
+              Send a test notification
+            </button>
+          )}
+          {notifyCovering && !isDesktop() && (!("Notification" in window) || Notification.permission === "denied") && (
             <div className="settings-field-note">Desktop notifications are blocked; only the sound will play.</div>
           )}
           {coveringMe.length > 0 && (
