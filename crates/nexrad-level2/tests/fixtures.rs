@@ -338,7 +338,11 @@ fn decodes_partial_volume_assembled_from_real_time_chunks() {
     // Three ~12 s chunks hold only the lowest (surveillance) cut: reflectivity, no velocity yet.
     let first = &volume.sweeps[0];
     assert!(first.elevation_angle_deg < 1.0);
-    assert!(first.radials.len() > 100, "only {} radials", first.radials.len());
+    assert!(
+        first.radials.len() > 100,
+        "only {} radials",
+        first.radials.len()
+    );
     let angles: Vec<f32> = first.radials.iter().map(|r| r.azimuth_angle_deg).collect();
     assert_azimuths_monotonic_with_wraparound(&angles);
     let refl: Vec<f32> = first
