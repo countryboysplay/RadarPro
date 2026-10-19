@@ -296,10 +296,6 @@ export function useScanHistory(icao: string, maxEntries: number = MAX_HISTORY_SC
   maxEntriesRef.current = maxEntries;
   const bytesRef = useRef<Map<string, Uint8Array>>(new Map());
 
-  // Reset history (metadata + cached bytes) whenever the selected site
-  // changes -- an old site's scans are meaningless once switched away.
-  // (Done by the archive effect below, which also runs on every `icao` change.)
-
   // S10 Phase 2: live-adjust the cache cap when the Settings panel's value
   // changes, without needing a full site reset -- trims from the oldest
   // end immediately if the new cap is smaller (see `historyReducer`'s
@@ -315,7 +311,9 @@ export function useScanHistory(icao: string, maxEntries: number = MAX_HISTORY_SC
     dispatch({ type: "SCAN_ADDED", key: volume.key, startTimeMillis: volume.startTimeMillis });
   }, []);
 
-  const [archiveStartMillis, setArchiveStartMillis] = useState<number | null>(null);
+  // An object, not a number, so retrying the same time is still a new value and re-runs the load.
+  const [archive, setArchive] = useState<{ startMillis: number } | null>(null);
+  const archiveStartMillis = archive?.startMillis ?? null;
   const [archiveStatus, setArchiveStatus] = useState<string | null>(null);
   const pollEvent = useScanPoller(icao, onVolumeBytes, archiveStartMillis === null);
 
@@ -324,14 +322,15 @@ export function useScanHistory(icao: string, maxEntries: number = MAX_HISTORY_SC
   useEffect(() => {
     dispatch({ type: "RESET" });
     bytesRef.current.clear();
-    if (archiveStartMillis === null) {
+    if (archive === null) {
       setArchiveStatus(null);
       return;
     }
+    const { startMillis } = archive;
     const controller = new AbortController();
     void (async () => {
       try {
-        const d = new Date(archiveStartMillis);
+        const d = new Date(startMillis);
         setArchiveStatus("listing archived scans…");
         const day = await discoverDay(
           icao,
@@ -341,7 +340,7 @@ export function useScanHistory(icao: string, maxEntries: number = MAX_HISTORY_SC
         // shortcut: same UTC day only, a window crossing midnight stops at 23:59Z.
         // Pre-2017 volumes are ~45 MB uncompressed each; cap RAM regardless of the live cache size.
         const limit = Math.min(maxEntriesRef.current, ARCHIVE_MAX_SCANS);
-        const picked = day.filter((v) => v.startTimeMillis >= archiveStartMillis).slice(0, limit);
+        const picked = day.filter((v) => v.startTimeMillis >= startMillis).slice(0, limit);
         if (picked.length === 0) {
           setArchiveStatus(`no ${icao} scans found after that time`);
           return;
@@ -358,10 +357,10 @@ export function useScanHistory(icao: string, maxEntries: number = MAX_HISTORY_SC
       }
     })();
     return () => controller.abort();
-  }, [icao, archiveStartMillis, onVolumeBytes]);
+  }, [icao, archive, onVolumeBytes]);
 
-  const loadArchive = useCallback((startMillis: number) => setArchiveStartMillis(startMillis), []);
-  const returnToLive = useCallback(() => setArchiveStartMillis(null), []);
+  const loadArchive = useCallback((startMillis: number) => setArchive({ startMillis }), []);
+  const returnToLive = useCallback(() => setArchive(null), []);
 
   // Prune `bytesRef` to match `entries` after every metadata change --
   // catches both site-reset (entries briefly empty) and per-scan FIFO

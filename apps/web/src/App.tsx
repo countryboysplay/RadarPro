@@ -1080,7 +1080,8 @@ export default function App() {
               }}
               renderKey={`${currentEntry?.key ?? ""}|${momentCode ?? ""}|${activeTableJson ?? ""}`}
               render={(a, b, cols, rows, topKm) =>
-                momentCode ? crossSection(momentCode, a, b, cols, rows, topKm) : null
+                // SRV is derived per tilt for display and isn't in the decoded volume; slice raw velocity.
+                momentCode ? crossSection(momentCode === "SRV" ? "VEL" : momentCode, a, b, cols, rows, topKm) : null
               }
             />
           </SidebarSection>

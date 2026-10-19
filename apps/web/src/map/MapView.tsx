@@ -30,24 +30,11 @@ if (isDesktop()) registerDesktopRainbowProtocol();
  * `<canvas>` positioned above the radar sweep canvas, projecting each
  * point through the live `map` instance (`map.project`).
  *
- * A native MapLibre GeoJSON source + `line` layer was tried first (the
- * literal reading of this stage's brief) and does work as a map layer --
- * but it paints into the *map's own* canvas, which sits *underneath* the
- * radar sweep `<canvas>` (see the layout comment below on why those two
- * canvases must be separate DOM siblings). The radar canvas is opaque
- * (S04's black sweep background, `radar-render`'s own clear color -- not
- * something this task touches) and covers the exact on-screen area a
- * site-centered ring would need to appear in, so a native map-layer ring
- * is invisible in practice: confirmed during this task's own browser
- * verification (a ring added as a GeoJSON layer rendered with zero visible
- * pixels, entirely occluded by the radar canvas drawn on top of it).
- *
- * This dedicated overlay canvas -- one z-index above the radar canvas --
- * is the fix: still driven entirely by `map.project()` (this remains the
- * one MapLibre-aware component; `radar-web` still only ever hands back
- * plain coordinate geometry), just painted to a surface that can actually
- * sit above the opaque sweep image, the same way real radar workstations
- * draw range rings over the reflectivity image rather than under it.
+ * A native MapLibre `line` layer would paint into the map's own canvas,
+ * underneath the radar sweep `<canvas>`, so rings would sit under echoes.
+ * This overlay canvas one z-index above draws them on top, the way radar
+ * workstations do; it stays the one MapLibre-aware piece (`radar-web`
+ * only hands back plain coordinate geometry).
  */
 function drawRangeRings(map: MapLibreMap, canvas: HTMLCanvasElement, rings: number[][][] | null) {
   const ctx = canvas.getContext("2d");
@@ -86,7 +73,7 @@ function drawRangeRings(map: MapLibreMap, canvas: HTMLCanvasElement, rings: numb
  * `zIndex`, while the radar sweep `<canvas>` is a separate, absolutely
  * positioned DOM element at `zIndex: 1` layered on top of that whole map
  * div. Nothing drawn by a native MapLibre layer can ever appear above
- * that opaque sweep canvas, regardless of MapLibre's own layer order.
+ * that sweep canvas, regardless of MapLibre's own layer order.
  * Confirmed during this task's own browser verification: an alert
  * polygon whose on-screen position happened to fall under the radar
  * canvas's ~460km-radius box around the selected site rendered zero
@@ -168,7 +155,7 @@ const RAINBOW_LAYER_ID = "rainbow-precip-layer";
  *
  * `drawRangeRings`/`drawAlerts` above had to move off native MapLibre
  * layers because those paint into the map's own canvas, which sits
- * *underneath* the opaque radar sweep `<canvas>` (see their doc comments).
+ * *underneath* the radar sweep `<canvas>` (see their doc comments).
  * A Rainbow raster layer added the normal MapLibre way would land in that
  * same underneath-the-sweep-canvas layer -- so with the live radar visible,
  * it would render but never be seen, exactly like an unfixed range ring.
@@ -274,27 +261,9 @@ const SITES_GEOJSON = {
   })),
 };
 
-/**
- * Approximate radius (km) framed by `radar-web`'s rendered sweep image
- * around the site, used only to size/position the canvas overlay on top of
- * the map. This is a fixed, documented approximation, not the sweep's real
- * per-scan maximum range: `SweepInfo` (see `radar-web/src/browser.rs`)
- * does not currently expose the exact `max_range_km` value the renderer's
- * camera actually framed (`browser.rs` computes it internally from the
- * decoded sweep's gate geometry but never returns it), and per this
- * stage's brief, exact geographic alignment is explicitly out of scope
- * ("You do not need pixel-perfect geographic projection of the radar
- * sweep onto the map for this stage... a reasonable, documented
- * approximation... is acceptable"). 460 km is a round, conservative
- * approximation of WSR-88D's typical base-reflectivity unambiguous range.
- * A follow-up stage doing real geographic reprojection should either
- * expose the renderer's actual computed range through `SweepInfo`, or
- * (better) drive the map overlay from `radar-geo`'s real polar-to-map
- * projection instead of this flat circular approximation.
- */
+/** Fallback sweep radius (km, WSR-88D's typical reflectivity range) until the
+ * renderer reports its real range (`sweepRangeKm`, from radar-web's `renderedRangeKm`). */
 const APPROX_SWEEP_RADIUS_KM = 460;
-// Above: fallback only, until the renderer reports its real range
-// (`sweepRangeKm`, from radar-web's `renderedRangeKm`).
 
 /** Screen-pixel radius of `rangeKm` around `site`, measured with the map's
  * own projection (east-west, so it is exact for the canvas's width). A
@@ -701,20 +670,22 @@ export function MapView({
         onPointPickRef.current?.(e.lngLat.lat, e.lngLat.lng);
         return;
       }
-      const clickedSite = onSiteClickRef.current ? siteAtPoint(map!, e.point) : null;
+      // Alerts win over nearby site dots: switching sites wipes scan history.
+      const alertKey = alertAtPoint(e.lngLat);
+      const clickedSite = !alertKey && onSiteClickRef.current ? siteAtPoint(map!, e.point) : null;
       if (clickedSite) {
         onSiteClickRef.current?.(clickedSite.icao);
         return;
       }
-      onAlertClick?.(alertAtPoint(e.lngLat));
+      onAlertClick?.(alertKey);
     }
     function handleHoverMove(e: { lngLat: { lat: number; lng: number }; point: { x: number; y: number } }) {
       if (pointPickActiveRef.current) {
         map!.getCanvas().style.cursor = "crosshair";
         return;
       }
-      const overSite = onSiteClickRef.current && siteAtPoint(map!, e.point);
-      map!.getCanvas().style.cursor = overSite || alertAtPoint(e.lngLat) ? "pointer" : "";
+      const hit = alertAtPoint(e.lngLat) || (onSiteClickRef.current && siteAtPoint(map!, e.point));
+      map!.getCanvas().style.cursor = hit ? "pointer" : "";
     }
 
     map.on("click", handleClick);
@@ -847,10 +818,10 @@ export function MapView({
           }}
         />
       )}
-      {/* Range rings, one z-index above the (opaque) radar sweep canvas --
+      {/* Range rings, one z-index above the radar sweep canvas --
           see `drawRangeRings`'s doc comment for why a native MapLibre
           layer (painted into the map's own canvas, underneath the sweep
-          canvas) would be invisible here. */}
+          canvas) would draw under the echoes. */}
       <canvas
         ref={ringsCanvasRef}
         style={{
@@ -864,7 +835,7 @@ export function MapView({
         }}
       />
       {/* S06 alert polygons, one z-index above the range rings -- same
-          "manual overlay canvas above the opaque radar canvas" fix,
+          "manual overlay canvas above the radar canvas" fix,
           `pointerEvents: none` since clicks are resolved via the `map`
           instance's own `click` event + lon/lat hit testing above, not via
           this canvas element directly (letting mouse events pass through

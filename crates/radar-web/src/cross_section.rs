@@ -11,7 +11,7 @@ use radar_geo::{
     beam_height_km, distance_bearing, find_gate_index, find_radial_index_for_sweep,
     slant_range_from_ground_range_km, LatLon,
 };
-use radar_types::{GateValue, MomentKind, Sweep, Volume};
+use radar_types::{GateValue, Moment, MomentKind, Sweep, Volume};
 
 /// Nominal WSR-88D half-power beamwidth (degrees).
 const BEAMWIDTH_DEG: f64 = 0.95;
@@ -56,15 +56,18 @@ pub fn cross_section(
         let point = radar_geo::destination_point(start, line.bearing_deg, line.distance_km * frac);
         let from_site = distance_bearing(site, point);
 
-        // Beam center height, half-width (km), and slant range per sweep at this column.
-        let beams: Vec<(&Sweep, f64, f64, f64)> = sweeps
+        // Moment on this column's radial, beam center height, half-width (km),
+        // and slant range per sweep -- resolved once per column, not per cell.
+        let beams: Vec<(&Moment, f64, f64, f64)> = sweeps
             .iter()
             .filter_map(|&sweep| {
                 let elev = f64::from(sweep.elevation_angle_deg);
                 let slant = slant_range_from_ground_range_km(from_site.distance_km, elev)?;
+                let radial_index = find_radial_index_for_sweep(sweep, from_site.bearing_deg)?;
+                let m = sweep.radials[radial_index].moments.get(&moment)?;
                 let center = beam_height_km(slant, elev, site_height_km);
                 let half = slant * (BEAMWIDTH_DEG / 2.0).to_radians().tan();
-                Some((sweep, center, half, slant))
+                Some((m, center, half, slant))
             })
             .collect();
 
@@ -74,14 +77,7 @@ pub fn cross_section(
                 .iter()
                 .filter(|(_, center, half, _)| (height - center).abs() <= *half)
                 .min_by(|a, b| (height - a.1).abs().total_cmp(&(height - b.1).abs()));
-            let Some(&(sweep, _, _, slant)) = nearest else {
-                continue;
-            };
-            let Some(radial_index) = find_radial_index_for_sweep(sweep, from_site.bearing_deg)
-            else {
-                continue;
-            };
-            let Some(m) = sweep.radials[radial_index].moments.get(&moment) else {
+            let Some(&(m, _, _, slant)) = nearest else {
                 continue;
             };
             let cell = find_gate_index(m, slant).and_then(|g| m.gates.get(g));
