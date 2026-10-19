@@ -64,6 +64,7 @@
 //! input representation on the host, proving the "decode once, switch
 //! selection freely" property without needing a GPU or a browser.
 
+pub mod cross_section;
 pub mod render_select;
 pub mod srv_select;
 pub mod sweep_select;

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import type { DiscoveredVolume } from "../nexrad/keys";
+import { discoverDay, downloadVolume } from "../nexrad/bucket";
 import { type PollEvent, useScanPoller } from "./useScanPoller";
 
 /**
@@ -107,8 +108,9 @@ type HistoryAction =
 const MIN_FRAME_MS = 100;
 const MAX_FRAME_MS = 4000;
 export const DEFAULT_FRAME_MS = 700;
+const ARCHIVE_MAX_SCANS = 10;
 
-function initialState(maxEntries: number = MAX_HISTORY_SCANS): HistoryState {
+export function initialState(maxEntries: number = MAX_HISTORY_SCANS): HistoryState {
   return { entries: [], currentIndex: -1, playMode: "live", frameMs: DEFAULT_FRAME_MS, maxEntries: clampHistoryLimit(maxEntries) };
 }
 
@@ -130,7 +132,7 @@ function clampIndex(index: number, length: number): number {
   return Math.max(0, Math.min(index, length - 1));
 }
 
-function historyReducer(state: HistoryState, action: HistoryAction): HistoryState {
+export function historyReducer(state: HistoryState, action: HistoryAction): HistoryState {
   switch (action.type) {
     case "RESET":
       return { ...initialState(state.maxEntries), frameMs: state.frameMs };
@@ -233,6 +235,16 @@ export interface ScanHistory {
    * `next`: a deliberate jump is never mistaken for "live". */
   jumpToNearestByTimestamp: (millis: number) => void;
   setFrameMs: (ms: number) => void;
+  /** Non-null while showing archived (past) scans instead of the live feed:
+   * the requested UTC start instant, in ms. */
+  archiveStartMillis: number | null;
+  /** Human-readable archive load progress/error, `null` when idle/live. */
+  archiveStatus: string | null;
+  /** Pause live polling and load up to the cache cap of this site's scans
+   * starting at `startMillis` (same UTC day only). */
+  loadArchive: (startMillis: number) => void;
+  /** Leave archive mode and resume the live feed. */
+  returnToLive: () => void;
   /** How old the currently-displayed frame's own volume start time is,
    * right now -- ticks live via a coarse internal timer (see
    * `STALE_CHECK_INTERVAL_MS`) so it keeps advancing even when nothing else
@@ -280,14 +292,13 @@ export interface ScanHistory {
  */
 export function useScanHistory(icao: string, maxEntries: number = MAX_HISTORY_SCANS): ScanHistory {
   const [state, dispatch] = useReducer(historyReducer, maxEntries, initialState);
+  const maxEntriesRef = useRef(maxEntries);
+  maxEntriesRef.current = maxEntries;
   const bytesRef = useRef<Map<string, Uint8Array>>(new Map());
 
   // Reset history (metadata + cached bytes) whenever the selected site
   // changes -- an old site's scans are meaningless once switched away.
-  useEffect(() => {
-    dispatch({ type: "RESET" });
-    bytesRef.current.clear();
-  }, [icao]);
+  // (Done by the archive effect below, which also runs on every `icao` change.)
 
   // S10 Phase 2: live-adjust the cache cap when the Settings panel's value
   // changes, without needing a full site reset -- trims from the oldest
@@ -304,7 +315,53 @@ export function useScanHistory(icao: string, maxEntries: number = MAX_HISTORY_SC
     dispatch({ type: "SCAN_ADDED", key: volume.key, startTimeMillis: volume.startTimeMillis });
   }, []);
 
-  const pollEvent = useScanPoller(icao, onVolumeBytes);
+  const [archiveStartMillis, setArchiveStartMillis] = useState<number | null>(null);
+  const [archiveStatus, setArchiveStatus] = useState<string | null>(null);
+  const pollEvent = useScanPoller(icao, onVolumeBytes, archiveStartMillis === null);
+
+  // Archive mode: swap the live history for the requested day's scans.
+  // Leaving archive mode (or switching sites) cancels any in-flight loads.
+  useEffect(() => {
+    dispatch({ type: "RESET" });
+    bytesRef.current.clear();
+    if (archiveStartMillis === null) {
+      setArchiveStatus(null);
+      return;
+    }
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const d = new Date(archiveStartMillis);
+        setArchiveStatus("listing archived scans…");
+        const day = await discoverDay(
+          icao,
+          { year: d.getUTCFullYear(), month: d.getUTCMonth() + 1, day: d.getUTCDate() },
+          controller.signal,
+        );
+        // shortcut: same UTC day only, a window crossing midnight stops at 23:59Z.
+        // Pre-2017 volumes are ~45 MB uncompressed each; cap RAM regardless of the live cache size.
+        const limit = Math.min(maxEntriesRef.current, ARCHIVE_MAX_SCANS);
+        const picked = day.filter((v) => v.startTimeMillis >= archiveStartMillis).slice(0, limit);
+        if (picked.length === 0) {
+          setArchiveStatus(`no ${icao} scans found after that time`);
+          return;
+        }
+        for (const [i, volume] of picked.entries()) {
+          setArchiveStatus(`downloading scan ${i + 1} of ${picked.length}…`);
+          const bytes = await downloadVolume(volume.key, controller.signal);
+          onVolumeBytes(bytes, volume);
+        }
+        setArchiveStatus(`${picked.length} archived scans loaded`);
+      } catch (err) {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        setArchiveStatus(`archive load failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    })();
+    return () => controller.abort();
+  }, [icao, archiveStartMillis, onVolumeBytes]);
+
+  const loadArchive = useCallback((startMillis: number) => setArchiveStartMillis(startMillis), []);
+  const returnToLive = useCallback(() => setArchiveStartMillis(null), []);
 
   // Prune `bytesRef` to match `entries` after every metadata change --
   // catches both site-reset (entries briefly empty) and per-scan FIFO
@@ -338,7 +395,7 @@ export function useScanHistory(icao: string, maxEntries: number = MAX_HISTORY_SC
   const currentEntryForAge = state.entries[state.currentIndex];
   const currentVolumeAgeMillis = currentEntryForAge ? now - currentEntryForAge.startTimeMillis : null;
   const isLiveStale =
-    state.playMode === "live" && currentVolumeAgeMillis !== null && currentVolumeAgeMillis > STALE_LIVE_AFTER_MS;
+    archiveStartMillis === null && state.playMode === "live" && currentVolumeAgeMillis !== null && currentVolumeAgeMillis > STALE_LIVE_AFTER_MS;
 
   const currentBytes = useCallback(() => {
     const entry = state.entries[state.currentIndex];
@@ -371,6 +428,10 @@ export function useScanHistory(icao: string, maxEntries: number = MAX_HISTORY_SC
     jumpToLatest,
     jumpToNearestByTimestamp,
     setFrameMs,
+    archiveStartMillis,
+    archiveStatus,
+    loadArchive,
+    returnToLive,
     currentVolumeAgeMillis,
     isLiveStale,
   };

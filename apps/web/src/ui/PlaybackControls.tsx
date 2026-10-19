@@ -22,6 +22,8 @@ export interface PlaybackControlsProps {
    * keep reading "live" unchanged no matter how old the data actually
    * got). Always `false` outside `"live"` mode. */
   isLiveStale: boolean;
+  /** Showing archived scans: label "archive" instead of "live". */
+  isArchive?: boolean;
   /** Age (ms) of the currently-displayed frame's own volume start time, for
    * the "no new scan in Xm" label -- `null` when nothing is selected. */
   currentVolumeAgeMillis: number | null;
@@ -68,6 +70,7 @@ export function PlaybackControls({
   onJumpLatest,
   onFrameMsChange,
   isLiveStale,
+  isArchive = false,
   currentVolumeAgeMillis,
 }: PlaybackControlsProps) {
   const disabled = entriesCount === 0;
@@ -100,7 +103,9 @@ export function PlaybackControls({
         </button>
       </div>
       <div className="playback-status">
-        <span className={`play-mode play-mode-${playMode}${isLiveStale ? " play-mode-stale" : ""}`}>{playMode}</span>
+        <span className={`play-mode play-mode-${playMode}${isLiveStale ? " play-mode-stale" : ""}`}>
+          {isArchive && playMode === "live" ? "archive" : playMode}
+        </span>
         {isLiveStale && currentVolumeAgeMillis !== null && (
           <span className="play-mode-stale-warning" title="The live feed has not produced a newer scan in a while -- see Settings > Network diagnostics.">
             ⚠ no new scan in {formatAge(currentVolumeAgeMillis)}

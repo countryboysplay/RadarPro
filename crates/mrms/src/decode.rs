@@ -75,6 +75,13 @@ const REFLECTIVITY_MISSING_SENTINEL: f32 = -99.0;
 /// `PrecipRate` has no separate "covered but no rain" sentinel: a genuine
 /// `0.0` mm/hr reading already means exactly that, physically.
 const PRECIP_RATE_NO_COVERAGE_SENTINEL: f32 = -3.0;
+/// MESH/echo-top/VIL/1-hour QPE "outside the mosaic" sentinel. Verified
+/// empirically (2026-10-19 live snapshots): -3 fills exactly the same cell
+/// count as reflectivity's -999 no-coverage area for MESH/echo top/VIL.
+const DERIVED_NO_COVERAGE_SENTINEL: f32 = -3.0;
+/// MESH/echo-top/VIL "covered, no echo" sentinel (same live verification;
+/// never present in 1-hour QPE, where 0.0 mm is a genuine reading).
+const DERIVED_MISSING_SENTINEL: f32 = -1.0;
 
 /// How close a decoded raw value must be to a known sentinel to be
 /// classified as one. Real quantized values (PNG-packed, scale/offset
@@ -96,6 +103,22 @@ fn classify_raw_value(product: MrmsProduct, raw: f32) -> MrmsCellValue {
         }
         MrmsProduct::PrecipRate => {
             if (raw - PRECIP_RATE_NO_COVERAGE_SENTINEL).abs() < SENTINEL_TOLERANCE {
+                MrmsCellValue::NoCoverage
+            } else {
+                MrmsCellValue::Value(raw)
+            }
+        }
+        MrmsProduct::MeshMax60min | MrmsProduct::EchoTop18 | MrmsProduct::Vil => {
+            if (raw - DERIVED_NO_COVERAGE_SENTINEL).abs() < SENTINEL_TOLERANCE {
+                MrmsCellValue::NoCoverage
+            } else if (raw - DERIVED_MISSING_SENTINEL).abs() < SENTINEL_TOLERANCE {
+                MrmsCellValue::Missing
+            } else {
+                MrmsCellValue::Value(raw)
+            }
+        }
+        MrmsProduct::Qpe01h => {
+            if (raw - DERIVED_NO_COVERAGE_SENTINEL).abs() < SENTINEL_TOLERANCE {
                 MrmsCellValue::NoCoverage
             } else {
                 MrmsCellValue::Value(raw)
@@ -394,6 +417,31 @@ mod tests {
         assert_eq!(
             classify_raw_value(MrmsProduct::PrecipRate, -2.5),
             MrmsCellValue::Value(-2.5)
+        );
+    }
+
+    #[test]
+    fn derived_products_classify_their_live_verified_sentinels() {
+        for p in [
+            MrmsProduct::MeshMax60min,
+            MrmsProduct::EchoTop18,
+            MrmsProduct::Vil,
+        ] {
+            assert_eq!(classify_raw_value(p, -3.0000002), MrmsCellValue::NoCoverage);
+            assert_eq!(classify_raw_value(p, -1.0), MrmsCellValue::Missing);
+            assert_eq!(classify_raw_value(p, 0.0), MrmsCellValue::Value(0.0));
+        }
+        assert_eq!(
+            classify_raw_value(MrmsProduct::Qpe01h, -3.0),
+            MrmsCellValue::NoCoverage
+        );
+        assert_eq!(
+            classify_raw_value(MrmsProduct::Qpe01h, -1.0),
+            MrmsCellValue::Value(-1.0)
+        );
+        assert_eq!(
+            classify_raw_value(MrmsProduct::Qpe01h, 0.0),
+            MrmsCellValue::Value(0.0)
         );
     }
 }

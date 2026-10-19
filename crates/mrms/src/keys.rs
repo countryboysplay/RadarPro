@@ -52,9 +52,28 @@ pub enum MrmsProduct {
     ReflectivityQcComposite,
     /// `CONUS/PrecipRate_00.00/` -- instantaneous precipitation rate, mm/hr.
     PrecipRate,
+    /// `CONUS/MESH_Max_60min_00.50/` -- max estimated hail size over the
+    /// past 60 minutes, mm (a hail swath).
+    MeshMax60min,
+    /// `CONUS/EchoTop_18_00.50/` -- 18 dBZ echo top height, km MSL.
+    EchoTop18,
+    /// `CONUS/VIL_00.50/` -- vertically integrated liquid, kg/m^2.
+    Vil,
+    /// `CONUS/MultiSensor_QPE_01H_Pass2_00.00/` -- 1-hour multi-sensor
+    /// precipitation accumulation, mm.
+    Qpe01h,
 }
 
 impl MrmsProduct {
+    pub const ALL: [MrmsProduct; 6] = [
+        MrmsProduct::ReflectivityQcComposite,
+        MrmsProduct::PrecipRate,
+        MrmsProduct::MeshMax60min,
+        MrmsProduct::EchoTop18,
+        MrmsProduct::Vil,
+        MrmsProduct::Qpe01h,
+    ];
+
     /// The `<Product>_<height>` component of this product's key path and
     /// filename, e.g. `"MergedReflectivityQCComposite_00.50"` -- verified
     /// empirically against the real live bucket.
@@ -62,6 +81,10 @@ impl MrmsProduct {
         match self {
             MrmsProduct::ReflectivityQcComposite => "MergedReflectivityQCComposite_00.50",
             MrmsProduct::PrecipRate => "PrecipRate_00.00",
+            MrmsProduct::MeshMax60min => "MESH_Max_60min_00.50",
+            MrmsProduct::EchoTop18 => "EchoTop_18_00.50",
+            MrmsProduct::Vil => "VIL_00.50",
+            MrmsProduct::Qpe01h => "MultiSensor_QPE_01H_Pass2_00.00",
         }
     }
 
@@ -71,6 +94,10 @@ impl MrmsProduct {
         match self {
             MrmsProduct::ReflectivityQcComposite => "dBZ",
             MrmsProduct::PrecipRate => "mm/hr",
+            MrmsProduct::MeshMax60min => "mm",
+            MrmsProduct::EchoTop18 => "km",
+            MrmsProduct::Vil => "kg/m^2",
+            MrmsProduct::Qpe01h => "mm",
         }
     }
 
@@ -79,6 +106,10 @@ impl MrmsProduct {
         match self {
             MrmsProduct::ReflectivityQcComposite => "MRMS national reflectivity mosaic",
             MrmsProduct::PrecipRate => "MRMS precipitation rate",
+            MrmsProduct::MeshMax60min => "MRMS max hail size (60 min)",
+            MrmsProduct::EchoTop18 => "MRMS echo tops (18 dBZ)",
+            MrmsProduct::Vil => "MRMS vertically integrated liquid",
+            MrmsProduct::Qpe01h => "MRMS 1-hour rainfall (multi-sensor)",
         }
     }
 }

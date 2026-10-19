@@ -79,6 +79,10 @@ export interface ForecastGridMetadata {
   validTime: string;
   ensemble: ForecastEnsembleJson | null;
   geometry: ForecastGeometryJson;
+  /** Unit and color-scale range of the rendered image (e.g. "°C", -40..40). */
+  displayUnit: string;
+  displayMin: number;
+  displayMax: number;
 }
 
 /** The `ensemble` argument `ProviderHandle.fetchField` accepts -- one of

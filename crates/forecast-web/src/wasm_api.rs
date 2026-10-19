@@ -293,8 +293,9 @@ impl ProviderHandle {
                 })?
             };
 
-            let display_values = forecast_core::render::to_display_celsius(&grid);
-            let palette_lut = forecast_core::render::build_default_palette_lut();
+            let display_values = forecast_core::render::to_display_values(&grid);
+            let scale = forecast_core::render::display_scale(grid.variable);
+            let palette_lut = scale.palette_lut();
             // `center_lon` arrives in the conventional -180..180 range (the
             // rest of the JS/map ecosystem's convention, and what a caller
             // naturally supplies) but GEFS/HRRR's own grid geometry -- and
@@ -317,8 +318,8 @@ impl ProviderHandle {
                 &grid.geometry,
                 &display_values,
                 &palette_lut,
-                forecast_core::render::DEFAULT_MIN_CELSIUS,
-                forecast_core::render::DEFAULT_MAX_CELSIUS,
+                scale.min,
+                scale.max,
                 clip_to_world,
                 render_width,
                 render_height,
@@ -526,12 +527,19 @@ struct ForecastGridMetadataJson<'a> {
     valid_time: String,
     ensemble: Option<EnsembleJson>,
     geometry: GeometryJson,
+    #[serde(rename = "displayUnit")]
+    display_unit: &'static str,
+    #[serde(rename = "displayMin")]
+    display_min: f32,
+    #[serde(rename = "displayMax")]
+    display_max: f32,
 }
 
 /// This decoded field's metadata as JSON -- deliberately excludes
 /// `grid.values` (see [`ProviderHandle::fetch_field`]'s own doc comment
 /// for why).
 fn grid_metadata_json(grid: &ForecastGrid) -> String {
+    let scale = forecast_core::render::display_scale(grid.variable);
     let json = ForecastGridMetadataJson {
         variable: grid.variable.canonical_name(),
         native: NativeVariableMetadataJson {
@@ -546,6 +554,9 @@ fn grid_metadata_json(grid: &ForecastGrid) -> String {
         valid_time: grid.valid_time.to_iso8601(),
         ensemble: grid.ensemble.map(EnsembleJson::from),
         geometry: GeometryJson::from(&grid.geometry),
+        display_unit: scale.unit,
+        display_min: scale.min,
+        display_max: scale.max,
     };
     serde_json::to_string(&json).expect("ForecastGridMetadataJson always encodes")
 }

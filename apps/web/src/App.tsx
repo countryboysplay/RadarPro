@@ -28,6 +28,8 @@ import { type PollEvent } from "./scan/useScanPoller";
 import { MAX_HISTORY_SCANS, useScanHistory } from "./scan/useScanHistory";
 import { InfoPanel } from "./ui/InfoPanel";
 import { PlaybackControls } from "./ui/PlaybackControls";
+import { ArchiveLoader } from "./ui/ArchiveLoader";
+import { CrossSectionPanel, type LatLonPoint } from "./ui/CrossSectionPanel";
 import { ProbePanel } from "./ui/ProbePanel";
 import { Legend } from "./ui/Legend";
 import { ColorTableEditor } from "./ui/ColorTableEditor";
@@ -305,6 +307,8 @@ export default function App() {
     activeColorTableJson,
     probeGate,
     rangeRings,
+    renderedRangeKm,
+    crossSection,
   } = useRadarRenderer(canvasRef);
 
   // S11 Phase 2b: Storm-Relative Velocity's storm-motion input state -- see
@@ -402,13 +406,26 @@ export default function App() {
   // never triggers a fetch (S09d's "nothing calls the network until the
   // user presses Get" applies just as much to a map-click-filled point as
   // a hand-typed one).
+  // Cross-section line: two map clicks (start, then end).
+  const [xsLine, setXsLine] = useState<{ a: LatLonPoint; b: LatLonPoint | null } | null>(null);
+  const [xsPicking, setXsPicking] = useState(false);
+
   const handleRainbowMapPointPick = useCallback(
     (lat: number, lon: number) => {
+      if (xsPicking) {
+        if (xsLine && !xsLine.b) {
+          setXsLine({ a: xsLine.a, b: { lat, lon } });
+          setXsPicking(false);
+        } else {
+          setXsLine({ a: { lat, lon }, b: null });
+        }
+        return;
+      }
       if (rainbowPointPickTarget === "nowcast") rainbowNowcast.setPoint(lon, lat);
       else if (rainbowPointPickTarget === "weather") rainbowWeather.setPoint(lon, lat);
       setRainbowPointPickTarget(null);
     },
-    [rainbowPointPickTarget, rainbowNowcast, rainbowWeather],
+    [rainbowPointPickTarget, rainbowNowcast, rainbowWeather, xsPicking, xsLine],
   );
 
   // S09 Phase 3: MRMS national-mosaic overlay -- `enabled`/`productId`
@@ -848,13 +865,15 @@ export default function App() {
         site={site}
         canvasRef={canvasRef}
         canvasSize={RADAR_CANVAS_SIZE}
+        sweepRangeKm={renderedRangeKm}
+        onSiteClick={setIcao}
         rangeRings={rangeRingsGeo}
         onCursorMove={handleCursorMove}
         onCursorLeave={handleCursorLeave}
         alerts={alerts.geojson}
         selectedAlertKey={selectedAlertKey}
         onAlertClick={handleAlertClick}
-        pointPickActive={rainbowPointPickTarget !== null}
+        pointPickActive={rainbowPointPickTarget !== null || xsPicking}
         onPointPick={handleRainbowMapPointPick}
         rainbowTileUrlTemplate={rainbow.tileUrlTemplate}
         rainbowEnabled={rainbow.enabled}
@@ -1024,6 +1043,13 @@ export default function App() {
             {radarOpacityPercent}%
           </label>
 
+          <ArchiveLoader
+            archiveStartMillis={history.archiveStartMillis}
+            status={history.archiveStatus}
+            onLoad={history.loadArchive}
+            onReturnToLive={history.returnToLive}
+          />
+
           <InfoPanel
             siteIcao={site.icao}
             siteName={site.name}
@@ -1038,6 +1064,25 @@ export default function App() {
           <SidebarSection title="Legend & Probe" nested>
             <Legend activeColorTableJson={activeTableJson} momentCode={momentCode ?? "—"} />
             <ProbePanel cursor={cursor} probe={probe} />
+          </SidebarSection>
+
+          <SidebarSection title="Cross-Section" nested>
+            <CrossSectionPanel
+              line={xsLine}
+              picking={xsPicking}
+              onStartPick={() => {
+                setXsLine(null);
+                setXsPicking(true);
+              }}
+              onClear={() => {
+                setXsLine(null);
+                setXsPicking(false);
+              }}
+              renderKey={`${currentEntry?.key ?? ""}|${momentCode ?? ""}|${activeTableJson ?? ""}`}
+              render={(a, b, cols, rows, topKm) =>
+                momentCode ? crossSection(momentCode, a, b, cols, rows, topKm) : null
+              }
+            />
           </SidebarSection>
 
           {/* S11 Phase 2b: storm-motion input, only meaningful while Storm-
@@ -1217,6 +1262,7 @@ export default function App() {
           onJumpLatest={history.jumpToLatest}
           onFrameMsChange={history.setFrameMs}
           isLiveStale={history.isLiveStale}
+          isArchive={history.archiveStartMillis !== null}
           currentVolumeAgeMillis={history.currentVolumeAgeMillis}
         />
         <div className="keyboard-hint">

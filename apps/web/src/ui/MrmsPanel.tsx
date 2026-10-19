@@ -4,6 +4,10 @@ import type { MrmsGridMetadata, MrmsProductId, MrmsSnapshotMetadata } from "../m
 const PRODUCTS: { id: MrmsProductId; label: string }[] = [
   { id: "reflectivity", label: "Reflectivity" },
   { id: "precip_rate", label: "Precip Rate" },
+  { id: "qpe_1h", label: "1-hr Rainfall (mm)" },
+  { id: "hail_size_60min", label: "Max Hail Size, 60 min (mm)" },
+  { id: "echo_top_18", label: "Echo Tops, 18 dBZ (km)" },
+  { id: "vil", label: "VIL (kg/m²)" },
 ];
 
 function formatTime(iso: string | undefined): string {

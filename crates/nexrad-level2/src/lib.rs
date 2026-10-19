@@ -164,6 +164,17 @@ pub fn decode_volume(bytes: &[u8]) -> Result<Volume, DecodeError> {
     let mut site_location: Option<SiteLocation> = None;
     let mut volume_coverage_pattern: Option<u16> = None;
 
+    // Pre-~2017 archive objects (served whole-file gzipped, gunzipped by the
+    // caller) carry the message stream uncompressed right after the volume
+    // header: its first 4 bytes are the all-zero CTM prefix, never a valid
+    // LDM control word, so that is the discriminator.
+    if bytes.get(offset..offset + 4) == Some(&[0, 0, 0, 0]) {
+        let outcome = message::process_record(&bytes[offset..], &mut sweeps)?;
+        site_location = outcome.site_location;
+        volume_coverage_pattern = outcome.volume_coverage_pattern;
+        offset = bytes.len();
+    }
+
     while offset < bytes.len() {
         let record = ldm::read_ldm_record(bytes, offset)?;
         let decompressed = ldm::decompress_bzip2(record.compressed, record.offset)?;
@@ -221,6 +232,33 @@ mod tests {
         bytes[0..4].copy_from_slice(b"XXXX");
         let err = decode_volume(&bytes).unwrap_err();
         assert!(matches!(err, DecodeError::BadVolumeHeaderMagic { .. }));
+    }
+
+    #[test]
+    fn uncompressed_archive_decodes_the_same_as_its_ldm_form() {
+        // Rebuild the pre-2017 uncompressed layout from a real LDM fixture:
+        // same volume header, then every record's decompressed messages.
+        let ldm_bytes = std::fs::read(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../fixtures/nexrad-level2/KTLX20240601_000353_V06"
+        ))
+        .unwrap();
+        let mut plain = ldm_bytes[..ldm::VOLUME_HEADER_LEN].to_vec();
+        let mut offset = ldm::VOLUME_HEADER_LEN;
+        while offset < ldm_bytes.len() {
+            let record = ldm::read_ldm_record(&ldm_bytes, offset).unwrap();
+            plain.extend(ldm::decompress_bzip2(record.compressed, record.offset).unwrap());
+            offset = record.next_offset;
+        }
+
+        let a = decode_volume(&ldm_bytes).unwrap();
+        let b = decode_volume(&plain).unwrap();
+        assert_eq!(a.sweeps.len(), b.sweeps.len());
+        assert_eq!(a.volume_coverage_pattern, b.volume_coverage_pattern);
+        assert_eq!(a.site.latitude_deg, b.site.latitude_deg);
+        for (sa, sb) in a.sweeps.iter().zip(&b.sweeps) {
+            assert_eq!(sa.radials.len(), sb.radials.len());
+        }
     }
 
     #[test]

@@ -2,9 +2,9 @@ import { useEffect, useRef, type RefObject } from "react";
 // MapLibre GL JS >=5 has no default export; `MapLibreMap` is the library's
 // own non-colliding alias for its `Map` class (distinct from the global
 // JS `Map`).
-import { MapLibreMap } from "maplibre-gl";
+import { MapLibreMap, type ExpressionSpecification } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import type { RadarSite } from "../sites";
+import { RADAR_SITES, type RadarSite } from "../sites";
 import type { AlertFeatureCollection } from "../alerts/types";
 import { SEVERITY_COLORS, severityRank } from "../alerts/types";
 import { pointInAlertGeometry } from "../alerts/geometryHitTest";
@@ -247,6 +247,33 @@ function syncRainbowLayer(
  */
 const MAP_STYLE_URL = "https://tiles.openfreemap.org/styles/liberty";
 
+/** Click radius (px) for picking a radar-site dot. */
+const SITE_HIT_RADIUS_PX = 10;
+
+/** Nearest radar site to screen point `px` within `SITE_HIT_RADIUS_PX`. */
+function siteAtPoint(map: MapLibreMap, px: { x: number; y: number }): RadarSite | null {
+  let best: RadarSite | null = null;
+  let bestD2 = SITE_HIT_RADIUS_PX * SITE_HIT_RADIUS_PX;
+  for (const site of RADAR_SITES) {
+    const p = map.project([site.lon, site.lat]);
+    const d2 = (p.x - px.x) ** 2 + (p.y - px.y) ** 2;
+    if (d2 <= bestD2) {
+      best = site;
+      bestD2 = d2;
+    }
+  }
+  return best;
+}
+
+const SITES_GEOJSON = {
+  type: "FeatureCollection" as const,
+  features: RADAR_SITES.map((s) => ({
+    type: "Feature" as const,
+    properties: { icao: s.icao },
+    geometry: { type: "Point" as const, coordinates: [s.lon, s.lat] },
+  })),
+};
+
 /**
  * Approximate radius (km) framed by `radar-web`'s rendered sweep image
  * around the site, used only to size/position the canvas overlay on top of
@@ -266,17 +293,16 @@ const MAP_STYLE_URL = "https://tiles.openfreemap.org/styles/liberty";
  * projection instead of this flat circular approximation.
  */
 const APPROX_SWEEP_RADIUS_KM = 460;
+// Above: fallback only, until the renderer reports its real range
+// (`sweepRangeKm`, from radar-web's `renderedRangeKm`).
 
-/** Standard Web-Mercator meters-per-pixel formula at a 256px tile size --
- * MapLibre's (like Mapbox GL's) public `getZoom()` API is calibrated to
- * this classic tile pyramid even though it renders 512px tiles internally,
- * so this formula applies directly to `map.getZoom()`'s return value. This
- * is itself an approximation (Mercator distortion means "meters per pixel"
- * varies with latitude, which the `cos(lat)` term accounts for, but not
- * with longitude-direction distortion near the poles -- irrelevant for
- * CONUS/territory WSR-88D sites). */
-function metersPerPixel(latitudeDeg: number, zoom: number): number {
-  return (156543.03392804097 * Math.cos((latitudeDeg * Math.PI) / 180)) / Math.pow(2, zoom);
+/** Screen-pixel radius of `rangeKm` around `site`, measured with the map's
+ * own projection (east-west, so it is exact for the canvas's width). A
+ * hand-rolled meters-per-pixel formula here used 256 px tiles while
+ * MapLibre's zoom is 512 px tiles, drawing the radar at half size. */
+function radiusPx(map: MapLibreMap, site: RadarSite, rangeKm: number): number {
+  const dLon = rangeKm / (111.32 * Math.cos((site.lat * Math.PI) / 180));
+  return map.project([site.lon + dLon, site.lat]).x - map.project([site.lon, site.lat]).x;
 }
 
 /**
@@ -308,6 +334,11 @@ export interface MapViewProps {
   site: RadarSite;
   canvasRef: RefObject<HTMLCanvasElement>;
   canvasSize: number;
+  /** Called with a site's ICAO when its map dot is clicked. */
+  onSiteClick?: (icao: string) => void;
+  /** Real site-to-edge range (km) of the rendered sweep; `null` falls back
+   * to `APPROX_SWEEP_RADIUS_KM`. */
+  sweepRangeKm?: number | null;
   /** Range-ring geometry from `RadarWebRenderer`'s `rangeRingsGeoJson` free
    * function (plain `[lon, lat]` coordinates, one ring per radius) --
    * `null` until available. */
@@ -409,6 +440,8 @@ export function MapView({
   site,
   canvasRef,
   canvasSize,
+  sweepRangeKm = null,
+  onSiteClick,
   rangeRings = null,
   onCursorMove,
   onCursorLeave,
@@ -429,6 +462,12 @@ export function MapView({
   const mapRef = useRef<MapLibreMap | null>(null);
   const ringsCanvasRef = useRef<HTMLCanvasElement>(null);
   const alertsCanvasRef = useRef<HTMLCanvasElement>(null);
+  const selectedIcaoRef = useRef(site.icao);
+  selectedIcaoRef.current = site.icao;
+  const onSiteClickRef = useRef(onSiteClick);
+  onSiteClickRef.current = onSiteClick;
+  const sweepRangeKmRef = useRef(sweepRangeKm);
+  sweepRangeKmRef.current = sweepRangeKm;
   const rangeRingsRef = useRef<number[][][] | null>(rangeRings);
   rangeRingsRef.current = rangeRings;
   const alertsRef = useRef<AlertFeatureCollection | null>(alerts);
@@ -457,6 +496,22 @@ export function MapView({
       zoom: 6,
     });
     mapRef.current = map;
+    // Radar-site dots (click to switch site -- see `siteAtPoint`). Sits under
+    // the radar canvas, whose no-data pixels are transparent.
+    map.on("load", () => {
+      map.addSource("radar-sites", { type: "geojson", data: SITES_GEOJSON });
+      map.addLayer({
+        id: "radar-sites",
+        type: "circle",
+        source: "radar-sites",
+        paint: {
+          "circle-radius": ["case", ["==", ["get", "icao"], selectedIcaoRef.current], 6, 4],
+          "circle-color": ["case", ["==", ["get", "icao"], selectedIcaoRef.current], "#ffd34d", "#5ab0ff"],
+          "circle-stroke-color": "#0b1220",
+          "circle-stroke-width": 1.5,
+        },
+      });
+    });
     return () => {
       map.remove();
       mapRef.current = null;
@@ -465,6 +520,15 @@ export function MapView({
     // only used as the map's starting center); site changes are handled by
     // the effect below via `easeTo`, not by recreating the map instance.
   }, []);
+
+  // Highlight the selected site's dot.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map?.getLayer("radar-sites")) return;
+    const isSelected: ExpressionSpecification = ["==", ["get", "icao"], site.icao];
+    map.setPaintProperty("radar-sites", "circle-radius", ["case", isSelected, 6, 4]);
+    map.setPaintProperty("radar-sites", "circle-color", ["case", isSelected, "#ffd34d", "#5ab0ff"]);
+  }, [site.icao]);
 
   // S09b: keep the Rainbow raster layer in sync with the resolved tile URL
   // template (add/remove/replace via `syncRainbowLayer`). Needs the style
@@ -500,9 +564,7 @@ export function MapView({
     function updateOverlay() {
       if (!map || !canvas) return;
       const centerPx = map.project([site.lon, site.lat]);
-      const zoom = map.getZoom();
-      const mpp = metersPerPixel(site.lat, zoom);
-      const sizePx = (2 * APPROX_SWEEP_RADIUS_KM * 1000) / mpp;
+      const sizePx = 2 * radiusPx(map, site, sweepRangeKmRef.current ?? APPROX_SWEEP_RADIUS_KM);
       canvas.style.width = `${sizePx}px`;
       canvas.style.height = `${sizePx}px`;
       canvas.style.left = `${centerPx.x - sizePx / 2}px`;
@@ -578,7 +640,7 @@ export function MapView({
       map.off("resize", updateOverlay);
       map.off("load", updateOverlay);
     };
-  }, [site, canvasRef, mrmsCanvasRef]);
+  }, [site, canvasRef, mrmsCanvasRef, sweepRangeKm]);
 
   // Redraw the range rings whenever the geometry itself changes (new site,
   // or the first time it becomes available after wasm load) -- projecting
@@ -631,7 +693,7 @@ export function MapView({
       return best?.key ?? null;
     }
 
-    function handleClick(e: { lngLat: { lat: number; lng: number } }) {
+    function handleClick(e: { lngLat: { lat: number; lng: number }; point: { x: number; y: number } }) {
       // S09d follow-up: a point-pick in progress consumes this click
       // entirely -- a user picking a Rainbow point isn't trying to open an
       // alert, so alert click/select must not also fire for it.
@@ -639,14 +701,20 @@ export function MapView({
         onPointPickRef.current?.(e.lngLat.lat, e.lngLat.lng);
         return;
       }
+      const clickedSite = onSiteClickRef.current ? siteAtPoint(map!, e.point) : null;
+      if (clickedSite) {
+        onSiteClickRef.current?.(clickedSite.icao);
+        return;
+      }
       onAlertClick?.(alertAtPoint(e.lngLat));
     }
-    function handleHoverMove(e: { lngLat: { lat: number; lng: number } }) {
+    function handleHoverMove(e: { lngLat: { lat: number; lng: number }; point: { x: number; y: number } }) {
       if (pointPickActiveRef.current) {
         map!.getCanvas().style.cursor = "crosshair";
         return;
       }
-      map!.getCanvas().style.cursor = alertAtPoint(e.lngLat) ? "pointer" : "";
+      const overSite = onSiteClickRef.current && siteAtPoint(map!, e.point);
+      map!.getCanvas().style.cursor = overSite || alertAtPoint(e.lngLat) ? "pointer" : "";
     }
 
     map.on("click", handleClick);

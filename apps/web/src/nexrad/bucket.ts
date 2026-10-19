@@ -150,6 +150,10 @@ export async function discoverLatest(icao: string, signal?: AbortSignal): Promis
 export async function downloadVolume(key: string, signal?: AbortSignal): Promise<Uint8Array> {
   const url = `${NEXRAD_LEVEL2_BUCKET_URL}/${key}`;
   const response = await fetchWithRetry(url, { signal });
+  if (key.endsWith(".gz") && response.body) {
+    const unzipped = response.body.pipeThrough(new DecompressionStream("gzip"));
+    return new Uint8Array(await new Response(unzipped).arrayBuffer());
+  }
   const buffer = await response.arrayBuffer();
   return new Uint8Array(buffer);
 }

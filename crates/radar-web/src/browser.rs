@@ -239,6 +239,8 @@ struct UploadedSweep {
     _palette_gpu: PaletteGpuResources,
     _uniforms_gpu: UniformsGpu,
     bind_group: wgpu::BindGroup,
+    /// Half-width of the rendered square, in km (the camera's framing).
+    range_km: f32,
 }
 
 /// A live GPU device/surface pair targeting one `<canvas>`, the most
@@ -716,6 +718,78 @@ impl RadarWebRenderer {
     /// [`radar_geo::locate_gate_value`]/[`radar_geo::cursor_to_polar`]
     /// directly rather than reimplementing the cursor -> polar ->
     /// radial/gate resolution here.
+    /// Vertical cross-section of `moment_wire_code` along the line from
+    /// (`start_lat`, `start_lon`) to (`end_lat`, `end_lon`), 0 to `top_km`
+    /// MSL, as `cols * rows * 4` straight-alpha RGBA bytes (row 0 at the
+    /// top) colored by that moment's active color table -- see
+    /// [`crate::cross_section`]. CPU-only; no GPU involved.
+    #[wasm_bindgen(js_name = crossSection)]
+    #[allow(clippy::too_many_arguments)]
+    pub fn cross_section(
+        &self,
+        moment_wire_code: &str,
+        start_lat: f64,
+        start_lon: f64,
+        end_lat: f64,
+        end_lon: f64,
+        cols: u32,
+        rows: u32,
+        top_km: f64,
+    ) -> Result<Vec<u8>, JsValue> {
+        let moment = resolve_moment(moment_wire_code)?;
+        let volume = self.volume.as_ref().ok_or_else(|| {
+            JsValue::from_str("crossSection called before a successful decodeVolume")
+        })?;
+        if cols == 0
+            || rows == 0
+            || cols > 2048
+            || rows > 2048
+            || !top_km.is_finite()
+            || top_km <= 0.0
+        {
+            return Err(JsValue::from_str("crossSection: invalid size or ceiling"));
+        }
+        let cells = crate::cross_section::cross_section(
+            volume,
+            moment,
+            radar_geo::LatLon::new(start_lat, start_lon),
+            radar_geo::LatLon::new(end_lat, end_lon),
+            cols as usize,
+            rows as usize,
+            top_km,
+        );
+        let table = self.active_color_table_for(moment);
+        let lut = build_lut_from_table(&table, PALETTE_TEXEL_COUNT);
+        let span = table.domain.max - table.domain.min;
+        let mut rgba = Vec::with_capacity(cells.len() * 4);
+        for cell in cells {
+            let color = match cell {
+                crate::cross_section::CrossSectionCell::NoData => [0, 0, 0, 0],
+                // Same magenta the sweep shader uses for range folding.
+                crate::cross_section::CrossSectionCell::RangeFolded => [255, 0, 255, 255],
+                crate::cross_section::CrossSectionCell::Value(v) => {
+                    let u = if span > 0.0 {
+                        ((v - table.domain.min) / span).clamp(0.0, 1.0)
+                    } else {
+                        0.0
+                    };
+                    lut[(u * (lut.len() - 1) as f32).round() as usize]
+                }
+            };
+            rgba.extend_from_slice(&color);
+        }
+        Ok(rgba)
+    }
+
+    /// Ground range (km) from the site to the rendered canvas's edge for
+    /// the current selection -- the canvas spans `2 * range` km square, so
+    /// a map overlay must size it from this, not a fixed guess. `None`
+    /// until a sweep has been rendered.
+    #[wasm_bindgen(js_name = renderedRangeKm)]
+    pub fn rendered_range_km(&self) -> Option<f32> {
+        self.uploaded.as_ref().map(|u| u.range_km)
+    }
+
     #[wasm_bindgen(js_name = probeGate)]
     pub fn probe_gate(
         &self,
@@ -845,6 +919,7 @@ impl RadarWebRenderer {
             _palette_gpu: palette_gpu,
             _uniforms_gpu: uniforms_gpu,
             bind_group,
+            range_km: max_range_km,
         });
         Ok(())
     }

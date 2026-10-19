@@ -43,7 +43,8 @@ function isAscii(s: string): boolean {
  * malformed/adversarial input.
  */
 export function parseObjectKey(key: string): DiscoveredVolume | null {
-  const fileName = key.slice(key.lastIndexOf("/") + 1);
+  // Archive objects from before ~2017 are whole-file gzipped (`..._V06.gz`).
+  const fileName = key.slice(key.lastIndexOf("/") + 1).replace(/\.gz$/, "");
 
   if (fileName.length !== EXPECTED_FILE_NAME_LEN || !isAscii(fileName)) {
     return null;

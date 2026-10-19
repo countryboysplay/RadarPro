@@ -3,7 +3,7 @@ import {
   FORECAST_LEAD_HOUR_OPTIONS,
   FORECAST_RENDER_HEIGHT,
   FORECAST_RENDER_WIDTH,
-  FORECAST_VARIABLE,
+  FORECAST_VARIABLES,
   type ForecastPhase,
   type useForecastProvider,
 } from "./useForecastProvider";
@@ -149,6 +149,16 @@ export function ForecastPanel({ canvasRef, forecast }: ForecastPanelProps) {
 
       <div className="forecast-controls">
         <label>
+          Variable{" "}
+          <select value={forecast.variable} disabled={busy} onChange={(e) => forecast.setVariable(e.target.value)}>
+            {FORECAST_VARIABLES.map((v) => (
+              <option key={v.id} value={v.id}>
+                {v.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
           Lead time{" "}
           <select
             value={forecast.leadHours}
@@ -188,8 +198,14 @@ export function ForecastPanel({ canvasRef, forecast }: ForecastPanelProps) {
         <dd>{formatTime(forecast.grid?.validTime)}</dd>
         <dt>Variable</dt>
         <dd>
-          {FORECAST_VARIABLE}
+          {forecast.variable}
           {forecast.grid ? ` (${forecast.grid.unit})` : ""}
+        </dd>
+        <dt>Scale</dt>
+        <dd>
+          {forecast.grid
+            ? `${forecast.grid.displayMin} – ${forecast.grid.displayMax} ${forecast.grid.displayUnit}`
+            : "—"}
         </dd>
       </dl>
 

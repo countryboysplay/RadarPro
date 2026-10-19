@@ -94,6 +94,57 @@ pub fn palette_for(product: crate::keys::MrmsProduct) -> MrmsPalette {
     match product {
         crate::keys::MrmsProduct::ReflectivityQcComposite => reflectivity_palette(),
         crate::keys::MrmsProduct::PrecipRate => precip_rate_palette(),
+        crate::keys::MrmsProduct::MeshMax60min => ramp_palette(&[
+            (0.0, [0, 0, 0, 0]), // no hail: transparent
+            (2.0, [120, 200, 255, 230]),
+            (19.0, [40, 200, 90, 255]), // ~0.75 in
+            (25.0, [230, 220, 0, 255]), // 1 in, severe threshold
+            (44.0, [230, 120, 0, 255]), // 1.75 in
+            (51.0, [220, 0, 0, 255]),   // 2 in, significant
+            (76.0, [200, 0, 220, 255]), // 3 in+
+        ]),
+        crate::keys::MrmsProduct::EchoTop18 => ramp_palette(&[
+            (0.0, [0, 0, 0, 0]), // no echo: transparent
+            (1.0, [120, 200, 255, 200]),
+            (6.0, [40, 130, 240, 255]),
+            (10.0, [40, 200, 90, 255]),
+            (13.0, [230, 220, 0, 255]),
+            (16.0, [220, 0, 0, 255]),
+            (20.0, [200, 0, 220, 255]),
+        ]),
+        crate::keys::MrmsProduct::Vil => ramp_palette(&[
+            (0.0, [0, 0, 0, 0]), // none: transparent
+            (1.0, [120, 200, 255, 200]),
+            (10.0, [40, 200, 90, 255]),
+            (30.0, [230, 220, 0, 255]),
+            (50.0, [230, 120, 0, 255]),
+            (70.0, [220, 0, 0, 255]),
+            (90.0, [200, 0, 220, 255]),
+        ]),
+        crate::keys::MrmsProduct::Qpe01h => ramp_palette(&[
+            (0.0, [0, 0, 0, 0]), // no rain: transparent
+            (0.25, [120, 200, 255, 220]),
+            (2.5, [40, 130, 240, 255]),
+            (10.0, [40, 200, 90, 255]),
+            (25.0, [230, 220, 0, 255]),
+            (50.0, [230, 120, 0, 255]),
+            (75.0, [220, 0, 0, 255]),
+            (100.0, [200, 0, 220, 255]),
+        ]),
+    }
+}
+
+/// Build a palette whose domain spans the first to last stop. Same
+/// convention as the precip-rate ramp: the first stop is transparent so
+/// "zero"/no-data cells vanish.
+fn ramp_palette(stops: &[(f32, [u8; 4])]) -> MrmsPalette {
+    let stops: Vec<PaletteStop> = stops.iter().map(|&(v, c)| PaletteStop::new(v, c)).collect();
+    let min = stops[0].value;
+    let max = stops[stops.len() - 1].value;
+    MrmsPalette {
+        lut: build_palette_lut(&stops, min, max, PALETTE_TEXEL_COUNT),
+        min,
+        max,
     }
 }
 

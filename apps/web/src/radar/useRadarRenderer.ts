@@ -220,11 +220,16 @@ export function useRadarRenderer(canvasRef: RefObject<HTMLCanvasElement>) {
    * failure (renderer not ready, or the sweep doesn't carry that moment)
    * without throwing.
    */
+  /** Site-to-edge ground range (km) of the last rendered sweep -- the
+   * radar canvas spans twice this, so the map overlay sizes from it. */
+  const [renderedRangeKm, setRenderedRangeKm] = useState<number | null>(null);
+
   const selectAndRender = useCallback((sweepIndex: number, momentCode: string): boolean => {
     const renderer = rendererRef.current;
     if (!renderer) return false;
     try {
       renderer.selectAndRender(sweepIndex, momentCode);
+      setRenderedRangeKm(renderer.renderedRangeKm() ?? null);
       return true;
     } catch (err) {
       console.error("selectAndRender failed:", errMessage(err));
@@ -250,6 +255,7 @@ export function useRadarRenderer(canvasRef: RefObject<HTMLCanvasElement>) {
       if (!renderer) return false;
       try {
         renderer.selectAndRenderStormRelativeVelocity(sweepIndex, stormSpeedMps, stormDirectionDeg);
+        setRenderedRangeKm(renderer.renderedRangeKm() ?? null);
         return true;
       } catch (err) {
         console.error("selectAndRenderStormRelativeVelocity failed:", errMessage(err));
@@ -380,8 +386,33 @@ export function useRadarRenderer(canvasRef: RefObject<HTMLCanvasElement>) {
     [state.status],
   );
 
+  /** RGBA bytes of a vertical slice through the decoded volume (see
+   * `radar-web`'s `crossSection`), or `null` if unavailable. */
+  const crossSection = useCallback(
+    (
+      momentCode: string,
+      a: { lat: number; lon: number },
+      b: { lat: number; lon: number },
+      cols: number,
+      rows: number,
+      topKm: number,
+    ): Uint8Array | null => {
+      const renderer = rendererRef.current;
+      if (!renderer) return null;
+      try {
+        return renderer.crossSection(momentCode, a.lat, a.lon, b.lat, b.lon, cols, rows, topKm);
+      } catch (err) {
+        console.error("crossSection failed:", errMessage(err));
+        return null;
+      }
+    },
+    [],
+  );
+
   return {
     ...state,
+    renderedRangeKm,
+    crossSection,
     decodeVolume,
     momentWireCodesForSweep,
     defaultSweepIndexForMoment,

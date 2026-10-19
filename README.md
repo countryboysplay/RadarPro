@@ -13,32 +13,52 @@ preserved end to end rather than smoothed away for looks.
 
 ## Status
 
-**Stage S00 — Foundation.** This repository is not yet functional as a radar
-application. This stage only establishes the monorepo layout, build
-tooling, and CI checks required for subsequent stages to build on. There is
-no radar decoding, rendering, or live data pipeline yet.
+Working desktop (Windows, Tauri) and web workstation, through stage S11:
 
-See `Agent Context/context/CURRENT_STAGE.md` for the authoritative current
-stage and `Agent Context/context/stages/` for the staged roadmap.
+- **Live NEXRAD Level II** for ~160 WSR-88D sites: REF, VEL, SW, ZDR, CC,
+  PHI, plus derived Storm-Relative Velocity; every tilt; GPU rendering;
+  probe readout; range rings; custom color tables; scan-history playback;
+  historical archive loading by date; vertical cross-sections; click a
+  site dot on the map to switch radars.
+- **MRMS national mosaic**: composite reflectivity, precip rate, 1-hour
+  multi-sensor rainfall, 60-minute max hail size (MESH), 18 dBZ echo tops,
+  and VIL.
+- **Model forecasts** (GEFS ensemble, HRRR): temperature, dewpoint,
+  humidity, wind components, gusts, sea-level pressure, cloud cover.
+- **NWS alerts**, live polygons with lifecycle tracking.
+- **Rainbow Weather** tiles, nowcast, and point forecast (needs an API key).
+
+Not yet: multi-site radar compositing (use MRMS for a multi-radar view),
+model precipitation and geopotential height, MRMS rotation tracks (grid too
+large for the browser as-is), and code signing / auto-update activation for
+the desktop build.
+
+Stage planning lives in `Agent Context/` (kept out of git).
 
 ## Repository layout
 
 ```
 apps/
-  radar-cli/        Command-line entry point for radar decoding/inspection
-  web/               Development shell for the web-based workstation UI (Vite)
+  desktop/           Tauri desktop shell (Windows)
+  radar-cli/         Command-line decode/inspection tool
+  web/               Workstation UI (React + MapLibre + wasm)
 crates/
-  radar-types/       Shared core types (units, time, geospatial, provider-neutral models)
-  nexrad-level2/     NEXRAD Level II archive/stream decoding
-fixtures/            Small, checked-in sample data for tests and local development
-docs/
-  adr/               Architecture Decision Records
-Agent Context/        Full project/stage documentation for contributors and coding agents
+  radar-types/       Shared polar radar domain types
+  nexrad-level2/     NEXRAD Archive II decoder
+  radar-geo/         Polar/geographic geometry, SRV
+  radar-render/      wgpu sweep renderer and color tables
+  radar-cache/       Live Level II discovery/download/cache
+  radar-web/         Browser glue for decode/render/probe/cross-section
+  weather-alerts/    NWS alert parsing and lifecycle store
+  forecast-core/     Gridded forecast abstraction and renderer
+  provider-gefs/     GEFS provider
+  provider-hrrr/     HRRR provider
+  forecast-web/      Browser glue for forecasts
+  mrms/              MRMS mosaic products
+  mrms-web/          Browser glue for MRMS
+fixtures/            Small sample data for tests
+docs/adr/            Architecture Decision Records
 ```
-
-Additional crates and apps will be introduced in later stages as needed;
-S00 intentionally creates only the minimum required to have a healthy,
-buildable workspace.
 
 ## Architecture at a glance
 
@@ -76,6 +96,7 @@ Requires a current Node.js LTS release (Node 20+).
 cd apps/web
 npm install
 npm run typecheck
+npm test
 npm run build
 ```
 

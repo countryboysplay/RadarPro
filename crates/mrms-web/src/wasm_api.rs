@@ -99,12 +99,8 @@ impl MrmsHandle {
     /// or if building the underlying HTTP client fails.
     #[wasm_bindgen(constructor)]
     pub fn new(product_id: &str) -> Result<MrmsHandle, JsValue> {
-        let product = parse_product(product_id).ok_or_else(|| {
-            JsValue::from_str(&format!(
-                "unknown MRMS product id {product_id:?}; expected \"reflectivity\" or \
-                     \"precip_rate\""
-            ))
-        })?;
+        let product = parse_product(product_id)
+            .ok_or_else(|| JsValue::from_str(&format!("unknown MRMS product id {product_id:?}")))?;
         let client = MrmsClient::default_bucket().map_err(|e| JsValue::from_str(&e.to_string()))?;
         Ok(Self {
             state: Rc::new(RefCell::new(MrmsState {
@@ -261,11 +257,9 @@ impl MrmsHandle {
 /// Map a JS-facing product id string to its [`MrmsProduct`]. `None` for
 /// anything else -- never panics on caller-supplied input.
 fn parse_product(id: &str) -> Option<MrmsProduct> {
-    match id {
-        "reflectivity" => Some(MrmsProduct::ReflectivityQcComposite),
-        "precip_rate" => Some(MrmsProduct::PrecipRate),
-        _ => None,
-    }
+    MrmsProduct::ALL
+        .into_iter()
+        .find(|&p| product_id_str(p) == id)
 }
 
 /// The JS-facing product id string for `product` -- the exact inverse of
@@ -274,6 +268,10 @@ fn product_id_str(product: MrmsProduct) -> &'static str {
     match product {
         MrmsProduct::ReflectivityQcComposite => "reflectivity",
         MrmsProduct::PrecipRate => "precip_rate",
+        MrmsProduct::MeshMax60min => "hail_size_60min",
+        MrmsProduct::EchoTop18 => "echo_top_18",
+        MrmsProduct::Vil => "vil",
+        MrmsProduct::Qpe01h => "qpe_1h",
     }
 }
 

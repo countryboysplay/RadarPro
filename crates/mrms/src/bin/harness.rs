@@ -40,10 +40,7 @@ async fn main() {
         }
     };
 
-    for product in [
-        MrmsProduct::ReflectivityQcComposite,
-        MrmsProduct::PrecipRate,
-    ] {
+    for product in MrmsProduct::ALL {
         run_one_product(&client, product).await;
     }
 }
@@ -86,6 +83,10 @@ async fn run_one_product(client: &MrmsClient, product: MrmsProduct) {
     };
 
     print_summary(&grid);
+    // Skip the GPU render: inspect decoded values on a machine whose GPU path fails.
+    if std::env::args().any(|a| a == "--decode-only") {
+        return;
+    }
 
     let Some((center_lon, center_lat, half_extent_lon, half_extent_lat)) = camera_frame_for(&grid)
     else {
@@ -164,6 +165,19 @@ fn print_summary(grid: &MrmsGrid) {
         stats.no_coverage_count,
         100.0 * stats.no_coverage_count as f64 / total as f64,
     );
+    // Most frequent real values -- how a new product's fill sentinels are found.
+    let mut counts: std::collections::HashMap<u32, usize> = std::collections::HashMap::new();
+    for v in grid.values.iter().filter_map(|v| v.value()) {
+        *counts.entry(v.to_bits()).or_default() += 1;
+    }
+    let mut top: Vec<_> = counts.into_iter().collect();
+    top.sort_by_key(|e| std::cmp::Reverse(e.1));
+    let top: Vec<String> = top
+        .iter()
+        .take(6)
+        .map(|(bits, n)| format!("{}x{n}", f32::from_bits(*bits)))
+        .collect();
+    println!("  most frequent values: {}", top.join(", "));
 }
 
 /// Frame the camera on this grid's own real-world bounding box (all four
@@ -202,10 +216,7 @@ fn save_png(rgba: &[u8], product: MrmsProduct) -> Result<std::path::PathBuf, Str
     let out_dir =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/mrms-harness");
     std::fs::create_dir_all(&out_dir).map_err(|e| e.to_string())?;
-    let file_name = match product {
-        MrmsProduct::ReflectivityQcComposite => "mrms_conus_reflectivity.png",
-        MrmsProduct::PrecipRate => "mrms_conus_precip_rate.png",
-    };
+    let file_name = format!("mrms_conus_{}.png", product.product_dir());
     let out_path = out_dir.join(file_name);
 
     image::save_buffer(

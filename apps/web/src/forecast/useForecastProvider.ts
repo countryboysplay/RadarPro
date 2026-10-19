@@ -34,10 +34,20 @@ export const FORECAST_HALF_EXTENT_LAT = 20;
  * proof-of-concept concern, per this stage's brief). */
 const DISCOVER_LOOKBACK_DAYS = 5;
 
-/** Only variable wired up in this stage -- S08's exit criteria is "the same
- * forecast UI and grid renderer switch between GEFS and HRRR", not a
- * variable picker, and both providers publish this one. */
-export const FORECAST_VARIABLE = "temperature_2m";
+/** Variables both GEFS and HRRR decode (canonical names, see
+ * `forecast-core`'s `ForecastVariable::canonical_name`). */
+export const FORECAST_VARIABLES = [
+  { id: "temperature_2m", label: "Temperature (2 m)" },
+  { id: "dewpoint_2m", label: "Dewpoint (2 m)" },
+  { id: "relative_humidity", label: "Relative humidity" },
+  { id: "wind_gust", label: "Wind gust" },
+  { id: "wind_u_10m", label: "Wind, east–west (10 m)" },
+  { id: "wind_v_10m", label: "Wind, north–south (10 m)" },
+  { id: "mslp", label: "Sea-level pressure" },
+  { id: "cloud_cover", label: "Cloud cover" },
+] as const;
+
+const DEFAULT_VARIABLE = "temperature_2m";
 
 /** Selectable forecast lead times (hours) for this proof-of-concept UI. */
 export const FORECAST_LEAD_HOUR_OPTIONS = [0, 6, 12, 24, 48];
@@ -128,6 +138,8 @@ export interface ForecastProviderState {
   run: ForecastRunMetadata | null;
   grid: ForecastGridMetadata | null;
   leadHours: number;
+  /** Canonical variable name, one of `FORECAST_VARIABLES`' ids. */
+  variable: string;
   /** Only meaningful (and only ever non-null) when `metadata.isEnsemble`. */
   ensemble: ForecastEnsembleSpec | null;
 }
@@ -181,10 +193,14 @@ export function useForecastProvider(canvasRef: RefObject<HTMLCanvasElement>) {
     run: null,
     grid: null,
     leadHours: DEFAULT_LEAD_HOURS,
+    variable: DEFAULT_VARIABLE,
     ensemble: null,
   });
 
   const handleRef = useRef<ProviderHandle | null>(null);
+  // Read inside selectProvider's async pipeline without making it a dependency.
+  const variableRef = useRef(state.variable);
+  variableRef.current = state.variable;
   const generationRef = useRef(0);
 
   const freeHandle = useCallback(() => {
@@ -227,17 +243,23 @@ export function useForecastProvider(canvasRef: RefObject<HTMLCanvasElement>) {
     [canvasRef],
   );
 
-  /** Fetch `FORECAST_VARIABLE`/`leadHours`/`ensemble` on `handle` and
+  /** Fetch `variable`/`leadHours`/`ensemble` on `handle` and
    * render it, updating state at each step. Assumes a run has already been
    * discovered on this handle. Silently discards its own result (never
    * calls `setState`/`paint`) once `generation` is no longer the current
    * one -- see this hook's own doc comment. */
   const fetchAndRender = useCallback(
-    async (handle: ProviderHandle, leadHours: number, ensemble: ForecastEnsembleSpec | null, generation: number) => {
+    async (
+      handle: ProviderHandle,
+      variable: string,
+      leadHours: number,
+      ensemble: ForecastEnsembleSpec | null,
+      generation: number,
+    ) => {
       try {
         setState((s) => (generation === generationRef.current ? { ...s, phase: "fetching", error: null } : s));
         const gridJson = (await withTimeout(
-          handle.fetchField(FORECAST_VARIABLE, leadHours, ensemble),
+          handle.fetchField(variable, leadHours, ensemble),
           "fetchField",
         )) as string;
         if (generation !== generationRef.current) return;
@@ -275,7 +297,7 @@ export function useForecastProvider(canvasRef: RefObject<HTMLCanvasElement>) {
     (providerId: ForecastProviderId) => {
       const generation = ++generationRef.current;
       freeHandle();
-      setState({
+      setState((s) => ({
         providerId,
         phase: "loading-module",
         error: null,
@@ -283,8 +305,9 @@ export function useForecastProvider(canvasRef: RefObject<HTMLCanvasElement>) {
         run: null,
         grid: null,
         leadHours: DEFAULT_LEAD_HOURS,
+        variable: s.variable,
         ensemble: null,
-      });
+      }));
 
       void (async () => {
         try {
@@ -307,7 +330,7 @@ export function useForecastProvider(canvasRef: RefObject<HTMLCanvasElement>) {
           const run = JSON.parse(runJson) as ForecastRunMetadata;
           setState((s) => (generation === generationRef.current ? { ...s, run } : s));
 
-          await fetchAndRender(handle, DEFAULT_LEAD_HOURS, ensemble, generation);
+          await fetchAndRender(handle, variableRef.current, DEFAULT_LEAD_HOURS, ensemble, generation);
         } catch (err) {
           if (generation !== generationRef.current) return;
           setState((s) => ({ ...s, phase: "error", error: errMessage(err) }));
@@ -329,9 +352,9 @@ export function useForecastProvider(canvasRef: RefObject<HTMLCanvasElement>) {
       }
       const generation = generationRef.current;
       setState((s) => ({ ...s, leadHours }));
-      void fetchAndRender(handle, leadHours, state.ensemble, generation);
+      void fetchAndRender(handle, state.variable, leadHours, state.ensemble, generation);
     },
-    [fetchAndRender, state.ensemble, state.run],
+    [fetchAndRender, state.ensemble, state.run, state.variable],
   );
 
   /** Re-fetch and re-render with a different ensemble statistic (GEFS
@@ -343,9 +366,21 @@ export function useForecastProvider(canvasRef: RefObject<HTMLCanvasElement>) {
       if (!handle || state.run === null || !state.metadata?.isEnsemble) return;
       const generation = generationRef.current;
       setState((s) => ({ ...s, ensemble }));
-      void fetchAndRender(handle, state.leadHours, ensemble, generation);
+      void fetchAndRender(handle, state.variable, state.leadHours, ensemble, generation);
     },
-    [fetchAndRender, state.leadHours, state.metadata, state.run],
+    [fetchAndRender, state.leadHours, state.metadata, state.run, state.variable],
+  );
+
+  /** Re-fetch and re-render a different variable on the current run. Just
+   * records the choice if no run has been discovered yet. */
+  const setVariable = useCallback(
+    (variable: string) => {
+      const handle = handleRef.current;
+      setState((s) => ({ ...s, variable }));
+      if (!handle || state.run === null) return;
+      void fetchAndRender(handle, variable, state.leadHours, state.ensemble, generationRef.current);
+    },
+    [fetchAndRender, state.ensemble, state.leadHours, state.run],
   );
 
   /** Retry the current provider's pipeline from scratch after an error
@@ -360,6 +395,7 @@ export function useForecastProvider(canvasRef: RefObject<HTMLCanvasElement>) {
     selectProvider,
     setLeadHours,
     setEnsemble,
+    setVariable,
     retry,
   };
 }

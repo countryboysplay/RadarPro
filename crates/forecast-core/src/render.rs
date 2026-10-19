@@ -13,6 +13,7 @@
 //! choice never mutates source data (GLOBAL_CONTRACT).
 
 use crate::grid::ForecastGrid;
+use crate::variable::ForecastVariable;
 use radar_render::palette::{build_palette_lut, PaletteStop};
 
 /// Default palette domain, in Celsius, for 2m temperature. An informed UI
@@ -50,6 +51,121 @@ pub fn build_default_palette_lut() -> Vec<[u8; 4]> {
         DEFAULT_MAX_CELSIUS,
         PALETTE_TEXEL_COUNT,
     )
+}
+
+/// How one [`ForecastVariable`] is shown: display unit, palette domain, and
+/// color ramp. Same "informed UI choice" status as the temperature ramp.
+pub struct DisplayScale {
+    pub unit: &'static str,
+    pub min: f32,
+    pub max: f32,
+    pub stops: Vec<PaletteStop>,
+}
+
+impl DisplayScale {
+    pub fn palette_lut(&self) -> Vec<[u8; 4]> {
+        build_palette_lut(&self.stops, self.min, self.max, PALETTE_TEXEL_COUNT)
+    }
+}
+
+/// Display scale for `variable`. Values are in the unit [`to_display_values`]
+/// produces (Celsius for temperatures, hPa for pressure, native otherwise).
+pub fn display_scale(variable: ForecastVariable) -> DisplayScale {
+    let s = PaletteStop::new;
+    let (unit, min, max, stops) = match variable {
+        ForecastVariable::Temperature2m | ForecastVariable::Dewpoint2m => (
+            "°C",
+            DEFAULT_MIN_CELSIUS,
+            DEFAULT_MAX_CELSIUS,
+            default_temperature_palette_stops(),
+        ),
+        // Signed components: diverging blue (negative) / white / red (positive).
+        ForecastVariable::WindU10m | ForecastVariable::WindV10m => (
+            "m/s",
+            -30.0,
+            30.0,
+            vec![
+                s(-30.0, [30, 60, 170, 255]),
+                s(0.0, [235, 235, 235, 255]),
+                s(30.0, [190, 30, 40, 255]),
+            ],
+        ),
+        ForecastVariable::WindGust => (
+            "m/s",
+            0.0,
+            40.0,
+            vec![
+                s(0.0, [235, 240, 245, 255]),
+                s(10.0, [90, 170, 220, 255]),
+                s(20.0, [240, 200, 40, 255]),
+                s(30.0, [220, 60, 30, 255]),
+                s(40.0, [150, 20, 140, 255]),
+            ],
+        ),
+        ForecastVariable::Mslp => (
+            "hPa",
+            970.0,
+            1050.0,
+            vec![
+                s(970.0, [120, 40, 140, 255]),
+                s(1013.0, [235, 235, 235, 255]),
+                s(1050.0, [200, 120, 30, 255]),
+            ],
+        ),
+        ForecastVariable::RelativeHumidity => (
+            "%",
+            0.0,
+            100.0,
+            vec![
+                s(0.0, [170, 110, 50, 255]),
+                s(50.0, [235, 235, 220, 255]),
+                s(100.0, [30, 130, 80, 255]),
+            ],
+        ),
+        ForecastVariable::CloudCover => (
+            "%",
+            0.0,
+            100.0,
+            vec![s(0.0, [20, 40, 90, 255]), s(100.0, [240, 240, 245, 255])],
+        ),
+        ForecastVariable::Precipitation1h => (
+            "mm",
+            0.0,
+            25.0,
+            vec![
+                s(0.0, [235, 240, 235, 255]),
+                s(5.0, [60, 170, 70, 255]),
+                s(15.0, [230, 200, 30, 255]),
+                s(25.0, [200, 30, 30, 255]),
+            ],
+        ),
+        ForecastVariable::GeopotentialHeight => (
+            "m",
+            4800.0,
+            6000.0,
+            vec![
+                s(4800.0, [60, 40, 140, 255]),
+                s(6000.0, [220, 120, 40, 255]),
+            ],
+        ),
+    };
+    DisplayScale {
+        unit,
+        min,
+        max,
+        stops,
+    }
+}
+
+/// Convert a decoded field into a *new* display-unit array matching
+/// [`display_scale`]: Kelvin -> Celsius, Pa -> hPa, anything else unchanged.
+/// Never mutates `field.values`.
+pub fn to_display_values(field: &ForecastGrid) -> Vec<f32> {
+    match field.unit {
+        "K" => to_display_celsius(field),
+        "Pa" => field.values.iter().map(|&pa| pa / 100.0).collect(),
+        _ => field.values.clone(),
+    }
 }
 
 /// Convert a decoded field's native-unit (Kelvin) values into a *new*
@@ -124,6 +240,26 @@ mod tests {
         let lut = build_default_palette_lut();
         assert_eq!(lut.first().copied(), Some(stops[0].color));
         assert_eq!(lut.last().copied(), Some(stops[stops.len() - 1].color));
+    }
+
+    #[test]
+    fn to_display_values_converts_pa_to_hpa_and_passes_percent_through() {
+        let mut field = sample_field(vec![101_325.0, 98_000.0, 0.0, 0.0]);
+        field.unit = "Pa";
+        let hpa = to_display_values(&field);
+        assert!((hpa[0] - 1013.25).abs() < 1e-3);
+        assert!((hpa[1] - 980.0).abs() < 1e-3);
+        field.unit = "%";
+        assert_eq!(to_display_values(&field), field.values);
+    }
+
+    #[test]
+    fn every_variable_has_a_valid_display_scale() {
+        for v in ForecastVariable::ALL {
+            let scale = display_scale(v);
+            assert!(scale.min < scale.max, "{v:?}");
+            assert_eq!(scale.palette_lut().len(), PALETTE_TEXEL_COUNT);
+        }
     }
 
     #[test]

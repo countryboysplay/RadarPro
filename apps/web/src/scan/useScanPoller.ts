@@ -38,6 +38,8 @@ export type PollEvent =
 export function useScanPoller(
   icao: string,
   onVolumeBytes: (bytes: Uint8Array, volume: DiscoveredVolume) => void,
+  /** `false` pauses polling entirely (archive playback). */
+  enabled = true,
 ): PollEvent {
   const [event, setEvent] = useState<PollEvent>({ type: "checking" });
   // Ref so the effect below does not need `onVolumeBytes` in its dependency
@@ -47,6 +49,7 @@ export function useScanPoller(
   onVolumeBytesRef.current = onVolumeBytes;
 
   useEffect(() => {
+    if (!enabled) return;
     const controller = new AbortController();
     let cancelled = false;
     let inFlight = false;
@@ -91,7 +94,7 @@ export function useScanPoller(
       controller.abort();
       clearInterval(timer);
     };
-  }, [icao]);
+  }, [icao, enabled]);
 
   return event;
 }
