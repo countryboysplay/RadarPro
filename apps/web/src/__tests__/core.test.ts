@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { parseObjectKey } from "../nexrad/keys";
 import { clampHistoryLimit, historyReducer, initialState } from "../scan/useScanHistory";
 import { alertNearSite, pointInAlertGeometry } from "../alerts/geometryHitTest";
+import { coveringAlerts } from "../location/useMyLocation";
 import { parseColorTableJson } from "../colorTables/colorTableJson";
 import { legLengthAndBearing } from "../ui/CrossSectionPanel";
 import { archiveKeyFor, newestVolumeNumber, nextVolumeNumber, parseChunkName, previousVolumeNumber } from "../nexrad/chunks";
@@ -71,6 +72,19 @@ describe("pointInAlertGeometry", () => {
     };
     expect(pointInAlertGeometry([5, 5], holed as never)).toBe(false);
     expect(pointInAlertGeometry([2, 2], holed as never)).toBe(true);
+  });
+});
+
+describe("coveringAlerts", () => {
+  const square = { type: "Polygon" as const, coordinates: [[[0, 0], [10, 0], [10, 10], [0, 10], [0, 0]]] };
+  const held = (key: string, geometry: unknown) => ({ key, alert: { geometry } }) as never;
+  const active = [held("in", square), held("zone-only", null), held("far", { ...square, coordinates: [[[20, 20], [30, 20], [30, 30], [20, 20]]] })];
+  it("finds polygons covering the point and only reports new ones as fresh", () => {
+    const first = coveringAlerts({ lat: 5, lon: 5 }, active, new Set());
+    expect(first.covering.map((a) => a.key)).toEqual(["in"]);
+    expect(first.fresh.map((a) => a.key)).toEqual(["in"]);
+    expect(coveringAlerts({ lat: 5, lon: 5 }, active, new Set(["in"])).fresh).toEqual([]);
+    expect(coveringAlerts({ lat: 50, lon: 5 }, active, new Set()).covering).toEqual([]);
   });
 });
 

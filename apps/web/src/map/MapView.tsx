@@ -8,6 +8,7 @@ import { RADAR_SITES, type RadarSite } from "../sites";
 import type { AlertFeatureCollection } from "../alerts/types";
 import { SEVERITY_COLORS, severityRank } from "../alerts/types";
 import { pointInAlertGeometry } from "../alerts/geometryHitTest";
+import type { MyLocation } from "../location/useMyLocation";
 import type { MrmsViewport } from "../mrms/types";
 import { isDesktop } from "../platform/desktop";
 import { registerDesktopRainbowProtocol } from "../rainbow/desktopTiles";
@@ -230,6 +231,49 @@ function drawAlerts(
   ctx.globalAlpha = 1;
 }
 
+/**
+ * The user's own position, on the alerts canvas so it sits above warning
+ * polygons: a faint accuracy circle, a Paper Ink dot on the course casing,
+ * and an arrow ahead of it along the heading. Neutral ink on purpose: the
+ * user didn't place it (not purple) and it isn't a selection (not steel blue).
+ */
+function drawMyLocation(map: MapLibreMap, canvas: HTMLCanvasElement, loc: MyLocation | null) {
+  const ctx = canvas.getContext("2d");
+  if (!ctx || !loc) return;
+  const p = map.project([loc.lon, loc.lat]);
+  const accuracyPx = radiusPx(map, loc, loc.accuracyM / 1000);
+  ctx.save();
+  if (accuracyPx > 12) {
+    ctx.fillStyle = "rgba(236, 235, 228, 0.12)";
+    ctx.strokeStyle = "rgba(236, 235, 228, 0.5)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, accuracyPx, 0, 2 * Math.PI);
+    ctx.fill();
+    ctx.stroke();
+  }
+  ctx.fillStyle = "#ecebe4";
+  ctx.strokeStyle = COURSE_CASING;
+  ctx.lineWidth = 3;
+  if (loc.headingDeg !== null) {
+    // Screen angle: heading is from north, the map may be rotated.
+    const a = ((loc.headingDeg - map.getBearing() - 90) * Math.PI) / 180;
+    const at = (r: number, da: number) => [p.x + r * Math.cos(a + da), p.y + r * Math.sin(a + da)] as const;
+    ctx.beginPath();
+    ctx.moveTo(...at(20, 0));
+    ctx.lineTo(...at(11, 0.5));
+    ctx.lineTo(...at(11, -0.5));
+    ctx.closePath();
+    ctx.stroke();
+    ctx.fill();
+  }
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, 7, 0, 2 * Math.PI);
+  ctx.stroke();
+  ctx.fill();
+  ctx.restore();
+}
+
 const RAINBOW_SOURCE_ID = "rainbow-precip-source";
 const RAINBOW_LAYER_ID = "rainbow-precip-layer";
 
@@ -363,7 +407,7 @@ const APPROX_SWEEP_RADIUS_KM = 460;
  * own projection (east-west, so it is exact for the canvas's width). A
  * hand-rolled meters-per-pixel formula here used 256 px tiles while
  * MapLibre's zoom is 512 px tiles, drawing the radar at half size. */
-function radiusPx(map: MapLibreMap, site: RadarSite, rangeKm: number): number {
+function radiusPx(map: MapLibreMap, site: { lat: number; lon: number }, rangeKm: number): number {
   const dLon = rangeKm / (111.32 * Math.cos((site.lat * Math.PI) / 180));
   return map.project([site.lon + dLon, site.lat]).x - map.project([site.lon, site.lat]).x;
 }
@@ -471,6 +515,10 @@ export interface MapViewProps {
    * style controls already are. Defaults to `1` (fully opaque) so behavior
    * is unchanged for a caller that hasn't wired this up. */
   radarOpacity?: number;
+  /** The user's own position (dot + heading arrow), or null when off. */
+  myLocation?: MyLocation | null;
+  /** Bumped to pan the map to `myLocation` (the "Center on me" button). */
+  centerOnMeRequest?: number;
   /** The cross-section leg, drawn on the map in course ink. */
   course?: CourseLeg | null;
   /** The painted model-field canvas, drawn on the map (in place of the radar) while `forecastOnMap`. */
@@ -528,6 +576,8 @@ export function MapView({
   radarOpacity = 1,
   onMrmsViewportChange,
   course = null,
+  myLocation = null,
+  centerOnMeRequest = 0,
   forecastCanvasRef,
   forecastOnMap = false,
   forecastKey = "",
@@ -553,6 +603,8 @@ export function MapView({
   alertsRef.current = alerts;
   const selectedAlertKeyRef = useRef<string | null>(selectedAlertKey);
   selectedAlertKeyRef.current = selectedAlertKey;
+  const myLocationRef = useRef<MyLocation | null>(myLocation);
+  myLocationRef.current = myLocation;
   const appliedRainbowUrlRef = useRef<string | null>(null);
   const onMrmsViewportChangeRef = useRef(onMrmsViewportChange);
   onMrmsViewportChangeRef.current = onMrmsViewportChange;
@@ -677,6 +729,7 @@ export function MapView({
           alertsCanvas.style.height = mapCanvas.style.height;
         }
         drawAlerts(map, alertsCanvas, alertsRef.current, selectedAlertKeyRef.current);
+        drawMyLocation(map, alertsCanvas, myLocationRef.current);
       }
 
       const forecastOverlay = forecastOverlayRef.current;
@@ -769,14 +822,22 @@ export function MapView({
     if (map && overlay) drawForecastField(map, overlay, forecastFieldRef.current);
   }, [forecastOnMap, forecastKey]);
 
-  // Redraw alert polygons whenever the active set or selection changes
-  // (map pan/zoom/resize is handled by `updateOverlay` above).
+  // Redraw alert polygons and the user's position whenever the active set,
+  // selection or position changes (map pan/zoom/resize is handled by
+  // `updateOverlay` above).
   useEffect(() => {
     const map = mapRef.current;
     const alertsCanvas = alertsCanvasRef.current;
     if (!map || !alertsCanvas) return;
     drawAlerts(map, alertsCanvas, alerts, selectedAlertKey);
-  }, [alerts, selectedAlertKey]);
+    drawMyLocation(map, alertsCanvas, myLocation);
+  }, [alerts, selectedAlertKey, myLocation]);
+
+  // Pan to the user's position on request; reads the ref so later fixes don't re-pan.
+  useEffect(() => {
+    const loc = myLocationRef.current;
+    if (centerOnMeRequest && loc) mapRef.current?.easeTo({ center: [loc.lon, loc.lat], duration: 600 });
+  }, [centerOnMeRequest]);
 
   // Alert click handling: resolve a map click to "which alert (if any) was
   // clicked" via plain lon/lat point-in-polygon hit testing against the

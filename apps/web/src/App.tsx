@@ -38,6 +38,8 @@ import { AlertDetail } from "./ui/AlertDetail";
 import { useAlertPoller } from "./alerts/useAlertPoller";
 import type { AlertJson } from "./alerts/types";
 import { alertNearSite } from "./alerts/geometryHitTest";
+import { SEVERITY_COLORS } from "./alerts/types";
+import { coveringAlerts, playAlertTone, useMyLocation } from "./location/useMyLocation";
 import { ForecastPanel } from "./forecast/ForecastPanel";
 import { leadHourOptions, useForecastProvider, type ForecastPhase } from "./forecast/useForecastProvider";
 import type { ForecastProviderId } from "./forecast/types";
@@ -180,6 +182,13 @@ function summarizeAlerts(nearCount: number, activeCount: number, icao: string): 
   return activeCount > 0 ? `${activeCount} US · ${nearCount} polygons near ${icao}` : "none active";
 }
 
+/** One-line summary for "My location". */
+function summarizeMyLocation(on: boolean, { location, error }: ReturnType<typeof useMyLocation>, coveringCount: number): string {
+  if (!on) return "off";
+  if (error) return error;
+  if (!location) return "locating…";
+  return coveringCount > 0 ? `inside ${coveringCount} alert${coveringCount === 1 ? "" : "s"}` : "no alerts here";
+}
 
 /** One-line summary for "Settings". */
 function summarizeSettings(cacheEntriesCount: number, cacheLimit: number): string {
@@ -531,6 +540,43 @@ export default function App() {
   const handleAlertClick = useCallback((key: string | null) => {
     setSelectedAlertKey(key);
   }, []);
+
+  // Your own position, and a desktop notification (plus optional tone) when
+  // an alert polygon starts covering it. Off by default: it asks for location.
+  const [showMyLocation, setShowMyLocation] = useState(false);
+  const [notifyCovering, setNotifyCovering] = useState(false);
+  const [notifySound, setNotifySound] = useState(true);
+  const myLocation = useMyLocation(showMyLocation);
+  const [centerOnMeRequest, setCenterOnMeRequest] = useState(0);
+  const coveringMe = useMemo(
+    () => (myLocation.location ? coveringAlerts(myLocation.location, alerts.activeAlerts, new Set()).covering : []),
+    [myLocation.location, alerts.activeAlerts],
+  );
+  const notifiedKeysRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    // Cleared while off, so turning it on reports alerts already covering you.
+    if (!notifyCovering) {
+      notifiedKeysRef.current = new Set();
+      return;
+    }
+    if (!myLocation.location) return;
+    const { covering, fresh } = coveringAlerts(myLocation.location, alerts.activeAlerts, notifiedKeysRef.current);
+    notifiedKeysRef.current = new Set(covering.map(({ key }) => key));
+    if (fresh.length === 0) return;
+    if (notifySound) playAlertTone();
+    if (!("Notification" in window) || Notification.permission !== "granted") return;
+    for (const { key, alert } of fresh) {
+      const n = new Notification(`${alert.event} covers your location`, {
+        body: alert.headline ?? alert.affectedAreas.join("; "),
+        tag: key,
+        requireInteraction: alert.severity === "Extreme" || alert.severity === "Severe",
+      });
+      n.onclick = () => {
+        window.focus();
+        setSelectedAlertKey(key);
+      };
+    }
+  }, [myLocation.location, alerts.activeAlerts, notifyCovering, notifySound]);
 
   // Reveal the Warnings section whenever an alert becomes selected, so a
   // map click on a polygon always shows its detail.
@@ -1143,6 +1189,58 @@ export default function App() {
           )}
         </SidebarCategory>
 
+        <SidebarCategory title="My location" summary={summarizeMyLocation(showMyLocation, myLocation, coveringMe.length)}>
+          <label className="check-field">
+            <input type="checkbox" checked={showMyLocation} onChange={(e) => setShowMyLocation(e.target.checked)} />
+            <span>Show my location on the map</span>
+          </label>
+          <button type="button" disabled={!myLocation.location} onClick={() => setCenterOnMeRequest((n) => n + 1)}>
+            Center on me
+          </button>
+          <label className="check-field">
+            <input
+              type="checkbox"
+              checked={notifyCovering}
+              disabled={!showMyLocation}
+              onChange={async (e) => {
+                const on = e.target.checked;
+                // Ask first, so alerts already covering you are notified, not just sounded.
+                if (on && "Notification" in window && Notification.permission === "default") {
+                  await Notification.requestPermission();
+                }
+                setNotifyCovering(on);
+              }}
+            />
+            <span>Notify me when a warning covers my location</span>
+          </label>
+          <label className="check-field">
+            <input type="checkbox" checked={notifySound} disabled={!notifyCovering} onChange={(e) => setNotifySound(e.target.checked)} />
+            <span>Play a sound with the notification</span>
+          </label>
+          {notifyCovering && (!("Notification" in window) || Notification.permission === "denied") && (
+            <div className="settings-field-note">Desktop notifications are blocked; only the sound will play.</div>
+          )}
+          {coveringMe.length > 0 && (
+            <ul className="alerts-list">
+              {coveringMe.map(({ key, alert }) => (
+                <li key={key}>
+                  <button
+                    type="button"
+                    className={`alert-row${key === selectedAlertKey ? " alert-row-selected" : ""}`}
+                    onClick={() => handleAlertClick(key)}
+                  >
+                    <span className="alert-severity-dot" style={{ background: SEVERITY_COLORS[alert.severity] }} aria-hidden="true" />
+                    <span className="alert-row-text">
+                      <span className="alert-row-event">{alert.event}</span>
+                      {alert.headline && <span className="alert-row-headline">{alert.headline}</span>}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </SidebarCategory>
+
         {/* One active map layer at a time: exclusivity is the control itself,
             and only the selected layer's own settings show. */}
         <SidebarCategory title="Layers" summary={mapLayersSummary}>
@@ -1320,6 +1418,8 @@ export default function App() {
           onMrmsViewportChange={setMrmsViewport}
           radarOpacity={radarOpacityPercent / 100}
           course={xsLine}
+          myLocation={myLocation.location}
+          centerOnMeRequest={centerOnMeRequest}
           forecastCanvasRef={forecastCanvasRef}
           forecastOnMap={forecastOnMap}
           forecastKey={`${forecast.providerId}|${forecast.variable}|${forecast.leadHours}|${forecast.phase}`}
