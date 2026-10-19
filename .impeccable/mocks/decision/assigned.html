@@ -1,0 +1,79 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>RadarPro: Night Road Atlas</title>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Narrow:wght@500;700&family=Archivo:wght@500;700;800&display=swap" rel="stylesheet">
+<style>
+:root{--g0:#0b1017;--g1:#0f1620;--g2:#16202c;--g3:#22303f;--g4:#3a4a5c;--g6:#8593a3;--g8:#e8e4d8;--blue:#739BD0;--red:#e0413a;--amber:#f2c84b}
+*{box-sizing:border-box;margin:0}
+body{width:1440px;height:900px;overflow:hidden;background:var(--g0);color:var(--g8);font:500 14px/1.2 "Archivo Narrow",sans-serif;position:relative}
+.map{position:absolute;inset:40px 76px 72px 44px;background:
+ radial-gradient(ellipse 60px 40px at 63% 34%,#e33 0 20%,#f90 30%,#ee3 45%,#2b8a3e 70%,transparent 72%),
+ radial-gradient(ellipse 140px 70px at 60% 38%,#3cb44b55 0 60%,transparent 62%),
+ radial-gradient(ellipse 90px 30px at 70% 22%,#2b8a3e 0 50%,transparent 52%),
+ radial-gradient(circle at 48% 55%,transparent 0 118px,#3a4a5c 119px,transparent 120px,transparent 238px,#3a4a5c 239px,transparent 240px),
+ linear-gradient(90deg,#1a2533 1px,transparent 1px) 0 0/165px 100%,
+ linear-gradient(#1a2533 1px,transparent 1px) 0 0/100% 87px,#111a24}
+.city{position:absolute;font:700 12px "Archivo Narrow";color:var(--g6);letter-spacing:.04em;text-transform:uppercase}
+.dot{position:absolute;width:9px;height:9px;border-radius:50%;border:2px solid var(--g6);background:var(--g1)}
+.dot.on{border-color:var(--blue);background:var(--blue);box-shadow:0 0 0 4px #739bd033}
+.ruler-x{position:absolute;top:40px;left:44px;right:76px;height:16px;display:flex;font:700 11px "Archivo Narrow";color:var(--g6)}
+.ruler-x span{flex:1;padding-left:6px;border-left:1px solid var(--g3)}
+.ruler-y{position:absolute;left:44px;top:56px;bottom:72px;width:16px;display:flex;flex-direction:column;font:700 11px "Archivo Narrow";color:var(--g6)}
+.ruler-y span{flex:1;padding-top:4px;text-align:center;border-top:1px solid var(--g3)}
+header{position:absolute;inset:0 0 auto 0;height:40px;background:var(--g1);display:flex;align-items:center;gap:28px;padding:0 20px;border-bottom:1px solid var(--g3)}
+.mark{font:800 16px Archivo;letter-spacing:.02em}.mark b{color:var(--blue)}
+.site{font:700 22px "Archivo Narrow";letter-spacing:.02em}.site small{font-size:14px;color:var(--g6);margin-left:6px}
+.meta{color:var(--g6);font-size:14px}.meta b{color:var(--g8)}
+.live{display:flex;gap:6px;align-items:center;font:700 13px "Archivo Narrow";letter-spacing:.08em;color:#7fd18b}
+.live:before{content:"";width:8px;height:8px;border-radius:50%;background:#7fd18b}
+.warn{margin-left:auto;background:var(--red);color:#fff;font:700 13px "Archivo Narrow";padding:4px 10px;letter-spacing:.06em}
+.left{position:absolute;left:0;top:40px;bottom:72px;width:44px;background:var(--g1);border-right:1px solid var(--g3);display:flex;flex-direction:column;gap:2px;padding-top:12px}
+.left span{writing-mode:vertical-rl;transform:rotate(180deg);font:700 13px "Archivo Narrow";letter-spacing:.12em;text-transform:uppercase;color:var(--g6);padding:14px 0;text-align:center}
+.left span.n{color:var(--g8)}
+.tabs{position:absolute;right:0;top:40px;bottom:72px;width:76px;background:var(--g1);border-left:1px solid var(--g3);padding-top:10px}
+.tab{height:38px;margin-left:10px;display:flex;align-items:center;padding-left:12px;font:700 18px "Archivo Narrow";letter-spacing:.04em;color:var(--g6)}
+.tab.on{background:var(--blue);color:var(--g0);margin-left:-8px}
+.tilt-h{margin:14px 0 6px 12px;font:700 11px "Archivo Narrow";letter-spacing:.12em;color:var(--g6)}
+.mm{display:flex;align-items:center;gap:6px;margin:0 0 2px 12px;height:26px;font:700 15px "Archivo Narrow";color:var(--g6)}
+.mm i{width:4px;height:18px;background:var(--g4)}.mm.on{color:var(--g8)}.mm.on i{background:var(--amber)}
+.probe{position:absolute;left:880px;top:290px;background:var(--g0);border-left:3px solid var(--blue);padding:8px 12px}
+.probe b{font:700 24px "Archivo Narrow";display:block}.probe span{color:var(--g6);font-size:14px}
+.legend{position:absolute;right:92px;bottom:86px;display:flex;align-items:flex-end;gap:0}
+.legend i{width:26px;height:10px;display:block}.legend div{font:700 11px "Archivo Narrow";color:var(--g6);width:26px}
+footer{position:absolute;left:0;right:0;bottom:0;height:72px;background:var(--g1);border-top:1px solid var(--g3);display:flex;align-items:center;padding:0 20px;gap:18px}
+.tx{display:flex;gap:4px}.tx span{width:40px;height:40px;display:grid;place-items:center;font:700 18px Archivo;color:var(--g8);background:var(--g2)}
+.tx span.p{background:var(--blue);color:var(--g0)}
+.track{flex:1;height:40px;position:relative}
+.obs{position:absolute;left:0;width:58%;top:12px;height:16px;background:repeating-linear-gradient(90deg,var(--g4) 0 3px,transparent 3px 22px)}
+.obs b{position:absolute;right:0;top:-4px;width:4px;height:24px;background:var(--blue)}
+.now{position:absolute;left:59%;top:0;bottom:0;border-left:2px solid var(--amber)}
+.now span{position:absolute;top:-2px;left:6px;font:700 11px "Archivo Narrow";letter-spacing:.1em;color:var(--amber)}
+.fc{position:absolute;left:60%;right:0;top:14px;height:12px;background:repeating-linear-gradient(135deg,#2a3646 0 6px,#16202c 6px 12px)}
+.tl{position:absolute;bottom:-2px;font-size:12px;color:var(--g6)}
+.fsel{font:700 15px "Archivo Narrow";color:var(--g8);border-bottom:2px solid var(--g4);padding:4px 2px;letter-spacing:.03em}
+.fsel small{color:var(--g6);font-size:12px;letter-spacing:.1em;display:block}
+</style></head><body>
+<header><div class="mark">Radar<b>Pro</b></div><div class="site">KTLX<small>Norman, OK ▾</small></div>
+<div class="meta"><b>REF 0.5°</b> · 15:58:54Z · 2 min ago</div><div class="live">LIVE</div>
+<div class="meta">Grid <b>on</b></div><div class="warn">2 WARNINGS IN VIEW</div></header>
+<div class="map">
+ <div class="dot on" style="left:46%;top:54%"></div><div class="city" style="left:47.4%;top:53%">KTLX</div>
+ <div class="dot" style="left:22%;top:30%"></div><div class="city" style="left:23.4%;top:29%">KVNX</div>
+ <div class="dot" style="left:74%;top:30%"></div><div class="city" style="left:75.4%;top:29%">KINX</div>
+ <div class="dot" style="left:30%;top:80%"></div><div class="city" style="left:31.4%;top:79%">KFDR</div>
+ <div class="dot" style="left:86%;top:70%"></div><div class="city" style="left:87.4%;top:69%">KSRX</div>
+ <div class="city" style="left:41%;top:47%">Oklahoma City</div><div class="city" style="left:58%;top:27%">Tulsa</div>
+ <div class="city" style="left:45%;top:62%">Norman</div><div class="city" style="left:28%;top:66%">Lawton</div>
+ <div style="position:absolute;left:55%;top:24%;width:150px;height:110px;border:2px solid var(--red);transform:skew(-14deg)"></div>
+</div>
+<div class="ruler-x"><span>A</span><span>B</span><span>C</span><span>D</span><span>E</span><span>F</span><span>G</span><span>H</span></div>
+<div class="ruler-y"><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span><span>9</span></div>
+<div class="probe"><b>58.5 dBZ</b><span>F3 · 112 km 041° · beam 2.1 km</span></div>
+<div class="legend"><div>dBZ<i style="background:#2b8a3e"></i>20</div><div><i style="background:#3cb44b"></i>30</div><div><i style="background:#ee3"></i>40</div><div><i style="background:#f90"></i>50</div><div><i style="background:#e33"></i>60</div><div><i style="background:#d0f"></i>70</div></div>
+<nav class="left"><span class="n">Sites</span><span class="n">Layers</span><span>Alerts</span><span>Tools</span><span>Settings</span></nav>
+<aside class="tabs"><div class="tab on">REF</div><div class="tab">VEL</div><div class="tab">SRV</div><div class="tab">CC</div><div class="tab">ZDR</div><div class="tab">PHI</div><div class="tab">SW</div>
+<div class="tilt-h">TILT</div><div class="mm on"><i></i>0.5</div><div class="mm"><i></i>0.9</div><div class="mm"><i></i>1.3</div><div class="mm"><i></i>1.8</div><div class="mm"><i></i>2.4</div><div class="mm"><i></i>3.1</div><div class="mm"><i></i>4.0</div></aside>
+<footer><div class="tx"><span>‹</span><span class="p">▶</span><span>›</span></div>
+<div class="track"><div class="obs"><b></b></div><div class="now"><span>NOW</span></div><div class="fc"></div>
+<div class="tl" style="left:0">15:16Z</div><div class="tl" style="left:52%">15:58Z</div><div class="tl" style="right:0">+18 h</div></div>
+<div class="fsel"><small>FORECAST</small>HRRR · 2 m Temp ▾</div></footer>
+</body></html>

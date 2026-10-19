@@ -1,3 +1,4 @@
+import { Icon } from "./Icon";
 import type { ProbeResult } from "../radar/useRadarRenderer";
 
 export interface CursorLatLon {
@@ -11,42 +12,36 @@ export interface ProbePanelProps {
 }
 
 /**
- * Geographic cursor readout (lat/lon, and azimuth/range from the site once
- * `probeGate` resolves them) plus the data-probe value itself, rendered so
+ * The cursor's gate as a course row (control symbol, value, slant range,
+ * azimuth from the site) plus its lat/lon, rendered so
  * "valid" / "missing" / "range-folded" are visibly distinct states (not
  * just differently-worded text) -- matching the renderer's own never-
  * collapse guarantee (`GateProbeResult`, `GLOBAL_CONTRACT.md`).
  */
 export function ProbePanel({ cursor, probe }: ProbePanelProps) {
+  if (!cursor) return <div className="probe-empty">Hover the map to read a gate.</div>;
   return (
     <div className="probe-panel">
-      <div className="probe-panel-title">Cursor</div>
-      {cursor ? (
-        <div className="probe-latlon">
-          {cursor.lat.toFixed(4)}°, {cursor.lon.toFixed(4)}°
-        </div>
-      ) : (
-        <div className="probe-latlon probe-empty">(move over the map)</div>
-      )}
-
-      {probe ? (
-        <>
-          <div className="probe-polar">
-            az {probe.azimuthDeg.toFixed(1)}° · range {probe.slantRangeKm.toFixed(1)} km
-          </div>
-          <div className={`probe-value probe-value-${probe.state}`}>
-            {probe.state === "valid" && (
-              <>
-                {probe.value?.toFixed(2)} {probe.units}
-              </>
-            )}
-            {probe.state === "missing" && <>missing / below threshold</>}
-            {probe.state === "range_folded" && <>range-folded (ambiguous)</>}
-          </div>
-        </>
-      ) : (
-        <div className="probe-value probe-value-none">(off sweep coverage)</div>
-      )}
+      <table className="course-table">
+        <tbody>
+          <tr>
+            <td className="course-symbol">
+              <Icon name="control" size={16} />
+            </td>
+            <td className={`probe-value probe-value-${probe?.state ?? "none"}`}>
+              {!probe && "off sweep coverage"}
+              {probe?.state === "valid" && `${probe.value?.toFixed(2)} ${probe.units ?? ""}`}
+              {probe?.state === "missing" && "missing / below threshold"}
+              {probe?.state === "range_folded" && "range-folded (ambiguous)"}
+            </td>
+            <td className="num">{probe ? `${probe.slantRangeKm.toFixed(1)} km` : ""}</td>
+            <td className="num">{probe ? `${probe.azimuthDeg.toFixed(0).padStart(3, "0")}°` : ""}</td>
+          </tr>
+        </tbody>
+      </table>
+      <div className="probe-latlon">
+        {cursor.lat.toFixed(4)}°, {cursor.lon.toFixed(4)}°
+      </div>
     </div>
   );
 }

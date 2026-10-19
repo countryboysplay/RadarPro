@@ -29,7 +29,7 @@ import { MAX_HISTORY_SCANS, useScanHistory } from "./scan/useScanHistory";
 import { InfoPanel } from "./ui/InfoPanel";
 import { PlaybackControls } from "./ui/PlaybackControls";
 import { ArchiveLoader } from "./ui/ArchiveLoader";
-import { CrossSectionPanel, type LatLonPoint } from "./ui/CrossSectionPanel";
+import { CrossSectionPanel, legLengthAndBearing, type LatLonPoint } from "./ui/CrossSectionPanel";
 import { ProbePanel } from "./ui/ProbePanel";
 import { Legend } from "./ui/Legend";
 import { ColorTableEditor } from "./ui/ColorTableEditor";
@@ -37,8 +37,9 @@ import { AlertsPanel } from "./ui/AlertsPanel";
 import { AlertDetail } from "./ui/AlertDetail";
 import { useAlertPoller } from "./alerts/useAlertPoller";
 import type { AlertJson } from "./alerts/types";
+import { alertNearSite } from "./alerts/geometryHitTest";
 import { ForecastPanel } from "./forecast/ForecastPanel";
-import { useForecastProvider, type ForecastPhase } from "./forecast/useForecastProvider";
+import { leadHourOptions, useForecastProvider, type ForecastPhase } from "./forecast/useForecastProvider";
 import type { ForecastProviderId } from "./forecast/types";
 import { useRainbowOverlay } from "./rainbow/useRainbowOverlay";
 import { RainbowToggle } from "./ui/RainbowToggle";
@@ -51,10 +52,10 @@ import { useMrmsOverlay, type MrmsViewport } from "./mrms/useMrmsOverlay";
 import type { MrmsProductId } from "./mrms/types";
 import { MrmsPanel } from "./ui/MrmsPanel";
 import { SettingsPanel } from "./ui/SettingsPanel";
-import { Sidebar } from "./ui/Sidebar";
 import { SidebarSection } from "./ui/SidebarSection";
 import { SidebarCategory } from "./ui/SidebarCategory";
 import { UnifiedTimeline } from "./timeline/UnifiedTimeline";
+import { Icon } from "./ui/Icon";
 
 /** Fixed reference radii (km) for the range rings drawn around the
  * selected site -- a documented, reasonable default (not derived from any
@@ -99,6 +100,10 @@ function describePollEvent(event: PollEvent): string {
   switch (event.type) {
     case "checking":
       return "checking for new scan…";
+    case "receiving": {
+      const time = new Date(event.volume.startTimeMillis).toLocaleTimeString(undefined, { hour12: true });
+      return `live feed · scan ${time} ${event.complete ? "complete" : "arriving"}`;
+    }
     case "downloaded":
       return `new scan received: ${event.volume.key.split("/").pop()}`;
     case "up-to-date":
@@ -171,9 +176,10 @@ function summarizeModelForecast(providerId: ForecastProviderId | null, phase: Fo
  * below): collapsed by default, but opened automatically the first time
  * there's something in it, unlike every other category (always collapsed
  * by default). */
-function summarizeAlerts(activeCount: number): string {
-  return activeCount > 0 ? `${activeCount} active` : "none active";
+function summarizeAlerts(nearCount: number, activeCount: number, icao: string): string {
+  return activeCount > 0 ? `${activeCount} US · ${nearCount} polygons near ${icao}` : "none active";
 }
+
 
 /** One-line summary for "Settings". */
 function summarizeSettings(cacheEntriesCount: number, cacheLimit: number): string {
@@ -183,6 +189,14 @@ function summarizeSettings(cacheEntriesCount: number, cacheLimit: number): strin
 export default function App() {
   const [icao, setIcao] = useState(DEFAULT_SITE_ICAO);
   const site = findSite(icao) ?? RADAR_SITES[0];
+  const nearbySites = useMemo(
+    () =>
+      RADAR_SITES.filter((s) => s.icao !== site.icao)
+        .map((s) => ({ s, km: legLengthAndBearing(site, s).km }))
+        .sort((a, b) => a.km - b.km)
+        .slice(0, 8),
+    [site],
+  );
 
   // S10 desktop shell: restore the last-selected default radar site on
   // launch. Resolves to `null` (no-op) in a plain browser tab -- see
@@ -344,7 +358,8 @@ export default function App() {
   // the one place stale in-flight work gets discarded, via that same
   // generation counter.
   useEffect(() => {
-    forecast.selectProvider("gefs");
+    // HRRR first: its simulated reflectivity is the forecast chasers read.
+    forecast.selectProvider("hrrr");
     // Intentionally run once per real mount (empty deps -- this project's
     // eslint config does not enable react-hooks/exhaustive-deps):
     // `selectProvider` is a stable callback from a hook instance that lives
@@ -487,16 +502,18 @@ export default function App() {
   const alerts = useAlertPoller();
   const [selectedAlertKey, setSelectedAlertKey] = useState<string | null>(null);
 
-  // S09c UI shell: one collapsible sidebar replaces the always-on floating
-  // hud-panel-* boxes -- closed by default so the map is the unobstructed
-  // default view (see the stage file). `alertsSectionOpen` is controlled
-  // (rather than left to `SidebarSection`'s own internal state) so
-  // selecting an alert -- from the map click handled below, or from the
-  // list inside the section itself -- can force both the sidebar and the
-  // Alerts section open, matching this panel's old behavior of appearing
-  // immediately as a floating box the instant an alert was selected.
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  // `alertsSectionOpen` is controlled so selecting an alert -- from a map
+  // click or the list itself -- can force the Warnings section open.
+  // `forecastOpen` is the time strip's forecast drawer.
   const [alertsSectionOpen, setAlertsSectionOpen] = useState(false);
+  const [forecastOpen, setForecastOpen] = useState(false);
+  // Which side of NOW the map shows: live radar, or forecast radar once the user picks past NOW.
+  const [timeRegion, setTimeRegion] = useState<"observed" | "forecast">("observed");
+  const [forecastPlaying, setForecastPlaying] = useState(false);
+  const [loopLoading, setLoopLoading] = useState(false);
+  const [siteQuery, setSiteQuery] = useState("");
+  // All alerts by default: zone-only watches can't be placed, so a near-site filter could hide one.
+  const [nearAlertsOnly, setNearAlertsOnly] = useState(false);
   // Last-known content for every key ever seen active, kept only so a
   // still-open details panel can keep showing an alert's final content
   // (with a "no longer active" banner) after `AlertStore` removes it from
@@ -513,14 +530,10 @@ export default function App() {
     setSelectedAlertKey(key);
   }, []);
 
-  // Auto-reveal the Alerts section (and sidebar) whenever an alert becomes
-  // selected -- including via a map click, which happens with no sidebar
-  // DOM in view at all. Without this, selecting an alert while the
-  // sidebar is closed would have no visible effect, a regression from the
-  // old always-on floating `AlertDetail` panel.
+  // Reveal the Warnings section whenever an alert becomes selected, so a
+  // map click on a polygon always shows its detail.
   useEffect(() => {
     if (selectedAlertKey) {
-      setSidebarOpen(true);
       setAlertsSectionOpen(true);
     }
   }, [selectedAlertKey]);
@@ -570,6 +583,7 @@ export default function App() {
   useEffect(() => {
     setVolumeMeta(null);
     setSweepIndex(null);
+    preferredSweepRef.current = null;
     setMomentCode(null);
     setSweepMoments([]);
   }, [icao]);
@@ -601,8 +615,12 @@ export default function App() {
   /** Change the displayed elevation, keeping the same moment when
    * possible (falling back to that sweep's first available moment
    * otherwise), and re-render immediately -- no re-decode. */
+  // The tilt the user picked. A real-time volume arrives lowest tilt first, so a new
+  // volume may not have it yet; the display falls back, then returns once it lands.
+  const preferredSweepRef = useRef<number | null>(null);
   const changeSweep = useCallback(
     (newSweepIndex: number) => {
+      preferredSweepRef.current = newSweepIndex;
       const moments = resolveMomentForSweep(newSweepIndex);
       const newMoment = resolvePreferredMoment(momentCodeRef.current, moments);
       setSweepIndex(newSweepIndex);
@@ -639,6 +657,7 @@ export default function App() {
   // carry the previous selection.
   const currentEntry = history.entries[history.currentIndex] ?? null;
   const currentKey = currentEntry?.key ?? null;
+  const currentRevision = currentEntry?.revision ?? null;
   useEffect(() => {
     if (status !== "ready" || !currentKey) return;
     const bytes = history.currentBytes();
@@ -647,7 +666,7 @@ export default function App() {
     const meta = decodeVolume(bytes);
     if (!meta) return;
 
-    let newSweepIndex = sweepIndexRef.current;
+    let newSweepIndex = preferredSweepRef.current ?? sweepIndexRef.current;
     if (newSweepIndex === null || newSweepIndex >= meta.sweepCount) {
       // "SRV" is never a real wire code any sweep carries (it is derived
       // from VEL, see `defaultSweepIndexForMoment`'s doc comment) --
@@ -666,7 +685,8 @@ export default function App() {
       setMomentCode(newMoment);
       renderSelection(newSweepIndex, newMoment);
     }
-    // Intentionally keyed on (status, currentKey) only: sweepIndex/
+    // Intentionally keyed on (status, currentKey, currentRevision) only -- the
+    // revision changes as a real-time volume grows -- sweepIndex/
     // momentCode are read via refs so changing them does not itself
     // re-decode; decodeVolume/defaultSweepIndexForMoment/
     // momentWireCodesForSweep are stable per-renderer-instance callbacks,
@@ -674,7 +694,7 @@ export default function App() {
     // (irrelevant here -- whatever value is current when this effect
     // actually runs is the one used), so none of this needs to be listed
     // (this project's eslint config does not enable react-hooks/exhaustive-deps).
-  }, [status, currentKey]);
+  }, [status, currentKey, currentRevision]);
 
   // S11 Phase 2b: while Storm-Relative Velocity is the active moment,
   // adjusting either storm-motion input re-renders immediately -- a local
@@ -759,22 +779,67 @@ export default function App() {
     }
   }, [momentCode, resetColorTable, selectAndRender]);
 
+  // Forecast side of NOW: the playback controls and ← → Space step and loop forecast hours.
+  const inForecast = timeRegion === "forecast";
+  // Only hours already published can be shown, stepped to, or looped.
+  const forecastLeads = leadHourOptions(forecast.providerId).filter(
+    (h) => forecast.publishedLeads === null || forecast.publishedLeads.includes(h),
+  );
+  const showRadar = () => {
+    setTimeRegion("observed");
+    setForecastPlaying(false);
+  };
+  // Only one loop at a time: the radar loop pauses whenever the forecast side takes over.
+  const showForecast = () => {
+    setTimeRegion("forecast");
+    if (history.playMode === "playing") history.togglePlay();
+  };
+  const stepForecast = (delta: number) => {
+    setForecastPlaying(false);
+    const i = forecastLeads.indexOf(forecast.leadHours);
+    forecast.setLeadHours(forecastLeads[Math.max(0, Math.min(forecastLeads.length - 1, i + delta))]);
+  };
+  const toggleForecastPlay = () => {
+    if (forecastPlaying) {
+      setForecastPlaying(false);
+      return;
+    }
+    showForecast();
+    setForecastPlaying(true);
+    setLoopLoading(true);
+    void forecast.loadLoop(forecastLeads).finally(() => setLoopLoading(false));
+  };
+
+  // Forecast loop: advance through the hours already rendered (more join as they load).
+  useEffect(() => {
+    const { cachedLeads, leadHours, setLeadHours } = forecast;
+    if (!forecastPlaying || !inForecast || cachedLeads.length < 2) return;
+    const next = cachedLeads.find((h) => h > leadHours) ?? cachedLeads[0];
+    const timer = setTimeout(() => setLeadHours(next), history.frameMs);
+    return () => clearTimeout(timer);
+  }, [forecastPlaying, inForecast, forecast.cachedLeads, forecast.leadHours, forecast.setLeadHours, history.frameMs]);
+
   // Keyboard shortcuts -- see the module doc comment for the full list.
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if (isEditableTarget(e.target)) return;
+      // Tilt and Latest are radar-only; ← → Space follow whichever side of NOW is shown.
+      if (["ArrowUp", "ArrowDown", "l", "L"].includes(e.key)) showRadar();
       switch (e.key) {
         case "ArrowLeft":
           e.preventDefault();
-          history.previous();
+          if (inForecast) stepForecast(-1);
+          else history.previous();
           break;
         case "ArrowRight":
           e.preventDefault();
-          history.next();
+          if (inForecast) stepForecast(1);
+          else history.next();
           break;
         case " ":
           e.preventDefault();
-          history.togglePlay();
+          if (inForecast) toggleForecastPlay();
+          else history.togglePlay();
           break;
         case "ArrowUp":
           e.preventDefault();
@@ -801,7 +866,7 @@ export default function App() {
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [history, stepElevation, rainbowPointPickTarget]);
+  }, [history, stepElevation, rainbowPointPickTarget, inForecast, stepForecast, toggleForecastPlay, showRadar]);
 
   // UI polish pass on S09d: Rainbow Nowcast/Forecast result tables moved
   // out of the left sidebar into this right-docked panel -- see
@@ -847,7 +912,8 @@ export default function App() {
   );
   const modelForecastSummary = summarizeModelForecast(forecast.providerId, forecast.phase);
   const mapLayersSummary = summarizeMapLayers(activeMapLayer);
-  const alertsSummary = summarizeAlerts(alerts.activeAlerts.length);
+  const nearAlerts = alerts.activeAlerts.filter(({ alert }) => alertNearSite(alert.geometry, site));
+  const alertsSummary = summarizeAlerts(nearAlerts.length, alerts.activeAlerts.length, site.icao);
   const settingsSummary = summarizeSettings(history.entries.length, cacheLimit);
 
   const activeTableParsedUnits = useMemo(() => {
@@ -859,297 +925,225 @@ export default function App() {
     }
   }, [activeTableJson]);
 
+  const favoriteAvailable = momentOptions.filter((code) => favoriteMoments.includes(code));
+  const productOrder = [...favoriteAvailable, ...momentOptions.filter((code) => !favoriteMoments.includes(code))];
+  const feedError = status === "error" || history.pollEvent.type === "error" || decodeError !== null;
+  const forecastSummary = [modelForecastSummary, pointForecastsSummary].join(" · ");
+  // Only forecast *radar* replaces the radar on the map; other model fields stay in the panel.
+  const forecastOnMap =
+    timeRegion === "forecast" && forecast.variable === "composite_reflectivity" && forecast.phase === "ready";
+  const forecastValidMs = forecast.run ? Date.parse(forecast.run.initTime) + forecast.leadHours * 3_600_000 : null;
+  // Product and tilt come from the decoded volume, which needs the GPU pipeline.
+  const segmentEmpty =
+    status === "error" ? "Unavailable: GPU error above" : status === "ready" ? "Waiting for a scan…" : "Starting the GPU…";
+  // Tilts in elevation order; repeated angles (split cuts) get their sweep number.
+  const tilts = (volumeMeta?.elevationDegs ?? [])
+    .map((deg, i) => ({ deg, i }))
+    .sort((x, y) => x.deg - y.deg || x.i - y.i);
+  const tiltLabel = (deg: number, i: number) =>
+    tilts.filter((t) => t.deg.toFixed(1) === deg.toFixed(1)).length > 1 ? `${deg.toFixed(1)}·${i + 1}` : deg.toFixed(1);
+
   return (
-    <div style={{ position: "fixed", inset: 0 }}>
-      <MapView
-        site={site}
-        canvasRef={canvasRef}
-        canvasSize={RADAR_CANVAS_SIZE}
-        sweepRangeKm={renderedRangeKm}
-        onSiteClick={setIcao}
-        rangeRings={rangeRingsGeo}
-        onCursorMove={handleCursorMove}
-        onCursorLeave={handleCursorLeave}
-        alerts={alerts.geojson}
-        selectedAlertKey={selectedAlertKey}
-        onAlertClick={handleAlertClick}
-        pointPickActive={rainbowPointPickTarget !== null || xsPicking}
-        onPointPick={handleRainbowMapPointPick}
-        rainbowTileUrlTemplate={rainbow.tileUrlTemplate}
-        rainbowEnabled={rainbow.enabled}
-        rainbowMaxZoom={rainbow.layerInfo.maxZoom}
-        mrmsCanvasRef={mrmsCanvasRef}
-        mrmsEnabled={mrmsEnabled}
-        onMrmsViewportChange={setMrmsViewport}
-        radarOpacity={radarOpacityPercent / 100}
-      />
-
-      <RightPanel sections={rightPanelSections} />
-
-      {/* S09c UI shell: slim always-visible top/bottom chrome for the most
-          glanceable controls (GPU/scan-feed status, playback), modeled on
-          RadarScope's own minimal top/bottom bars -- everything else lives
-          behind the sidebar toggle below. */}
-      <header className="top-bar">
-        <div className="top-bar-left">
-          <button
-            type="button"
-            className="sidebar-toggle"
-            onClick={() => setSidebarOpen((v) => !v)}
-            aria-expanded={sidebarOpen}
-            aria-controls="radarpro-sidebar"
-            title={sidebarOpen ? "Close sidebar" : "Open sidebar"}
-          >
-            {sidebarOpen ? "✕" : "☰"}
-          </button>
-          <span className="top-bar-title">RadarPro</span>
-        </div>
-        <div className="top-bar-status">
+    <div className="workstation">
+      <aside className="rail" aria-label="Radar controls">
+        <header className="rail-head">
+          <span className="wordmark">RadarPro</span>
           <span
-            className={`top-bar-status-item${status === "error" ? " top-bar-status-error" : ""}`}
-            title="GPU renderer status"
+            className={`feed-status${feedError ? " feed-status-error" : ""}`}
+            title={
+              status === "ready"
+                ? `GPU: ${adapterName || "(adapter name withheld)"} (${backend})`
+                : status === "error"
+                  ? `GPU error: ${error}`
+                  : "GPU: initializing…"
+            }
           >
-            {status === "loading" && "GPU: initializing…"}
-            {status === "error" && `GPU error: ${error}`}
-            {status === "ready" && `GPU: ${adapterName || "(adapter name withheld)"} (${backend})`}
-          </span>
-          <span className="top-bar-status-item" title="Scan feed status">
             {describePollEvent(history.pollEvent)}
           </span>
-          {/* S10 Phase 3: a volume that downloaded fine but failed to decode
-              (truncated/corrupted transfer) used to throw uncaught out of
-              the decode effect below and white-screen the whole app -- see
-              `useRadarRenderer`'s `decodeVolume` doc comment. Now it can't
-              crash anything, and this is that failure's one visible,
-              always-present home instead of only a console line. */}
-          {decodeError && (
-            <span
-              className="top-bar-status-item top-bar-status-error"
-              title="The most recently downloaded volume failed to decode -- likely a truncated/corrupted transfer. The display keeps showing the last good frame."
-            >
-              decode error: {decodeError}
-            </span>
-          )}
-        </div>
-      </header>
+        </header>
 
-      <Sidebar id="radarpro-sidebar" open={sidebarOpen}>
-        <h1>RadarPro — workstation</h1>
+        {(status === "error" || decodeError) && (
+          <div className="rail-error" role="status">
+            {status === "error" && <p>GPU error: {error}</p>}
+            {/* S10 Phase 3: a volume that downloaded but failed to decode
+                keeps the last good frame on screen; this is its one visible home. */}
+            {decodeError && (
+              <p title="The most recently downloaded volume failed to decode -- likely a truncated/corrupted transfer. The display keeps showing the last good frame.">
+                Scan failed to decode: {decodeError}. Showing the last good frame.
+              </p>
+            )}
+          </div>
+        )}
 
-        {/* Sidebar redesign: "Live Radar" is pinned -- always visible, never
-            collapsible -- since it (site/elevation/moment/opacity) is used
-            every session, unlike everything below it. Occasional/advanced
-            tools that used to sit flat in this same section (Legend &
-            Probe, the Color Table Editor, SRV storm motion) are now their
-            own nested, collapsed-by-default disclosures instead of 9+ flat
-            widgets in the single most-used part of the sidebar. */}
-        <div className="sidebar-live-radar">
-          <div className="sidebar-live-radar-title">Live Radar</div>
-          <label>
-            Site{" "}
-            <select value={icao} onChange={(e) => setIcao(e.target.value)}>
-              {RADAR_SITES.map((s) => (
-                <option key={s.icao} value={s.icao}>
-                  {s.icao} — {s.name}
-                </option>
-              ))}
-            </select>
-          </label>
+        <section className="rail-block" aria-labelledby="site-heading">
+          <h2 id="site-heading" className="rail-heading">
+            Site
+          </h2>
+          <div className="site-line">
+            <span className="site-code">{site.icao}</span>
+            <span className="site-name">{site.name}</span>
+          </div>
+          {/* Type a code or city; the list matches both and a full code switches at once. */}
+          <input
+            type="text"
+            className="site-select"
+            list="radar-sites"
+            aria-label="Find radar site by code or city"
+            placeholder="Type a code or city"
+            autoComplete="off"
+            spellCheck={false}
+            value={siteQuery}
+            onChange={(e) => {
+              const match = RADAR_SITES.find((s) => s.icao === e.target.value.trim().toUpperCase());
+              setSiteQuery(match ? "" : e.target.value);
+              if (match) setIcao(match.icao);
+            }}
+          />
+          {/* One tap to the next radar over: the eight nearest sites by distance. */}
+          <div className="segment site-nearby" role="group" aria-label="Nearby radar sites">
+            {nearbySites.map(({ s, km }) => (
+              <button key={s.icao} type="button" onClick={() => setIcao(s.icao)} title={`${s.name} · ${km.toFixed(0)} km`}>
+                {s.icao}
+              </button>
+            ))}
+          </div>
+          <datalist id="radar-sites">
+            {RADAR_SITES.map((s) => (
+              <option key={s.icao} value={s.icao}>
+                {s.name}
+              </option>
+            ))}
+          </datalist>
+        </section>
 
-          <label>
-            Elevation{" "}
-            <select
-              value={sweepIndex ?? ""}
-              disabled={!volumeMeta}
-              onChange={(e) => changeSweep(Number(e.target.value))}
-            >
-              {volumeMeta?.elevationDegs.map((deg, i) => (
-                <option key={i} value={i}>
-                  {i}: {deg.toFixed(2)}°
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label>
-            Moment{" "}
-            <select
-              value={momentCode ?? ""}
-              disabled={sweepMoments.length === 0}
-              onChange={(e) => changeMoment(e.target.value)}
-            >
-              {momentOptions.map((code) => (
-                <option key={code} value={code}>
-                  {code}
-                </option>
-              ))}
-            </select>{" "}
+        <section className="rail-block" aria-labelledby="product-heading">
+          <div className="rail-heading-row">
+            <h2 id="product-heading" className="rail-heading">
+              Product
+            </h2>
             {momentCode && (
               <button
                 type="button"
+                className="favorite-toggle"
                 onClick={() => toggleFavoriteMoment(momentCode)}
                 aria-pressed={favoriteMoments.includes(momentCode)}
-                title={favoriteMoments.includes(momentCode) ? `Remove ${momentCode} from favorites` : `Favorite ${momentCode}`}
-                style={{ background: "none", border: "none", cursor: "pointer", fontSize: "1.1em", lineHeight: 1, padding: "0 0.2em" }}
+                title={
+                  favoriteMoments.includes(momentCode)
+                    ? `Remove ${momentCode} from favorites`
+                    : `Favorite ${momentCode} (favorites list first)`
+                }
               >
-                {favoriteMoments.includes(momentCode) ? "★" : "☆"}
+                <Icon name="star" size={16} filled={favoriteMoments.includes(momentCode)} />
+                <span className="visually-hidden">Favorite {momentCode}</span>
               </button>
             )}
-          </label>
+          </div>
+          <div className="segment" role="group" aria-labelledby="product-heading">
+            {productOrder.length === 0 && <span className="segment-empty">{segmentEmpty}</span>}
+            {productOrder.map((code) => (
+              <button
+                key={code}
+                type="button"
+                aria-pressed={code === momentCode}
+                onClick={() => {
+                  showRadar();
+                  changeMoment(code);
+                }}
+                title={favoriteMoments.includes(code) ? `${code} (favorite)` : code}
+              >
+                {code}
+                {favoriteMoments.includes(code) && <span className="segment-favorite" aria-hidden="true" />}
+              </button>
+            ))}
+          </div>
+        </section>
 
-          {/* S10 Phase 2: quick-select row for favorited moments that are
-              actually available on the current sweep -- a favorite for a
-              moment this sweep doesn't carry (e.g. VEL favorited while
-              looking at a surveillance-only sweep) is simply omitted rather
-              than shown disabled, keeping this a minimal proof of concept
-              rather than a speculative framework. */}
-          {favoriteMoments.filter((code) => sweepMoments.includes(code)).length > 0 && (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "0.3em", margin: "0.3em 0" }}>
-              {favoriteMoments
-                .filter((code) => sweepMoments.includes(code))
-                .map((code) => (
-                  <button
-                    key={code}
-                    type="button"
-                    onClick={() => changeMoment(code)}
-                    aria-pressed={code === momentCode}
-                    style={{
-                      fontSize: "0.85em",
-                      padding: "0.1em 0.5em",
-                      fontWeight: code === momentCode ? "bold" : "normal",
-                    }}
-                  >
-                    ★ {code}
-                  </button>
-                ))}
-            </div>
-          )}
-
-          {/* UI polish pass: opacity control for the live radar sweep --
-              only has a visible effect while the radar canvas is actually
-              the active layer (`MapView` forces it fully invisible whenever
-              Rainbow or MRMS is on, unaffected by this slider -- see that
-              component's mutual-exclusivity comment). Lets map labels/city
-              names underneath show through when turned down. */}
-          <label title="Live radar opacity -- has no visible effect while Rainbow or MRMS is active">
-            Radar opacity{" "}
-            <input
-              type="range"
-              min={0}
-              max={100}
-              value={radarOpacityPercent}
-              onChange={(e) => setRadarOpacityPercent(Number(e.target.value))}
-            />{" "}
-            {radarOpacityPercent}%
-          </label>
-
-          <ArchiveLoader
-            archiveStartMillis={history.archiveStartMillis}
-            status={history.archiveStatus}
-            onLoad={history.loadArchive}
-            onReturnToLive={history.returnToLive}
-          />
-
+        <section className="rail-block" aria-labelledby="tilt-heading">
+          <h2 id="tilt-heading" className="rail-heading">
+            Tilt <span className="rail-heading-note">↑ ↓ keys</span>
+          </h2>
+          <div className="segment segment-tilts" role="group" aria-labelledby="tilt-heading">
+            {!volumeMeta && <span className="segment-empty">{segmentEmpty}</span>}
+            {volumeMeta && tilts.map(({ deg, i }) => (
+              <button
+                key={i}
+                type="button"
+                aria-pressed={i === sweepIndex}
+                onClick={() => {
+                  showRadar();
+                  changeSweep(i);
+                }}
+                title={`Sweep ${i + 1} of ${volumeMeta.sweepCount}: ${deg.toFixed(2)}°`}
+              >
+                {tiltLabel(deg, i)}
+              </button>
+            ))}
+          </div>
           <InfoPanel
-            siteIcao={site.icao}
-            siteName={site.name}
-            volumeStartTimeMillis={currentEntry?.startTimeMillis ?? null}
             elevationDeg={elevationDeg}
             sweepIndex={sweepIndex}
             sweepCount={volumeMeta?.sweepCount ?? null}
             momentCode={momentCode}
             units={activeTableParsedUnits}
           />
+        </section>
 
-          <SidebarSection title="Legend & Probe" nested>
-            <Legend activeColorTableJson={activeTableJson} momentCode={momentCode ?? "—"} />
-            <ProbePanel cursor={cursor} probe={probe} />
-          </SidebarSection>
+        <section className="rail-block" aria-labelledby="course-heading">
+          <h2 id="course-heading" className="rail-heading">
+            Course
+          </h2>
+          <ProbePanel cursor={cursor} probe={probe} />
+          <CrossSectionPanel
+            line={xsLine}
+            picking={xsPicking}
+            onStartPick={() => {
+              setXsLine(null);
+              setXsPicking(true);
+            }}
+            onClear={() => {
+              setXsLine(null);
+              setXsPicking(false);
+            }}
+            renderKey={`${currentEntry?.key ?? ""}|${momentCode ?? ""}|${activeTableJson ?? ""}`}
+            render={(a, b, cols, rows, topKm) =>
+              // SRV is derived per tilt for display and isn't in the decoded volume; slice raw velocity.
+              momentCode ? crossSection(momentCode === "SRV" ? "VEL" : momentCode, a, b, cols, rows, topKm) : null
+            }
+          />
+          {momentCode && <Legend activeColorTableJson={activeTableJson} momentCode={momentCode} />}
+        </section>
 
-          <SidebarSection title="Cross-Section" nested>
-            <CrossSectionPanel
-              line={xsLine}
-              picking={xsPicking}
-              onStartPick={() => {
-                setXsLine(null);
-                setXsPicking(true);
-              }}
-              onClear={() => {
-                setXsLine(null);
-                setXsPicking(false);
-              }}
-              renderKey={`${currentEntry?.key ?? ""}|${momentCode ?? ""}|${activeTableJson ?? ""}`}
-              render={(a, b, cols, rows, topKm) =>
-                // SRV is derived per tilt for display and isn't in the decoded volume; slice raw velocity.
-                momentCode ? crossSection(momentCode === "SRV" ? "VEL" : momentCode, a, b, cols, rows, topKm) : null
-              }
+        {/* Warnings default open the first time active alerts arrive, and
+            reopen whenever one is selected (map click or list). */}
+        <SidebarCategory title="Warnings" summary={alertsSummary} open={alertsSectionOpen} onToggle={setAlertsSectionOpen}>
+          <label className="check-field">
+            <input type="checkbox" checked={nearAlertsOnly} onChange={(e) => setNearAlertsOnly(e.target.checked)} />
+            <span>Only polygon warnings within 460 km (hides zone-only watches)</span>
+          </label>
+          <AlertsPanel
+            status={alerts.status}
+            error={alerts.error}
+            alerts={nearAlertsOnly ? nearAlerts : alerts.activeAlerts}
+            emptyText={nearAlertsOnly ? "no polygon warnings within 460 km; zone-only watches are not placed" : undefined}
+            selectedKey={selectedAlertKey}
+            onSelect={handleAlertClick}
+            lastPolledAt={alerts.lastPolledAt}
+            heldCount={alerts.heldCount}
+          />
+          {selectedAlert && (
+            <AlertDetail
+              alert={selectedAlert}
+              isActive={selectedActiveEntry !== null}
+              onClose={() => setSelectedAlertKey(null)}
             />
-          </SidebarSection>
-
-          {/* S11 Phase 2b: storm-motion input, only meaningful while Storm-
-              Relative Velocity is the selected moment -- storm motion is
-              conceptually tied to the moment selection, not a separate
-              overlay/panel, so it's nested here rather than living in its
-              own top-level category. Reuses the generic (despite the name)
-              `.rainbow-panel-point`/`.rainbow-panel-field` layout classes
-              rather than inventing new CSS. Changing either field re-renders
-              immediately (see the `useEffect` keyed on this state above) --
-              a local GPU re-render, not a network call, so no separate
-              "apply" button is needed. */}
-          {momentCode === "SRV" && (
-            <SidebarSection title="Storm Motion (SRV)" nested>
-              <div className="rainbow-panel-point">
-                <label className="rainbow-panel-field">
-                  <span>Storm speed (m/s)</span>
-                  <input
-                    type="number"
-                    min={0}
-                    step="1"
-                    value={stormMotion.speedMps}
-                    onChange={(e) => stormMotion.setSpeedMps(Number(e.target.value))}
-                  />
-                </label>
-                <label
-                  className="rainbow-panel-field"
-                  title="Compass bearing, degrees clockwise from true north, that the storm is moving toward -- not the direction it is coming from."
-                >
-                  <span>Storm direction (° clockwise from true north)</span>
-                  <input
-                    type="number"
-                    min={0}
-                    max={359.999}
-                    step="1"
-                    value={stormMotion.directionDeg}
-                    onChange={(e) => stormMotion.setDirectionDeg(Number(e.target.value))}
-                  />
-                </label>
-              </div>
-            </SidebarSection>
           )}
+        </SidebarCategory>
 
-          {momentCode && (
-            <SidebarSection title="Color Table Editor" nested>
-              <ColorTableEditor
-                momentCode={momentCode}
-                activeColorTableJson={activeTableJson}
-                onApply={handleApplyColorTable}
-                onResetToBuiltinDefault={handleResetColorTable}
-              />
-            </SidebarSection>
-          )}
-        </div>
-
-        {/* Sidebar redesign: the three previously-independent overlay
-            checkboxes (live radar sweep / Rainbow Tiles / MRMS) are now one
-            "Active Map Layer" dropdown -- exclusivity is the control
-            itself. `RainbowToggle`/`MrmsPanel` below render only their own
-            layer's configuration controls, and only while that layer is
-            the one actually selected, matching Global Contract's
-            "observations/forecasts/nowcasts must stay distinguishable" by
-            never showing two overlays' configs at once. */}
-        <SidebarCategory title="Map Layers" summary={mapLayersSummary}>
+        {/* One active map layer at a time: exclusivity is the control itself,
+            and only the selected layer's own settings show. */}
+        <SidebarCategory title="Layers" summary={mapLayersSummary}>
           <label className="map-layer-select">
-            <span>Active Map Layer</span>
+            <span>Active map layer</span>
             <select
               value={activeMapLayer}
               onChange={(e) => handleActiveMapLayerChange(e.target.value as ActiveMapLayerId)}
@@ -1160,6 +1154,18 @@ export default function App() {
               </option>
               <option value="mrms">MRMS National Mosaic</option>
             </select>
+          </label>
+          {/* Only visible while the live radar is the active layer. */}
+          <label className="range-field" title="Live radar opacity -- has no visible effect while Rainbow or MRMS is active">
+            <span>Radar opacity</span>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              value={radarOpacityPercent}
+              onChange={(e) => setRadarOpacityPercent(Number(e.target.value))}
+            />
+            <span className="num">{radarOpacityPercent}%</span>
           </label>
 
           {activeMapLayer === "rainbow" && <RainbowToggle overlay={rainbow} />}
@@ -1178,58 +1184,61 @@ export default function App() {
           )}
         </SidebarCategory>
 
-        {/* S09d Parts B/C: Rainbow's two point-based APIs, grouped under one
-            category -- distinct from both the tile overlay above and from
-            each other, and named distinctly per Global Contract so neither
-            is ever confused with the other or with the GEFS/HRRR "Model
-            Forecast" category below. */}
-        <SidebarCategory title="Point Forecasts" summary={pointForecastsSummary}>
-          <SidebarSection title="Rainbow Nowcast (Point)" nested>
-            <RainbowNowcastPanel
-              nowcast={rainbowNowcast}
-              pickModeActive={rainbowPointPickTarget === "nowcast"}
-              onTogglePickMode={handleToggleNowcastPick}
-            />
-          </SidebarSection>
+        {/* Storm motion only means something while SRV is the product. */}
+        {momentCode === "SRV" && (
+          <SidebarCategory
+            title="Storm motion"
+            summary={`${stormMotion.speedMps} m/s toward ${stormMotion.directionDeg}°`}
+            defaultOpen
+          >
+            <div className="rainbow-panel-point">
+              <label className="rainbow-panel-field">
+                <span>Storm speed (m/s)</span>
+                <input
+                  type="number"
+                  min={0}
+                  step="1"
+                  value={stormMotion.speedMps}
+                  onChange={(e) => stormMotion.setSpeedMps(Number(e.target.value))}
+                />
+              </label>
+              <label
+                className="rainbow-panel-field"
+                title="Compass bearing, degrees clockwise from true north, that the storm is moving toward -- not the direction it is coming from."
+              >
+                <span>Moving toward (° true)</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={359.999}
+                  step="1"
+                  value={stormMotion.directionDeg}
+                  onChange={(e) => stormMotion.setDirectionDeg(Number(e.target.value))}
+                />
+              </label>
+            </div>
+          </SidebarCategory>
+        )}
 
-          <SidebarSection title="Rainbow Outlook (Point)" nested>
-            <RainbowWeatherPanel
-              weather={rainbowWeather}
-              pickModeActive={rainbowPointPickTarget === "weather"}
-              onTogglePickMode={handleToggleWeatherPick}
-            />
-          </SidebarSection>
-        </SidebarCategory>
-
-        {/* S08 follow-up: GEFS/HRRR forecast provider switcher + shared
-            render path -- see `ForecastPanel`'s doc comment for why this is
-            a dedicated panel rather than a MapView overlay in this stage. */}
-        <SidebarCategory title="Model Forecast (GEFS/HRRR)" summary={modelForecastSummary}>
-          <ForecastPanel canvasRef={forecastCanvasRef} forecast={forecast} />
-        </SidebarCategory>
-
-        {/* Sidebar redesign: collapsed by default like every other
-            category, EXCEPT it defaults open instead the moment there
-            already are active alerts when the poller's first result
-            settles -- see the `alertsDefaultAppliedRef` effect above. */}
-        <SidebarCategory title="Alerts" summary={alertsSummary} open={alertsSectionOpen} onToggle={setAlertsSectionOpen}>
-          <AlertsPanel
-            status={alerts.status}
-            error={alerts.error}
-            alerts={alerts.activeAlerts}
-            selectedKey={selectedAlertKey}
-            onSelect={handleAlertClick}
-            lastPolledAt={alerts.lastPolledAt}
-            heldCount={alerts.heldCount}
+        <SidebarCategory title="Archive" summary={history.archiveStartMillis !== null ? "viewing archive" : "live"}>
+          <ArchiveLoader
+            archiveStartMillis={history.archiveStartMillis}
+            status={history.archiveStatus}
+            onLoad={history.loadArchive}
+            onReturnToLive={history.returnToLive}
           />
-          {selectedAlert && (
-            <AlertDetail
-              alert={selectedAlert}
-              isActive={selectedActiveEntry !== null}
-              onClose={() => setSelectedAlertKey(null)}
-            />
-          )}
         </SidebarCategory>
+
+        {momentCode && (
+          <SidebarCategory title="Color table" summary={momentCode}>
+            <ColorTableEditor
+              momentCode={momentCode}
+              activeColorTableJson={activeTableJson}
+              onApply={handleApplyColorTable}
+              onResetToBuiltinDefault={handleResetColorTable}
+            />
+          </SidebarCategory>
+        )}
 
         <SidebarCategory title="Settings" summary={settingsSummary}>
           <SettingsPanel
@@ -1242,33 +1251,135 @@ export default function App() {
             onCacheLimitChange={setCacheLimit}
           />
         </SidebarCategory>
-      </Sidebar>
+      </aside>
 
-      <footer className="bottom-bar">
-        {/* S09: unified real-time-axis timeline -- see
-            `timeline/UnifiedTimeline.tsx`'s doc comment. Drives the same
-            `history`/`forecast` selections `PlaybackControls`/`ForecastPanel`
-            already read/write; it is an additional way to set them, not a
-            replacement rendering path. */}
-        <UnifiedTimeline history={history} forecast={forecast} />
-        <PlaybackControls
-          playMode={history.playMode}
-          currentIndex={history.currentIndex}
-          entriesCount={history.entries.length}
-          currentTimeMillis={currentEntry?.startTimeMillis ?? null}
-          frameMs={history.frameMs}
-          onPrevious={history.previous}
-          onNext={history.next}
-          onTogglePlay={history.togglePlay}
-          onJumpLatest={history.jumpToLatest}
-          onFrameMsChange={history.setFrameMs}
-          isLiveStale={history.isLiveStale}
-          isArchive={history.archiveStartMillis !== null}
-          currentVolumeAgeMillis={history.currentVolumeAgeMillis}
+      <main className="map-region">
+        <MapView
+          site={site}
+          canvasRef={canvasRef}
+          canvasSize={RADAR_CANVAS_SIZE}
+          sweepRangeKm={renderedRangeKm}
+          onSiteClick={setIcao}
+          rangeRings={rangeRingsGeo}
+          onCursorMove={handleCursorMove}
+          onCursorLeave={handleCursorLeave}
+          alerts={alerts.geojson}
+          selectedAlertKey={selectedAlertKey}
+          onAlertClick={handleAlertClick}
+          pointPickActive={rainbowPointPickTarget !== null || xsPicking}
+          onPointPick={handleRainbowMapPointPick}
+          rainbowTileUrlTemplate={rainbow.tileUrlTemplate}
+          rainbowEnabled={rainbow.enabled}
+          rainbowMaxZoom={rainbow.layerInfo.maxZoom}
+          mrmsCanvasRef={mrmsCanvasRef}
+          mrmsEnabled={mrmsEnabled}
+          onMrmsViewportChange={setMrmsViewport}
+          radarOpacity={radarOpacityPercent / 100}
+          course={xsLine}
+          forecastCanvasRef={forecastCanvasRef}
+          forecastOnMap={forecastOnMap}
+          forecastKey={`${forecast.providerId}|${forecast.variable}|${forecast.leadHours}|${forecast.phase}`}
         />
-        <div className="keyboard-hint">
-          ← / → prev/next scan · Space play/pause · ↑ / ↓ elevation · L latest
-        </div>
+        {forecastOnMap && forecastValidMs !== null && (
+          <div className="map-forecast-badge" role="status">
+            <strong>Forecast radar</strong> HRRR simulated reflectivity · valid{" "}
+            {new Date(forecastValidMs).toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit", hour12: true })} (+
+            {forecast.leadHours}h) · model, not observed
+            {loopLoading && <span className="map-forecast-loading">loading hours {forecast.cachedLeads.length}/{forecastLeads.length}…</span>}
+            <button type="button" onClick={showRadar}>
+              Back to radar
+            </button>
+          </div>
+        )}
+
+        <RightPanel sections={rightPanelSections} />
+
+        {/* Forecasts live with time, never in the rail: model fields and
+            Rainbow point forecasts open from the time strip. Hidden rather
+            than unmounted: the forecast canvas is painted once per render. */}
+        <section className="forecast-drawer" aria-labelledby="forecast-heading" hidden={!forecastOpen}>
+          <header className="forecast-drawer-head">
+            <h2 id="forecast-heading">Forecast</h2>
+            <button
+              type="button"
+              className="icon-button"
+              aria-label="Close forecast"
+              onClick={() => setForecastOpen(false)}
+            >
+              <Icon name="close" size={16} />
+            </button>
+          </header>
+          <div className="forecast-drawer-body">
+            <div className="forecast-drawer-model">
+              <ForecastPanel canvasRef={forecastCanvasRef} forecast={forecast} />
+            </div>
+            <div className="forecast-drawer-points">
+              <SidebarSection title="Rainbow nowcast (point)" defaultOpen>
+                <RainbowNowcastPanel
+                  nowcast={rainbowNowcast}
+                  pickModeActive={rainbowPointPickTarget === "nowcast"}
+                  onTogglePickMode={handleToggleNowcastPick}
+                />
+              </SidebarSection>
+              <SidebarSection title="Rainbow outlook (point)">
+                <RainbowWeatherPanel
+                  weather={rainbowWeather}
+                  pickModeActive={rainbowPointPickTarget === "weather"}
+                  onTogglePickMode={handleToggleWeatherPick}
+                />
+              </SidebarSection>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <footer className="time-strip" title="← / → previous/next scan or forecast hour · Space play/pause · ↑ / ↓ tilt · L latest">
+        {/* Past NOW the same controls step and loop forecast hours instead of scans. */}
+        <PlaybackControls
+          playMode={inForecast ? (forecastPlaying ? "playing" : "paused") : history.playMode}
+          currentIndex={inForecast ? forecastLeads.indexOf(forecast.leadHours) : history.currentIndex}
+          entriesCount={inForecast ? forecastLeads.length : history.entries.length}
+          currentTimeMillis={inForecast ? forecastValidMs : (currentEntry?.startTimeMillis ?? null)}
+          frameMs={history.frameMs}
+          onPrevious={() => (inForecast ? stepForecast(-1) : history.previous())}
+          onNext={() => (inForecast ? stepForecast(1) : history.next())}
+          onTogglePlay={() => (inForecast ? toggleForecastPlay() : history.togglePlay())}
+          onJumpLatest={() => {
+            showRadar();
+            history.jumpToLatest();
+          }}
+          onFrameMsChange={history.setFrameMs}
+          isLiveStale={!inForecast && history.isLiveStale}
+          isArchive={history.archiveStartMillis !== null}
+          currentVolumeAgeMillis={inForecast ? null : history.currentVolumeAgeMillis}
+        />
+        {/* S09: one real-time axis, observed scans up to NOW and forecast
+            valid times beyond it; drives the same history/forecast state. */}
+        <UnifiedTimeline
+          history={history}
+          forecast={forecast}
+          onRegionChange={(region) => {
+            if (region === "observed") {
+              showRadar();
+            } else {
+              showForecast();
+              setForecastPlaying(false);
+            }
+          }}
+        />
+        <button
+          type="button"
+          className="forecast-toggle"
+          aria-expanded={forecastOpen}
+          onClick={() => setForecastOpen((v) => !v)}
+          title={forecastSummary}
+        >
+          <Icon name="forecast" />
+          <span>
+            Forecast
+            <small>{modelForecastSummary}</small>
+          </span>
+        </button>
       </footer>
     </div>
   );

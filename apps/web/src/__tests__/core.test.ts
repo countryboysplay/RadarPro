@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { parseObjectKey } from "../nexrad/keys";
 import { clampHistoryLimit, historyReducer, initialState } from "../scan/useScanHistory";
-import { pointInAlertGeometry } from "../alerts/geometryHitTest";
+import { alertNearSite, pointInAlertGeometry } from "../alerts/geometryHitTest";
 import { parseColorTableJson } from "../colorTables/colorTableJson";
+import { legLengthAndBearing } from "../ui/CrossSectionPanel";
+import { archiveKeyFor, newestVolumeNumber, nextVolumeNumber, parseChunkName, previousVolumeNumber } from "../nexrad/chunks";
 
 describe("parseObjectKey", () => {
   it("parses a real Level II key", () => {
@@ -42,6 +44,13 @@ describe("historyReducer", () => {
     expect(s.entries[s.currentIndex].key).toBe("k1");
   });
 
+  it("backfilled older scans slot in by time, without duplicates or moving the view", () => {
+    let s = add(initialState(5), 9);
+    for (const n of [8, 7, 9]) s = add(s, n);
+    expect(s.entries.map((e) => e.key)).toEqual(["k7", "k8", "k9"]);
+    expect(s.entries[s.currentIndex].key).toBe("k9");
+  });
+
   it("clamps the history limit", () => {
     expect(clampHistoryLimit(1)).toBe(5);
     expect(clampHistoryLimit(1000)).toBe(60);
@@ -69,5 +78,63 @@ describe("parseColorTableJson", () => {
   it("returns null on malformed input instead of throwing", () => {
     expect(parseColorTableJson("{")).toBeNull();
     expect(parseColorTableJson('{"name": 3}')).toBeNull();
+  });
+});
+
+
+describe("legLengthAndBearing", () => {
+  it("measures a due-east leg along the equator", () => {
+    const { km, deg } = legLengthAndBearing({ lat: 0, lon: 0 }, { lat: 0, lon: 1 });
+    expect(km).toBeCloseTo(111.2, 1);
+    expect(deg).toBeCloseTo(90, 5);
+  });
+  it("reports a northbound leg as 000", () => {
+    expect(legLengthAndBearing({ lat: 35, lon: -97 }, { lat: 36, lon: -97 }).deg).toBeCloseTo(0, 5);
+  });
+});
+
+describe("alertNearSite", () => {
+  const ktlx = { lat: 35.333, lon: -97.278 };
+  const square = (lon: number, lat: number) => ({
+    type: "Polygon" as const,
+    coordinates: [[[lon, lat], [lon + 0.5, lat], [lon + 0.5, lat + 0.5], [lon, lat]]] as [number, number][][],
+  });
+  it("keeps polygons in radar range and drops distant or zone-only alerts", () => {
+    expect(alertNearSite(square(-97.5, 35.5), ktlx)).toBe(true);
+    expect(alertNearSite(square(-134.5, 58.3), ktlx)).toBe(false); // Juneau
+    expect(alertNearSite(null, ktlx)).toBe(false);
+  });
+});
+
+describe("real-time chunk feed", () => {
+  it("parses chunk names", () => {
+    expect(parseChunkName("20261019-172040-003-I")).toEqual({
+      startTimeMillis: Date.UTC(2026, 9, 19, 17, 20, 40),
+      index: 3,
+      kind: "I",
+    });
+    expect(parseChunkName("20261019-172040-003")).toBeNull();
+  });
+
+  it("finds the newest volume across the 999 wrap and lingering old folders", () => {
+    // Live KTLX shape: an old run 211-258, a stray 269, then 322-676 current.
+    const live = [...Array.from({ length: 48 }, (_, i) => 211 + i), 269, ...Array.from({ length: 355 }, (_, i) => 322 + i)];
+    expect(newestVolumeNumber(live)).toBe(676);
+    // Just wrapped: 995-999 then 1-3.
+    expect(newestVolumeNumber([995, 996, 997, 998, 999, 1, 2, 3])).toBe(3);
+    expect(newestVolumeNumber([])).toBeNull();
+    expect(nextVolumeNumber(999)).toBe(1);
+    expect(previousVolumeNumber(1)).toBe(999);
+  });
+
+  it("names a real-time volume with the archive's key", () => {
+    expect(archiveKeyFor("KTLX", Date.UTC(2026, 9, 19, 17, 20, 40), 6)).toBe("2026/10/19/KTLX/KTLX20261019_172040_V06");
+  });
+
+  it("updates a held volume in place when its bytes grow", () => {
+    let s = historyReducer(initialState(5), { type: "SCAN_ADDED", key: "k", startTimeMillis: 1, revision: 100 });
+    s = historyReducer(s, { type: "SCAN_ADDED", key: "k", startTimeMillis: 1, revision: 250 });
+    expect(s.entries).toEqual([{ key: "k", startTimeMillis: 1, revision: 250 }]);
+    expect(historyReducer(s, { type: "SCAN_ADDED", key: "k", startTimeMillis: 1, revision: 250 })).toBe(s);
   });
 });

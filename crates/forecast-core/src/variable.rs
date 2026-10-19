@@ -44,12 +44,14 @@ pub enum ForecastVariable {
     GeopotentialHeight,
     /// Relative humidity (at whatever level the request/grid names).
     RelativeHumidity,
+    /// Model-simulated composite (column-maximum) radar reflectivity, dBZ.
+    CompositeReflectivity,
 }
 
 impl ForecastVariable {
     /// Every canonical variable, in declaration order -- useful for a UI
     /// variable picker or an exhaustiveness check in a test.
-    pub const ALL: [ForecastVariable; 10] = [
+    pub const ALL: [ForecastVariable; 11] = [
         ForecastVariable::Temperature2m,
         ForecastVariable::Dewpoint2m,
         ForecastVariable::WindU10m,
@@ -60,6 +62,7 @@ impl ForecastVariable {
         ForecastVariable::CloudCover,
         ForecastVariable::GeopotentialHeight,
         ForecastVariable::RelativeHumidity,
+        ForecastVariable::CompositeReflectivity,
     ];
 
     /// A stable, RadarPro-native identifier (`FORECASTING.md`: "canonical
@@ -77,6 +80,7 @@ impl ForecastVariable {
             Self::CloudCover => "cloud_cover",
             Self::GeopotentialHeight => "geopotential_height",
             Self::RelativeHumidity => "relative_humidity",
+            Self::CompositeReflectivity => "composite_reflectivity",
         }
     }
 
@@ -123,11 +127,12 @@ impl ForecastVariable {
             // simply being absent; the two are genuinely different
             // parameter codes for closely related but distinct
             // reduction methods.
-            Self::Mslp => (3, 192),             // MSLET
-            Self::Precipitation1h => (1, 8),    // APCP
-            Self::CloudCover => (6, 1),         // TCDC
-            Self::GeopotentialHeight => (3, 5), // HGT
-            Self::RelativeHumidity => (1, 1),   // RH
+            Self::Mslp => (3, 192),                   // MSLET
+            Self::Precipitation1h => (1, 8),          // APCP
+            Self::CloudCover => (6, 1),               // TCDC
+            Self::GeopotentialHeight => (3, 5),       // HGT
+            Self::RelativeHumidity => (1, 1),         // RH
+            Self::CompositeReflectivity => (16, 196), // REFC (NCEP local)
         }
     }
 }

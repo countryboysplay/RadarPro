@@ -1,9 +1,9 @@
 import type { RefObject } from "react";
 import {
-  FORECAST_LEAD_HOUR_OPTIONS,
   FORECAST_RENDER_HEIGHT,
   FORECAST_RENDER_WIDTH,
   FORECAST_VARIABLES,
+  leadHourOptions,
   type ForecastPhase,
   type useForecastProvider,
 } from "./useForecastProvider";
@@ -38,7 +38,7 @@ function formatTime(iso: string | undefined): string {
   if (!iso) return "—";
   const ms = Date.parse(iso);
   if (Number.isNaN(ms)) return iso;
-  return new Date(ms).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+  return new Date(ms).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true });
 }
 
 /**
@@ -151,7 +151,7 @@ export function ForecastPanel({ canvasRef, forecast }: ForecastPanelProps) {
         <label>
           Variable{" "}
           <select value={forecast.variable} disabled={busy} onChange={(e) => forecast.setVariable(e.target.value)}>
-            {FORECAST_VARIABLES.map((v) => (
+            {FORECAST_VARIABLES.filter((v) => !("hrrrOnly" in v) || forecast.providerId === "hrrr").map((v) => (
               <option key={v.id} value={v.id}>
                 {v.label}
               </option>
@@ -165,8 +165,8 @@ export function ForecastPanel({ canvasRef, forecast }: ForecastPanelProps) {
             disabled={busy}
             onChange={(e) => forecast.setLeadHours(Number(e.target.value))}
           >
-            {FORECAST_LEAD_HOUR_OPTIONS.map((h) => (
-              <option key={h} value={h}>
+            {leadHourOptions(forecast.providerId).map((h) => (
+              <option key={h} value={h} disabled={forecast.publishedLeads !== null && !forecast.publishedLeads.includes(h)}>
                 +{h}h
               </option>
             ))}

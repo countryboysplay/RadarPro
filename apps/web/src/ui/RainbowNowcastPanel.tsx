@@ -47,7 +47,7 @@ function startTimestampForOffset(minutesAgo: number): number | null {
 }
 
 function formatClockTime(epochSeconds: number): string {
-  return new Date(epochSeconds * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return new Date(epochSeconds * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", hour12: true });
 }
 
 function describeNowcastStatus(nowcast: RainbowNowcastState): { text: string; kind: "unconfigured" | "error" | "ready" | "" } | null {

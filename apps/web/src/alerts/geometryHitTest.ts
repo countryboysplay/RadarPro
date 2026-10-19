@@ -13,6 +13,7 @@
 // polygon will look like once actually projected to screen space anyway.
 
 import type { AlertGeometry } from "./types";
+import { legLengthAndBearing, type LatLonPoint } from "../ui/CrossSectionPanel";
 
 export type LonLat = readonly [number, number];
 
@@ -51,4 +52,18 @@ export function pointInAlertGeometry(point: LonLat, geometry: AlertGeometry): bo
     return pointInPolygonRings(point, geometry.coordinates as LonLat[][]);
   }
   return geometry.coordinates.some((polygon) => pointInPolygonRings(point, polygon as LonLat[][]));
+}
+
+/** WSR-88D reflectivity range: an alert farther than this is off the site's radar. */
+const ALERT_NEAR_SITE_KM = 460;
+
+/** Does any vertex of the alert's polygon fall within radar range of the site?
+ * shortcut: zone-only alerts (no polygon, mostly watches/advisories) can't be
+ * placed without NWS zone shapes, so they only show in the US-wide list. */
+export function alertNearSite(geometry: AlertGeometry | null, site: LatLonPoint): boolean {
+  if (!geometry) return false;
+  const rings = geometry.type === "Polygon" ? [geometry.coordinates] : geometry.coordinates;
+  return rings.some((polygon) =>
+    polygon.some((ring) => ring.some(([lon, lat]) => legLengthAndBearing(site, { lat, lon }).km <= ALERT_NEAR_SITE_KM)),
+  );
 }

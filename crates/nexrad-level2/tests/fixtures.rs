@@ -319,3 +319,38 @@ fn decode_volume_rejects_file_truncated_mid_first_record() {
         other => panic!("expected TruncatedLdmRecord, got {other:?}"),
     }
 }
+
+/// Real-time feed: the first four chunks (S + 3 I) of a volume still in
+/// progress, concatenated, from `unidata-nexrad-level2-chunks`. Must decode
+/// as an ordinary (partial) Archive II volume -- the live display depends on it.
+#[test]
+fn decodes_partial_volume_assembled_from_real_time_chunks() {
+    let bytes = load_fixture("KTLX_20261019_172040_chunks_1-4.bin");
+    let volume = decode_volume(&bytes).expect("chunks 1-4 should decode as a partial volume");
+
+    assert_eq!(volume.site.icao, "KTLX");
+    let civil = volume.start_time.to_civil_utc();
+    assert_eq!((civil.year, civil.month, civil.day), (2026, 10, 19));
+    assert_eq!((civil.hour, civil.minute), (17, 20));
+    assert!((1..=767).contains(&volume.volume_coverage_pattern));
+    assert!(volume.site.latitude_deg.abs() > 0.1 && volume.site.longitude_deg.abs() > 0.1);
+
+    // Three ~12 s chunks hold only the lowest (surveillance) cut: reflectivity, no velocity yet.
+    let first = &volume.sweeps[0];
+    assert!(first.elevation_angle_deg < 1.0);
+    assert!(first.radials.len() > 100, "only {} radials", first.radials.len());
+    let angles: Vec<f32> = first.radials.iter().map(|r| r.azimuth_angle_deg).collect();
+    assert_azimuths_monotonic_with_wraparound(&angles);
+    let refl: Vec<f32> = first
+        .radials
+        .iter()
+        .filter_map(|r| r.moments.get(&MomentKind::Reflectivity))
+        .flat_map(|m| m.gates.iter())
+        .filter_map(|g| match *g {
+            GateValue::Value(v) => Some(v),
+            _ => None,
+        })
+        .collect();
+    assert!(!refl.is_empty(), "no reflectivity decoded");
+    assert_moment_values_in_documented_range(MomentKind::Reflectivity, &refl);
+}

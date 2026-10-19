@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import type { ScanHistory } from "../scan/useScanHistory";
-import { FORECAST_LEAD_HOUR_OPTIONS, type useForecastProvider } from "../forecast/useForecastProvider";
+import { leadHourOptions, type useForecastProvider } from "../forecast/useForecastProvider";
 
 /**
  * S09 "Unified Timeline" -- see `Agent Context/context/stages/S09-timeline-mrms.md`.
@@ -20,7 +20,7 @@ import { FORECAST_LEAD_HOUR_OPTIONS, type useForecastProvider } from "../forecas
  * domain (`(t - domainMin) / (domainMax - domainMin)`). That broke down in
  * this task's own live browser verification: `MAX_HISTORY_SCANS` (15
  * WSR-88D volumes, roughly 1-2.5h of real time) is tiny next to a forecast
- * horizon reaching `Math.max(...FORECAST_LEAD_HOUR_OPTIONS)` hours (48h
+ * horizon reaching the provider's longest lead hour (48h for GEFS
  * today) -- two radar scans four minutes apart, at that scale, land under
  * 1px apart. Clicking the older of two such ticks actually hit the newer,
  * visually-overlapping one instead (confirmed live: `aria-pressed` ended up
@@ -57,6 +57,8 @@ import { FORECAST_LEAD_HOUR_OPTIONS, type useForecastProvider } from "../forecas
 export interface UnifiedTimelineProps {
   history: ScanHistory;
   forecast: ReturnType<typeof useForecastProvider>;
+  /** Which side of NOW the user last picked, so the map can show radar or forecast radar. */
+  onRegionChange?: (region: "observed" | "forecast") => void;
 }
 
 const MS_PER_HOUR = 3_600_000;
@@ -77,8 +79,9 @@ const PAST_FRACTION = 0.35;
  * once-a-minute tick is more than enough to keep "now" visibly live. */
 const NOW_TICK_MS = 60_000;
 
+/** One time notation across the app: local, 12-hour. */
 function formatTime(ms: number): string {
-  return new Date(ms).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+  return new Date(ms).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true });
 }
 
 function useNowMillis(): number {
@@ -90,14 +93,16 @@ function useNowMillis(): number {
   return now;
 }
 
-export function UnifiedTimeline({ history, forecast }: UnifiedTimelineProps) {
+export function UnifiedTimeline({ history, forecast, onRegionChange }: UnifiedTimelineProps) {
   const nowMs = useNowMillis();
   const trackRef = useRef<HTMLDivElement>(null);
   const draggingRef = useRef(false);
 
   const currentEntry = history.entries[history.currentIndex] ?? null;
   const runInitMs = forecast.run ? Date.parse(forecast.run.initTime) : null;
-  const maxLeadHours = Math.max(...FORECAST_LEAD_HOUR_OPTIONS);
+  const leadHours = leadHourOptions(forecast.providerId);
+  const isPublished = (h: number) => forecast.publishedLeads === null || forecast.publishedLeads.includes(h);
+  const maxLeadHours = Math.max(...leadHours);
   // Ticks live at `runInitTime + leadHours` -- an absolute time, not just
   // "+Nh", per the stage spec ("computed as the current forecast run's init
   // time + lead hours -- an absolute time -- so both halves share one real
@@ -165,14 +170,16 @@ export function UnifiedTimeline({ history, forecast }: UnifiedTimelineProps) {
   const applyAtTime = useCallback(
     (ms: number) => {
       if (ms <= nowMs) {
+        onRegionChange?.("observed");
         if (history.entries.length > 0) history.jumpToNearestByTimestamp(ms);
         return;
       }
       if (runInitMs === null || forecastBusy) return;
+      onRegionChange?.("forecast");
       const hoursFromRun = (ms - runInitMs) / MS_PER_HOUR;
-      let nearestHours = FORECAST_LEAD_HOUR_OPTIONS[0];
+      let nearestHours = leadHours[0];
       let bestDiff = Infinity;
-      for (const h of FORECAST_LEAD_HOUR_OPTIONS) {
+      for (const h of leadHours.filter(isPublished)) {
         const diff = Math.abs(h - hoursFromRun);
         if (diff < bestDiff) {
           bestDiff = diff;
@@ -181,7 +188,7 @@ export function UnifiedTimeline({ history, forecast }: UnifiedTimelineProps) {
       }
       forecast.setLeadHours(nearestHours);
     },
-    [nowMs, history, runInitMs, forecastBusy, forecast],
+    [nowMs, history, runInitMs, forecastBusy, forecast, onRegionChange],
   );
 
   const handlePointerDown = useCallback(
@@ -212,23 +219,8 @@ export function UnifiedTimeline({ history, forecast }: UnifiedTimelineProps) {
     }
   }, []);
 
-  const providerLabel = forecast.metadata?.displayName ?? forecast.providerId?.toUpperCase() ?? null;
-
   return (
     <div className="unified-timeline">
-      <div className="unified-timeline-header">
-        <span className="unified-timeline-source unified-timeline-source-observed">
-          OBSERVED{currentEntry ? ` at ${formatTime(currentEntry.startTimeMillis)}` : " — no scan loaded"}
-        </span>
-        <span className="unified-timeline-divider" aria-hidden="true">
-          /
-        </span>
-        <span className="unified-timeline-source unified-timeline-source-forecast">
-          FORECAST{providerLabel ? ` (${providerLabel})` : ""}
-          {forecastValidMs !== null ? ` at ${formatTime(forecastValidMs)}` : " — no run loaded"}
-        </span>
-      </div>
-
       <div
         ref={trackRef}
         className="unified-timeline-track"
@@ -259,27 +251,34 @@ export function UnifiedTimeline({ history, forecast }: UnifiedTimelineProps) {
             title={`Observed radar scan at ${formatTime(entry.startTimeMillis)}`}
             aria-label={`Observed radar scan at ${formatTime(entry.startTimeMillis)}`}
             aria-pressed={entry === currentEntry}
-            onClick={() => history.jumpToNearestByTimestamp(entry.startTimeMillis)}
+            onClick={() => {
+              onRegionChange?.("observed");
+              history.jumpToNearestByTimestamp(entry.startTimeMillis);
+            }}
           />
         ))}
 
         {runInitMs !== null &&
-          FORECAST_LEAD_HOUR_OPTIONS.map((hours) => {
+          leadHours.map((hours) => {
             const tickMs = runInitMs + hours * MS_PER_HOUR;
             const active = hours === forecast.leadHours;
+            const published = isPublished(hours);
             return (
               <button
                 key={hours}
                 type="button"
                 className={`unified-timeline-tick unified-timeline-tick-forecast${
                   active ? " unified-timeline-tick-active" : ""
-                }`}
+                }${published ? "" : " unified-timeline-tick-unpublished"}`}
                 style={{ left: `${fractionOf(tickMs) * 100}%` }}
-                title={`Forecast +${hours}h — valid ${formatTime(tickMs)} (model precipitation, not radar)`}
+                title={`Forecast +${hours}h — valid ${formatTime(tickMs)}${published ? "" : " (not published yet)"}`}
                 aria-label={`Forecast lead +${hours} hours, valid ${formatTime(tickMs)}`}
                 aria-pressed={active}
-                disabled={forecastBusy}
-                onClick={() => forecast.setLeadHours(hours)}
+                disabled={forecastBusy || !published}
+                onClick={() => {
+                  onRegionChange?.("forecast");
+                  forecast.setLeadHours(hours);
+                }}
               />
             );
           })}
@@ -287,6 +286,18 @@ export function UnifiedTimeline({ history, forecast }: UnifiedTimelineProps) {
 
       <div className="unified-timeline-labels">
         <span>{formatTime(domainMin)}</span>
+        <span className="unified-timeline-header">
+          <span className="unified-timeline-source unified-timeline-source-observed">
+            OBSERVED{currentEntry ? "" : " — no scan loaded"}
+          </span>
+          <span className="unified-timeline-divider" aria-hidden="true">
+            /
+          </span>
+          <span className="unified-timeline-source unified-timeline-source-forecast">
+            FORECAST
+            {forecastValidMs !== null ? ` valid ${formatTime(forecastValidMs)}` : " — no run loaded"}
+          </span>
+        </span>
         <span>{formatTime(domainMax)}</span>
       </div>
     </div>

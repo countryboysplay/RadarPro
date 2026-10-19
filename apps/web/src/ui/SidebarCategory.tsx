@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from "react";
+import { Icon } from "./Icon";
 
 export interface SidebarCategoryProps {
   title: string;
@@ -51,11 +52,11 @@ export function SidebarCategory({ title, summary, defaultOpen = false, open: con
   return (
     <div className="sidebar-category">
       <button type="button" className="sidebar-category-header" onClick={handleToggle} aria-expanded={open}>
-        <span className="sidebar-category-chevron" aria-hidden="true">
-          {open ? "▾" : "▸"}
+        <span className="sidebar-category-chevron">
+          <Icon name={open ? "chevronDown" : "chevronRight"} size={16} />
         </span>
         <span className="sidebar-category-title">{title}</span>
-        <span className="sidebar-category-summary">— {summary}</span>
+        <span className="sidebar-category-summary">{summary}</span>
       </button>
       {open && <div className="sidebar-category-body">{children}</div>}
     </div>

@@ -87,3 +87,10 @@ desktop.ini
 # Local-only stage/architecture planning package; not part of the shipped
 # repository.
 /Agent Context/
+
+### Impeccable (design tooling) ###
+# Machine-local: hook consent, detector cache, and run logs.
+.impeccable/config.local.json
+.impeccable/hook.cache.json
+.impeccable/*.out
+.impeccable/questions/*.log

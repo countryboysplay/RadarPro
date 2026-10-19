@@ -180,6 +180,40 @@ impl ProviderHandle {
         })
     }
 
+    /// Forecast hours of the discovered run published so far, as a JSON
+    /// array (`[0,1,2]`), or `"null"` when this provider can't tell (GEFS
+    /// publishes a run all at once, so every hour is treated as available).
+    /// Rejects if no run has been discovered yet or the listing fails.
+    #[wasm_bindgen(js_name = publishedLeadHours)]
+    pub fn published_lead_hours(&self) -> js_sys::Promise {
+        let (provider, run) = {
+            let state = self.state.borrow();
+            let run = match &state.last_run {
+                Some(RunImpl::Hrrr(run)) => Some(*run),
+                Some(RunImpl::Gefs(_)) => None,
+                None => {
+                    return js_sys::Promise::reject(&JsValue::from_str("no run discovered yet"))
+                }
+            };
+            (state.provider.clone(), run)
+        };
+        future_to_promise(async move {
+            let (ProviderImpl::Hrrr(p), Some(run)) = (provider, run) else {
+                return Ok(JsValue::from_str("null"));
+            };
+            let hours = p
+                .published_forecast_hours(run)
+                .await
+                .map_err(|e| JsValue::from_str(&e.to_string()))?;
+            let list = hours
+                .iter()
+                .map(u16::to_string)
+                .collect::<Vec<_>>()
+                .join(",");
+            Ok(JsValue::from_str(&format!("[{list}]")))
+        })
+    }
+
     /// Fetch and decode one field for the run discovered by the most
     /// recent [`Self::discover_latest_run`] call.
     ///

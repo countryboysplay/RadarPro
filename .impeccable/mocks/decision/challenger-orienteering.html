@@ -1,0 +1,47 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>RadarPro: Orienteering Course</title>
+<link href="https://fonts.googleapis.com/css2?family=Roboto+Condensed:wght@500;700&display=swap" rel="stylesheet">
+<style>
+:root{--k:#0e1110;--k2:#161b19;--k3:#262e2a;--ink:#ecebe4;--mut:#a3a89f;--pu:#d0379c;--br:#8a6a3a;--blue:#739BD0}
+*{box-sizing:border-box;margin:0}
+body{width:1440px;height:900px;overflow:hidden;background:var(--k);color:var(--ink);font:500 14px/1.25 "Roboto Condensed",sans-serif;position:relative}
+.map{position:absolute;left:300px;top:0;right:0;bottom:64px;background:
+ radial-gradient(ellipse 60px 40px at 55% 38%,#e33 0 20%,#f90 30%,#ee3 45%,#2b8a3e 70%,transparent 72%),
+ radial-gradient(ellipse 140px 70px at 52% 42%,#3cb44b55 0 60%,transparent 62%),
+ repeating-radial-gradient(circle at 30% 70%,transparent 0 38px,#2a2620 39px 40px),#121614}
+svg{position:absolute;inset:0}
+.city{position:absolute;font:700 12px "Roboto Condensed";color:var(--mut);text-transform:uppercase;letter-spacing:.05em}
+.num{position:absolute;font:700 22px "Roboto Condensed";color:var(--pu)}
+aside{position:absolute;left:0;top:0;bottom:64px;width:300px;background:var(--k2);border-right:1px solid var(--k3);padding:18px}
+.mark{font:700 18px "Roboto Condensed"}.mark b{color:var(--blue)}
+h2{font:700 12px "Roboto Condensed";letter-spacing:.12em;color:var(--mut);margin:18px 0 8px;text-transform:uppercase}
+.site{font:700 26px "Roboto Condensed"}.site small{display:block;font-size:14px;color:var(--mut)}
+.seg{display:flex;flex-wrap:wrap;gap:4px}.seg span{padding:6px 10px;background:var(--k3);font:700 15px "Roboto Condensed"}.seg span.on{background:var(--ink);color:var(--k)}
+table{width:100%;border-collapse:collapse;font-size:14px}td{padding:6px 4px;border-bottom:1px solid var(--k3)}
+td:first-child{color:var(--pu);font-weight:700;width:28px}
+.al{border-left:4px solid #e0413a;padding:6px 10px;background:var(--k);margin-bottom:6px}
+footer{position:absolute;left:0;right:0;bottom:0;height:64px;background:var(--k2);border-top:1px solid var(--k3);display:flex;align-items:center;gap:14px;padding:0 18px}
+.b{width:40px;height:40px;background:var(--k3);display:grid;place-items:center;font:700 18px "Roboto Condensed"}.b.p{background:var(--blue);color:var(--k)}
+.track{flex:1;height:36px;position:relative}
+.obs{position:absolute;left:0;width:58%;top:10px;height:16px;background:repeating-linear-gradient(90deg,#4f5a52 0 3px,transparent 3px 22px)}
+.now{position:absolute;left:59%;top:0;bottom:0;border-left:2px solid var(--ink)}
+.fc{position:absolute;left:60%;right:0;top:12px;height:12px;background:repeating-linear-gradient(135deg,#262e2a 0 6px,#161b19 6px 12px)}
+.fsel{font:700 15px "Roboto Condensed";border-bottom:2px solid var(--mut);padding:4px 2px}
+</style></head><body>
+<aside><div class="mark">Radar<b>Pro</b></div>
+<h2>Site</h2><div class="site">KTLX<small>Norman, OK · 15:58:54Z · 2 min ago</small></div>
+<h2>Product</h2><div class="seg"><span class="on">REF</span><span>VEL</span><span>SRV</span><span>CC</span><span>ZDR</span><span>PHI</span><span>SW</span></div>
+<h2>Tilt</h2><div class="seg"><span class="on">0.5</span><span>0.9</span><span>1.3</span><span>1.8</span><span>2.4</span><span>3.1</span></div>
+<h2>Course</h2><table><tr><td>1</td><td>Probe · 58.5 dBZ · 112 km 041°</td></tr><tr><td>2</td><td>Probe · 41.0 dBZ · 96 km 052°</td></tr><tr><td>1–2</td><td>Cross-section · 0–15 km</td></tr></table>
+<h2>Warnings in view</h2><div class="al">Severe Thunderstorm Warning · Osage Co.</div><div class="al">Flood Watch · Tulsa Co.</div></aside>
+<div class="map">
+<div class="city" style="left:30%;top:52%">Oklahoma City</div><div class="city" style="left:50%;top:30%">Tulsa</div><div class="city" style="left:34%;top:68%">Norman</div>
+<svg viewBox="0 0 1140 836"><circle cx="350" cy="480" r="14" fill="none" stroke="#d0379c" stroke-width="4"/>
+<circle cx="630" cy="300" r="18" fill="none" stroke="#d0379c" stroke-width="4"/><circle cx="740" cy="250" r="18" fill="none" stroke="#d0379c" stroke-width="4"/>
+<line x1="646" y1="292" x2="724" y2="258" stroke="#d0379c" stroke-width="4"/></svg>
+<div class="num" style="left:600px;top:262px">1</div><div class="num" style="left:760px;top:212px">2</div>
+</div>
+<footer><div class="b">‹</div><div class="b p">▶</div><div class="b">›</div>
+<div class="track"><div class="obs"></div><div class="now"></div><div class="fc"></div></div>
+<div class="fsel">HRRR · 2 m Temp ▾</div></footer>
+</body></html>

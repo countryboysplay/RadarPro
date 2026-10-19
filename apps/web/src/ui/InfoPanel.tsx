@@ -1,7 +1,4 @@
 export interface InfoPanelProps {
-  siteIcao: string;
-  siteName: string;
-  volumeStartTimeMillis: number | null;
   elevationDeg: number | null;
   sweepIndex: number | null;
   sweepCount: number | null;
@@ -10,8 +7,8 @@ export interface InfoPanelProps {
 }
 
 /**
- * Small persistent info panel: site, volume start time, the selected
- * sweep's elevation angle, and the active moment/units.
+ * Small persistent info panel: the selected sweep's elevation angle and
+ * the active moment/units. Scan time lives once, in the time strip.
  *
  * VCP (Volume Coverage Pattern) number is deliberately **not** shown here:
  * `radar_types::Volume::volume_coverage_pattern` is decoded natively but
@@ -21,9 +18,6 @@ export interface InfoPanelProps {
  * panel just omits the field.
  */
 export function InfoPanel({
-  siteIcao,
-  siteName,
-  volumeStartTimeMillis,
   elevationDeg,
   sweepIndex,
   sweepCount,
@@ -32,16 +26,6 @@ export function InfoPanel({
 }: InfoPanelProps) {
   return (
     <dl className="info-panel">
-      <dt>Site</dt>
-      <dd>
-        {siteIcao} — {siteName}
-      </dd>
-
-      <dt>Volume start</dt>
-      <dd>
-        {volumeStartTimeMillis !== null ? new Date(volumeStartTimeMillis).toISOString() : "—"}
-      </dd>
-
       <dt>Elevation</dt>
       <dd>
         {elevationDeg !== null ? `${elevationDeg.toFixed(2)}°` : "—"}

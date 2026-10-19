@@ -18,7 +18,7 @@ export function Legend({ activeColorTableJson, momentCode }: LegendProps) {
   if (!table) {
     return (
       <div className="legend">
-        <div className="legend-title">Legend -- {momentCode}</div>
+        <div className="legend-title">Legend · {momentCode}</div>
         <div className="legend-empty">(no color table loaded yet)</div>
       </div>
     );

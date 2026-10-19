@@ -148,6 +148,11 @@ pub fn idx_names(
         ForecastVariable::Mslp => Some(("MSLMA", "mean sea level", "Pa", 3, 198)),
         ForecastVariable::CloudCover => Some(("TCDC", "entire atmosphere", "%", 6, 1)),
         ForecastVariable::RelativeHumidity => Some(("RH", "2 m above ground", "%", 1, 1)),
+        // Confirmed live 2026-10-19 (`hrrr.t12z.wrfsfcf06`, first message):
+        // `REFC:entire atmosphere`, PDT 4.0, NCEP local `(16, 196)`.
+        ForecastVariable::CompositeReflectivity => {
+            Some(("REFC", "entire atmosphere", "dBZ", 16, 196))
+        }
         ForecastVariable::Precipitation1h | ForecastVariable::GeopotentialHeight => None,
     }
 }
@@ -411,6 +416,21 @@ mod tests {
             .join(name);
         std::fs::read(&path)
             .unwrap_or_else(|e| panic!("missing test fixture {}: {e}", path.display()))
+    }
+
+    #[test]
+    fn decodes_real_simulated_composite_reflectivity() {
+        // Live capture: first message of `hrrr.20261019/conus/hrrr.t12z.wrfsfcf06.grib2`.
+        let bytes = fixture("hrrr_20261019_t12z_f06_refc.grib2");
+        let decoded = decode_field("u", &bytes, ForecastVariable::CompositeReflectivity).unwrap();
+        assert_eq!(decoded.unit, "dBZ");
+        assert_eq!(decoded.forecast_lead_hours, 6);
+        assert_eq!(decoded.values.len(), 1799 * 1059);
+        let finite = decoded.values.iter().copied().filter(|v| v.is_finite());
+        let (min, max) = finite.fold((f32::MAX, f32::MIN), |(lo, hi), v| (lo.min(v), hi.max(v)));
+        // No-echo floor around -10..-20 dBZ, echoes well short of 90.
+        assert!((-40.0..0.0).contains(&min), "min {min}");
+        assert!((0.0..90.0).contains(&max), "max {max}");
     }
 
     #[test]

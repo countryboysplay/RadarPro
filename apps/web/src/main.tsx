@@ -1,5 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
+import "@fontsource-variable/roboto-condensed";
 import App from "./App";
 import { attachDesktopLogging } from "./platform/desktop";
 

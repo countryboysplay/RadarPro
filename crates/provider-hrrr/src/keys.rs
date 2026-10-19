@@ -108,6 +108,36 @@ pub fn object_key(run: RunReference, product: Product, forecast_hour: ForecastHo
     )
 }
 
+/// Key prefix shared by every forecast hour of one run's `product`,
+/// e.g. `"hrrr.20260912/conus/hrrr.t12z.wrfsfcf"` (the `f` leads the hour digits).
+pub fn run_product_prefix(run: RunReference, product: Product) -> String {
+    format!(
+        "{}hrrr.t{:02}z.{}f",
+        run.run_prefix(),
+        run.run_hour,
+        product.as_str()
+    )
+}
+
+/// The forecast hours `keys` (a listing under [`run_product_prefix`]) show as
+/// published, ascending. An hour counts once its `.idx` exists, since a
+/// field can't be fetched without it.
+pub fn published_forecast_hours(run: RunReference, product: Product, keys: &[String]) -> Vec<u16> {
+    let stem = run_product_prefix(run, product);
+    let mut hours: Vec<u16> = keys
+        .iter()
+        .filter_map(|k| {
+            k.strip_prefix(&stem)?
+                .strip_suffix(".grib2.idx")?
+                .parse()
+                .ok()
+        })
+        .collect();
+    hours.sort_unstable();
+    hours.dedup();
+    hours
+}
+
 /// The `.idx` sidecar key for the same tuple.
 pub fn idx_key(run: RunReference, product: Product, forecast_hour: ForecastHour) -> String {
     format!("{}.idx", object_key(run, product, forecast_hour))
@@ -121,6 +151,26 @@ pub fn object_url(bucket_url: &str, key: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn published_forecast_hours_reads_idx_sidecars_only() {
+        let run = RunReference::new(2026, 10, 19, 16);
+        let keys: Vec<String> = [
+            "hrrr.20261019/conus/hrrr.t16z.wrfsfcf00.grib2",
+            "hrrr.20261019/conus/hrrr.t16z.wrfsfcf00.grib2.idx",
+            "hrrr.20261019/conus/hrrr.t16z.wrfsfcf02.grib2.idx",
+            "hrrr.20261019/conus/hrrr.t16z.wrfsfcf01.grib2.idx",
+            // grib2 written, idx not yet: not fetchable, so not published.
+            "hrrr.20261019/conus/hrrr.t16z.wrfsfcf03.grib2",
+            "hrrr.20261019/conus/hrrr.t16z.wrfsubhf04.grib2.idx",
+        ]
+        .map(String::from)
+        .to_vec();
+        assert_eq!(
+            published_forecast_hours(run, Product::CONUS_SURFACE, &keys),
+            vec![0, 1, 2]
+        );
+    }
 
     #[test]
     fn object_key_matches_the_empirically_verified_real_layout() {

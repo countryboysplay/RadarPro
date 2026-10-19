@@ -43,6 +43,8 @@ export interface NetworkDiagnostics {
 
 function describeScanEvent(event: PollEvent): string {
   switch (event.type) {
+    case "receiving":
+      return `real-time feed: ${event.volume.key.split("/").pop()} ${event.complete ? "complete" : "arriving"}`;
     case "downloaded":
       return `new volume: ${event.volume.key.split("/").pop()}`;
     case "up-to-date":

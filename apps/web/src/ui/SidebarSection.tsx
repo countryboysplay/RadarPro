@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from "react";
+import { Icon } from "./Icon";
 
 export interface SidebarSectionProps {
   title: string;
@@ -44,8 +45,8 @@ export function SidebarSection({ title, defaultOpen = false, open: controlledOpe
   return (
     <div className={`sidebar-section${nested ? " sidebar-section-nested" : ""}`}>
       <button type="button" className="sidebar-section-header" onClick={handleToggle} aria-expanded={open}>
-        <span className="sidebar-section-chevron" aria-hidden="true">
-          {open ? "▾" : "▸"}
+        <span className="sidebar-section-chevron">
+          <Icon name={open ? "chevronDown" : "chevronRight"} size={16} />
         </span>
         <span className="sidebar-section-title">{title}</span>
       </button>

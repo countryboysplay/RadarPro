@@ -6,8 +6,7 @@ import { severityRank, type AlertChangeJson, type AlertFeatureCollection, type A
 /**
  * Network poll interval against `/alerts/active`. NWS's feed updates as new
  * products are issued, not on any fixed cadence (there is no "correct"
- * interval to derive this from) -- 60s sits in the same 30-90s range as
- * `useScanPoller`'s `POLL_INTERVAL_MS` (45s) and is explicitly the cadence
+ * interval to derive this from) -- 60s is explicitly the cadence
  * `docs/adr/0010-nws-alert-lifecycle-reconciliation.md` assumed
  * (`AlertStore`'s absence-based safety net was reasoned about at "~60-120s
  * poll cadence, well under 10 minutes" -- see that ADR's Decision section).

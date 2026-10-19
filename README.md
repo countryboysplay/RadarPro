@@ -15,16 +15,22 @@ preserved end to end rather than smoothed away for looks.
 
 Working desktop (Windows, Tauri) and web workstation, through stage S11:
 
-- **Live NEXRAD Level II** for ~160 WSR-88D sites: REF, VEL, SW, ZDR, CC,
-  PHI, plus derived Storm-Relative Velocity; every tilt; GPU rendering;
-  probe readout; range rings; custom color tables; scan-history playback;
-  historical archive loading by date; vertical cross-sections; click a
-  site dot on the map to switch radars.
+- **Live NEXRAD Level II** for ~160 WSR-88D sites, from the real-time
+  chunk feed (the newest scan fills in tilt by tilt within seconds; falls
+  back to the archive): REF, VEL, SW, ZDR, CC, PHI, plus derived
+  Storm-Relative Velocity; every tilt; GPU rendering; probe readout; range
+  rings; custom color tables; a scan loop backfilled from the archive on
+  site switch; historical archive loading by date; vertical cross-sections;
+  site search, nearby-site buttons, and clickable site dots.
 - **MRMS national mosaic**: composite reflectivity, precip rate, 1-hour
   multi-sensor rainfall, 60-minute max hail size (MESH), 18 dBZ echo tops,
   and VIL.
+- **Forecast radar**: HRRR simulated composite reflectivity, hourly to
+  +18 h, shown on the map past NOW on the timeline and playable as a loop;
+  hours not yet published are greyed out.
 - **Model forecasts** (GEFS ensemble, HRRR): temperature, dewpoint,
-  humidity, wind components, gusts, sea-level pressure, cloud cover.
+  humidity, wind components, gusts, sea-level pressure, cloud cover (in the
+  Forecast panel).
 - **NWS alerts**, live polygons with lifecycle tracking.
 - **Rainbow Weather** tiles, nowcast, and point forecast (needs an API key).
 

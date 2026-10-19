@@ -1,0 +1,56 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>RadarPro: Interstate Guide Sign</title>
+<link href="https://fonts.googleapis.com/css2?family=Overpass:wght@600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{--k:#0a0f0d;--k2:#121a17;--k3:#24302b;--sg:#0b5e3b;--w:#ffffff;--mut:#a9b8b1;--blue:#739BD0;--amb:#f2b705}
+*{box-sizing:border-box;margin:0}
+body{width:1440px;height:900px;overflow:hidden;background:var(--k);color:var(--w);font:700 14px/1.2 Overpass,sans-serif;position:relative}
+.map{position:absolute;inset:0;background:
+ radial-gradient(ellipse 60px 40px at 63% 40%,#e33 0 20%,#f90 30%,#ee3 45%,#2b8a3e 70%,transparent 72%),
+ radial-gradient(ellipse 140px 70px at 60% 44%,#3cb44b55 0 60%,transparent 62%),
+ radial-gradient(circle at 48% 58%,transparent 0 130px,#33413b 131px,transparent 132px,transparent 260px,#33413b 261px,transparent 262px),#0e1412}
+.city{position:absolute;font:700 12px Overpass;color:var(--mut);text-transform:uppercase;letter-spacing:.05em}
+.gantry{position:absolute;left:50%;transform:translateX(-50%);top:16px;display:flex;align-items:stretch;gap:10px}
+.sign{background:var(--sg);border:3px solid var(--w);border-radius:10px;padding:10px 22px 12px;display:flex;align-items:center;gap:18px;box-shadow:0 0 0 2px var(--sg)}
+.shield{width:58px;height:58px;background:var(--blue);color:var(--k);border:3px solid var(--w);border-radius:8px 8px 22px 22px;display:grid;place-items:center;font:800 16px Overpass}
+.sign h1{font:800 34px Overpass;letter-spacing:.01em}.sign p{font:700 15px Overpass;color:#d5e6dd}
+.exit{position:absolute;top:-18px;right:16px;background:var(--sg);border:3px solid var(--w);border-bottom:0;border-radius:6px 6px 0 0;padding:2px 10px;font:800 14px Overpass}
+.prods{display:flex;flex-direction:column;justify-content:center;gap:4px}
+.prods div{display:flex;gap:4px}
+.p{font:800 15px Overpass;padding:5px 9px;border:2px solid var(--w);border-radius:5px;background:var(--sg)}
+.p.on{background:var(--w);color:var(--sg)}
+.t{font:800 13px Overpass;padding:3px 7px;border-radius:4px;color:#d5e6dd;border:2px solid transparent}
+.t.on{border-color:var(--amb);color:var(--w)}
+.shields{position:absolute;left:20px;top:110px;display:flex;flex-direction:column;gap:8px}
+.sh{width:64px;height:44px;border:2px solid var(--w);border-radius:6px 6px 16px 16px;display:grid;place-items:center;font:800 14px Overpass;background:var(--k2)}
+.sh.on{background:var(--blue);color:var(--k)}
+.mark{position:absolute;left:20px;top:26px;font:800 18px Overpass}.mark b{color:var(--blue)}
+.warn{position:absolute;right:20px;top:24px;background:var(--amb);color:var(--k);border-radius:6px;padding:8px 14px;font:800 15px Overpass}
+.probe{position:absolute;left:900px;top:330px;background:var(--k);border:2px solid var(--w);border-radius:6px;padding:8px 12px}
+.probe b{font:800 26px Overpass;display:block}.probe span{color:var(--mut);font-size:14px}
+.bar{position:absolute;left:20px;right:20px;bottom:16px;height:64px;background:var(--k2);border:2px solid var(--k3);border-radius:10px;display:flex;align-items:center;gap:16px;padding:0 14px}
+.btn{width:44px;height:44px;border-radius:6px;background:var(--k3);display:grid;place-items:center;font:800 18px Overpass}.btn.p2{background:var(--blue);color:var(--k)}
+.track{flex:1;height:36px;position:relative}
+.obs{position:absolute;left:0;width:58%;top:10px;height:16px;background:repeating-linear-gradient(90deg,#4f5f58 0 3px,transparent 3px 22px)}
+.now{position:absolute;left:59%;top:0;bottom:0;border-left:3px solid var(--amb)}
+.fc{position:absolute;left:60%;right:0;top:12px;height:12px;background:repeating-linear-gradient(135deg,#24302b 0 6px,#121a17 6px 12px)}
+.fsel{background:var(--sg);border:2px solid var(--w);border-radius:6px;padding:6px 12px;font:800 15px Overpass}
+.legend{position:absolute;right:24px;bottom:96px;display:flex}.legend i{width:28px;height:12px}
+</style></head><body>
+<div class="map">
+ <div class="city" style="left:41%;top:50%">Oklahoma City</div><div class="city" style="left:58%;top:31%">Tulsa</div><div class="city" style="left:45%;top:66%">Norman</div>
+ <div style="position:absolute;left:55%;top:29%;width:150px;height:110px;border:3px solid var(--amb);transform:skew(-14deg)"></div>
+</div>
+<div class="mark">Radar<b>Pro</b></div>
+<div class="gantry"><div class="sign" style="position:relative"><div class="exit">TILT 0.5°</div><div class="shield">TLX</div>
+<div><h1>Norman, OK</h1><p>15:58:54Z · 2 min ago · LIVE</p></div>
+<div class="prods"><div><span class="p on">REF</span><span class="p">VEL</span><span class="p">SRV</span><span class="p">CC</span><span class="p">ZDR</span><span class="p">PHI</span><span class="p">SW</span></div>
+<div><span class="t on">0.5</span><span class="t">0.9</span><span class="t">1.3</span><span class="t">1.8</span><span class="t">2.4</span><span class="t">3.1</span><span class="t">4.0</span></div></div></div></div>
+<div class="shields"><div class="sh on">TLX</div><div class="sh">INX</div><div class="sh">VNX</div><div class="sh">FDR</div><div class="sh">SRX</div><div class="sh">+ All</div></div>
+<div class="warn">2 WARNINGS AHEAD</div>
+<div class="probe"><b>58.5 dBZ</b><span>112 km 041° · beam 2.1 km</span></div>
+<div class="legend"><i style="background:#2b8a3e"></i><i style="background:#3cb44b"></i><i style="background:#ee3"></i><i style="background:#f90"></i><i style="background:#e33"></i><i style="background:#d0f"></i></div>
+<div class="bar"><div class="btn">‹</div><div class="btn p2">▶</div><div class="btn">›</div>
+<div class="track"><div class="obs"></div><div class="now"></div><div class="fc"></div></div>
+<div class="fsel">HRRR · 2 m Temp ▾</div></div>
+</body></html>

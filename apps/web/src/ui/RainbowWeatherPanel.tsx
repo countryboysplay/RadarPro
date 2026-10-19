@@ -40,7 +40,7 @@ function daysLabel(days: number | null): string {
 }
 
 function formatClockTime(epochSeconds: number): string {
-  return new Date(epochSeconds * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return new Date(epochSeconds * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", hour12: true });
 }
 function formatDayLabel(epochSeconds: number): string {
   return new Date(epochSeconds * 1000).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });

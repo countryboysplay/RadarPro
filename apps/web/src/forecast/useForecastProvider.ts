@@ -11,8 +11,9 @@ import type {
 /** Fixed backing-buffer size for the forecast render canvas -- see
  * `ForecastPanel`'s doc comment for why this is a dedicated panel, not a
  * map overlay, in this stage. */
-export const FORECAST_RENDER_WIDTH = 480;
-export const FORECAST_RENDER_HEIGHT = 320;
+// ~0.04° per pixel over the fixed extent below: storm-scale for HRRR's 3 km grid.
+export const FORECAST_RENDER_WIDTH = 1440;
+export const FORECAST_RENDER_HEIGHT = 960;
 
 /**
  * Fixed orthographic-camera framing (decimal degrees) handed to
@@ -37,6 +38,7 @@ const DISCOVER_LOOKBACK_DAYS = 5;
 /** Variables both GEFS and HRRR decode (canonical names, see
  * `forecast-core`'s `ForecastVariable::canonical_name`). */
 export const FORECAST_VARIABLES = [
+  { id: "composite_reflectivity", label: "Simulated reflectivity", hrrrOnly: true },
   { id: "temperature_2m", label: "Temperature (2 m)" },
   { id: "dewpoint_2m", label: "Dewpoint (2 m)" },
   { id: "relative_humidity", label: "Relative humidity" },
@@ -47,12 +49,19 @@ export const FORECAST_VARIABLES = [
   { id: "cloud_cover", label: "Cloud cover" },
 ] as const;
 
-const DEFAULT_VARIABLE = "temperature_2m";
+const DEFAULT_VARIABLE = "composite_reflectivity";
 
-/** Selectable forecast lead times (hours) for this proof-of-concept UI. */
-export const FORECAST_LEAD_HOUR_OPTIONS = [0, 6, 12, 24, 48];
+const GEFS_LEAD_HOUR_OPTIONS = [0, 6, 12, 24, 48];
+// Every HRRR run reaches 18 h (only the 00/06/12/18Z runs go to 48 h), hourly.
+const HRRR_LEAD_HOUR_OPTIONS = Array.from({ length: 19 }, (_, h) => h);
+
+/** Selectable forecast lead times (hours) for a provider. */
+export function leadHourOptions(providerId: ForecastProviderId | null): number[] {
+  return providerId === "hrrr" ? HRRR_LEAD_HOUR_OPTIONS : GEFS_LEAD_HOUR_OPTIONS;
+}
 
 const DEFAULT_LEAD_HOURS = 6;
+const PUBLISHED_RECHECK_MS = 120_000;
 
 /**
  * Per-call timeout (ms) for every `ProviderHandle` wasm call in this
@@ -142,7 +151,14 @@ export interface ForecastProviderState {
   variable: string;
   /** Only meaningful (and only ever non-null) when `metadata.isEnsemble`. */
   ensemble: ForecastEnsembleSpec | null;
+  /** Lead hours already rendered for the current variable/ensemble, ascending -- the forecast loop's frames. */
+  cachedLeads: number[];
+  /** Lead hours of the run published so far, or `null` when the provider can't tell (treat all as available). */
+  publishedLeads: number[] | null;
 }
+
+const frameKey = (variable: string, ensemble: ForecastEnsembleSpec | null, leadHours: number) =>
+  `${variable}|${JSON.stringify(ensemble)}|${leadHours}`;
 
 function errMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -195,6 +211,8 @@ export function useForecastProvider(canvasRef: RefObject<HTMLCanvasElement>) {
     leadHours: DEFAULT_LEAD_HOURS,
     variable: DEFAULT_VARIABLE,
     ensemble: null,
+    cachedLeads: [],
+    publishedLeads: null,
   });
 
   const handleRef = useRef<ProviderHandle | null>(null);
@@ -202,6 +220,16 @@ export function useForecastProvider(canvasRef: RefObject<HTMLCanvasElement>) {
   const variableRef = useRef(state.variable);
   variableRef.current = state.variable;
   const generationRef = useRef(0);
+  // Rendered frames for the current run, so revisiting an hour (and the loop) never refetches.
+  // Cleared on provider/variable/ensemble change: 19 HRRR frames are ~105 MB.
+  const framesRef = useRef(new Map<string, ImageData>());
+  // The handle holds one "current grid", so fetch+render pairs must never interleave.
+  const queueRef = useRef<Promise<unknown>>(Promise.resolve());
+  const cachedLeadsFor = (variable: string, ensemble: ForecastEnsembleSpec | null) =>
+    [...framesRef.current.keys()]
+      .filter((k) => k.startsWith(`${variable}|${JSON.stringify(ensemble)}|`))
+      .map((k) => Number(k.slice(k.lastIndexOf("|") + 1)))
+      .sort((a, b) => a - b);
 
   const freeHandle = useCallback(() => {
     try {
@@ -220,24 +248,16 @@ export function useForecastProvider(canvasRef: RefObject<HTMLCanvasElement>) {
     };
   }, [freeHandle]);
 
-  /** Paint `bytes` (RGBA8, `FORECAST_RENDER_WIDTH * FORECAST_RENDER_HEIGHT
-   * * 4` long) onto the owned canvas. No-ops if the canvas is not mounted
-   * (e.g. the panel unmounted mid-render). */
+  /** Paint a rendered frame onto the owned canvas. No-ops if the canvas is
+   * not mounted (e.g. the panel unmounted mid-render). */
   const paint = useCallback(
-    (bytes: Uint8Array) => {
+    (imageData: ImageData) => {
       const canvas = canvasRef.current;
       if (!canvas) return;
       canvas.width = FORECAST_RENDER_WIDTH;
       canvas.height = FORECAST_RENDER_HEIGHT;
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
-      // Copies into a fresh `Uint8ClampedArray` rather than viewing
-      // `bytes.buffer` directly -- `Uint8Array.buffer` types as
-      // `ArrayBufferLike` (could be a `SharedArrayBuffer`), which
-      // `ImageData`'s constructor does not accept; the copy is cheap
-      // relative to the GPU render/network fetch that produced `bytes`.
-      const clamped = new Uint8ClampedArray(bytes);
-      const imageData = new ImageData(clamped, FORECAST_RENDER_WIDTH, FORECAST_RENDER_HEIGHT);
       ctx.putImageData(imageData, 0, 0);
     },
     [canvasRef],
@@ -248,24 +268,15 @@ export function useForecastProvider(canvasRef: RefObject<HTMLCanvasElement>) {
    * discovered on this handle. Silently discards its own result (never
    * calls `setState`/`paint`) once `generation` is no longer the current
    * one -- see this hook's own doc comment. */
-  const fetchAndRender = useCallback(
-    async (
-      handle: ProviderHandle,
-      variable: string,
-      leadHours: number,
-      ensemble: ForecastEnsembleSpec | null,
-      generation: number,
-    ) => {
-      try {
-        setState((s) => (generation === generationRef.current ? { ...s, phase: "fetching", error: null } : s));
+  /** Fetch and render one frame on `handle`, queued so it never interleaves
+   * with another fetch/render on the same handle. Caches the frame. */
+  const renderFrame = useCallback(
+    (handle: ProviderHandle, variable: string, leadHours: number, ensemble: ForecastEnsembleSpec | null) => {
+      const job = queueRef.current.then(async () => {
         const gridJson = (await withTimeout(
           handle.fetchField(variable, leadHours, ensemble),
           "fetchField",
         )) as string;
-        if (generation !== generationRef.current) return;
-        const grid = JSON.parse(gridJson) as ForecastGridMetadata;
-        setState((s) => (generation === generationRef.current ? { ...s, grid, phase: "rendering" } : s));
-
         const pixels = (await withTimeout(
           handle.renderCurrentGrid(
             FORECAST_CENTER_LON,
@@ -277,15 +288,76 @@ export function useForecastProvider(canvasRef: RefObject<HTMLCanvasElement>) {
           ),
           "renderCurrentGrid",
         )) as Uint8Array;
+        // Copy: `Uint8Array.buffer` may be a SharedArrayBuffer, which ImageData rejects.
+        const imageData = new ImageData(new Uint8ClampedArray(pixels), FORECAST_RENDER_WIDTH, FORECAST_RENDER_HEIGHT);
+        framesRef.current.set(frameKey(variable, ensemble, leadHours), imageData);
+        return { grid: JSON.parse(gridJson) as ForecastGridMetadata, imageData };
+      });
+      queueRef.current = job.catch(() => undefined);
+      return job;
+    },
+    [],
+  );
+
+  /** Show `variable`/`leadHours`/`ensemble`: from the frame cache when
+   * already rendered, else fetched and rendered on `handle`. Assumes a run
+   * has already been discovered on this handle. Silently discards its own
+   * result (never calls `setState`/`paint`) once `generation` is no longer
+   * the current one -- see this hook's own doc comment. */
+  const fetchAndRender = useCallback(
+    async (
+      handle: ProviderHandle,
+      variable: string,
+      leadHours: number,
+      ensemble: ForecastEnsembleSpec | null,
+      generation: number,
+    ) => {
+      const cached = framesRef.current.get(frameKey(variable, ensemble, leadHours));
+      if (cached) {
+        paint(cached);
+        setState((s) => (generation === generationRef.current ? { ...s, phase: "ready", error: null } : s));
+        return;
+      }
+      try {
+        setState((s) => (generation === generationRef.current ? { ...s, phase: "fetching", error: null } : s));
+        const { grid, imageData } = await renderFrame(handle, variable, leadHours, ensemble);
         if (generation !== generationRef.current) return;
-        paint(pixels);
-        setState((s) => (generation === generationRef.current ? { ...s, phase: "ready" } : s));
+        paint(imageData);
+        setState((s) =>
+          generation === generationRef.current
+            ? { ...s, grid, phase: "ready", cachedLeads: cachedLeadsFor(variable, ensemble) }
+            : s,
+        );
       } catch (err) {
         if (generation !== generationRef.current) return;
         setState((s) => ({ ...s, phase: "error", error: errMessage(err) }));
       }
     },
-    [paint],
+    [paint, renderFrame],
+  );
+
+  /** Render every not-yet-cached hour in `leads`, in order, in the
+   * background, for the forecast loop. Stops at the first hour that fails
+   * (a run still being published has no later hours yet). */
+  const loadLoop = useCallback(
+    async (leads: number[]) => {
+      const handle = handleRef.current;
+      if (!handle || state.run === null) return;
+      const { variable, ensemble } = state;
+      const generation = generationRef.current;
+      for (const lead of leads) {
+        if (framesRef.current.has(frameKey(variable, ensemble, lead))) continue;
+        try {
+          await renderFrame(handle, variable, lead, ensemble);
+        } catch (err) {
+          console.warn(`[forecast] loop stopped at +${lead}h: ${errMessage(err)}`);
+          return;
+        }
+        if (generation !== generationRef.current) return;
+        setState((s) => ({ ...s, cachedLeads: cachedLeadsFor(variable, ensemble) }));
+      }
+    },
+    [renderFrame, state],
   );
 
   /** Select (or re-select) a provider: frees any previous handle,
@@ -297,6 +369,9 @@ export function useForecastProvider(canvasRef: RefObject<HTMLCanvasElement>) {
     (providerId: ForecastProviderId) => {
       const generation = ++generationRef.current;
       freeHandle();
+      framesRef.current.clear();
+      // Discovery only guarantees +0h is out for HRRR's newest run; later hours publish over the next hour.
+      const firstLead = providerId === "hrrr" ? 0 : DEFAULT_LEAD_HOURS;
       setState((s) => ({
         providerId,
         phase: "loading-module",
@@ -304,9 +379,12 @@ export function useForecastProvider(canvasRef: RefObject<HTMLCanvasElement>) {
         metadata: null,
         run: null,
         grid: null,
-        leadHours: DEFAULT_LEAD_HOURS,
-        variable: s.variable,
+        leadHours: firstLead,
+        // GEFS has no simulated reflectivity; fall back to temperature there.
+        variable: providerId !== "hrrr" && s.variable === "composite_reflectivity" ? "temperature_2m" : s.variable,
         ensemble: null,
+        cachedLeads: [],
+        publishedLeads: null,
       }));
 
       void (async () => {
@@ -330,7 +408,7 @@ export function useForecastProvider(canvasRef: RefObject<HTMLCanvasElement>) {
           const run = JSON.parse(runJson) as ForecastRunMetadata;
           setState((s) => (generation === generationRef.current ? { ...s, run } : s));
 
-          await fetchAndRender(handle, variableRef.current, DEFAULT_LEAD_HOURS, ensemble, generation);
+          await fetchAndRender(handle, variableRef.current, firstLead, ensemble, generation);
         } catch (err) {
           if (generation !== generationRef.current) return;
           setState((s) => ({ ...s, phase: "error", error: errMessage(err) }));
@@ -364,8 +442,9 @@ export function useForecastProvider(canvasRef: RefObject<HTMLCanvasElement>) {
     (ensemble: ForecastEnsembleSpec) => {
       const handle = handleRef.current;
       if (!handle || state.run === null || !state.metadata?.isEnsemble) return;
-      const generation = generationRef.current;
-      setState((s) => ({ ...s, ensemble }));
+      const generation = ++generationRef.current;
+      framesRef.current.clear();
+      setState((s) => ({ ...s, ensemble, cachedLeads: [] }));
       void fetchAndRender(handle, state.variable, state.leadHours, ensemble, generation);
     },
     [fetchAndRender, state.leadHours, state.metadata, state.run, state.variable],
@@ -376,12 +455,33 @@ export function useForecastProvider(canvasRef: RefObject<HTMLCanvasElement>) {
   const setVariable = useCallback(
     (variable: string) => {
       const handle = handleRef.current;
-      setState((s) => ({ ...s, variable }));
+      const generation = ++generationRef.current;
+      framesRef.current.clear();
+      setState((s) => ({ ...s, variable, cachedLeads: [] }));
       if (!handle || state.run === null) return;
-      void fetchAndRender(handle, variable, state.leadHours, state.ensemble, generationRef.current);
+      void fetchAndRender(handle, variable, state.leadHours, state.ensemble, generation);
     },
     [fetchAndRender, state.ensemble, state.leadHours, state.run],
   );
+
+  // A run publishes hour by hour (HRRR: over about an hour), so re-check what's out.
+  useEffect(() => {
+    const handle = handleRef.current;
+    if (!handle || state.run === null) return;
+    const generation = generationRef.current;
+    const check = () =>
+      queueRef.current
+        .then(() => handle.publishedLeadHours() as Promise<string>)
+        .then((json) => {
+          if (generation === generationRef.current) {
+            setState((s) => ({ ...s, publishedLeads: JSON.parse(json) as number[] | null }));
+          }
+        })
+        .catch((err) => console.warn(`[forecast] published-hours check failed: ${errMessage(err)}`));
+    void check();
+    const timer = setInterval(check, PUBLISHED_RECHECK_MS);
+    return () => clearInterval(timer);
+  }, [state.run]);
 
   /** Retry the current provider's pipeline from scratch after an error
    * (e.g. a transient discovery/network failure) -- equivalent to
@@ -396,6 +496,7 @@ export function useForecastProvider(canvasRef: RefObject<HTMLCanvasElement>) {
     setLeadHours,
     setEnsemble,
     setVariable,
+    loadLoop,
     retry,
   };
 }

@@ -19,6 +19,8 @@
 export interface ListObjectsPage {
   /** Every `<Contents><Key>` value in this page, in document order. */
   keys: string[];
+  /** Every `<CommonPrefixes><Prefix>` value (the "folders" of a delimiter listing). */
+  prefixes: string[];
   isTruncated: boolean;
   nextContinuationToken: string | null;
 }
@@ -56,11 +58,17 @@ export function parseListObjectsV2(xmlText: string): ListObjectsPage {
     }
   }
 
+  const prefixes: string[] = [];
+  for (const common of root.getElementsByTagName("CommonPrefixes")) {
+    const prefixEl = common.getElementsByTagName("Prefix")[0];
+    if (prefixEl?.textContent != null) prefixes.push(prefixEl.textContent);
+  }
+
   const isTruncatedText = root.getElementsByTagName("IsTruncated")[0]?.textContent ?? "false";
   const isTruncated = isTruncatedText.trim().toLowerCase() === "true";
 
   const tokenEl = root.getElementsByTagName("NextContinuationToken")[0];
   const nextContinuationToken = tokenEl?.textContent ?? null;
 
-  return { keys, isTruncated, nextContinuationToken };
+  return { keys, prefixes, isTruncated, nextContinuationToken };
 }

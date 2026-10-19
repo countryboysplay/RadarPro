@@ -1,1519 +1,1469 @@
-/* RadarPro -- S05 radar workstation.
+/* RadarPro workstation -- "night orienteering map".
  *
- * Functional, information-dense styling -- this stage's brief is real
- * single-panel analysis workflows (pickers, playback, probe, legend,
- * color-table editor), not visual polish.
+ * The radar is the terrain: it is never restyled here. The chrome reads like
+ * an orienteering map's legend at night: paper-white ink on near-black,
+ * ranked tables, condensed type. Two reserved colours do jobs nothing else
+ * may: --accent (#739BD0) marks selection and the primary action; --course
+ * marks things the user places on the map (the cross-section leg, the
+ * chosen site). Forecast-valid time is amber so it can never read as
+ * observed. Neutrals come from one stepped ramp only.
  */
+
+:root {
+  --g0: #0b0e0d;
+  --g1: #0e1110;
+  --g2: #161b19;
+  --g3: #1d2420;
+  --g4: #262e2a;
+  --g5: #36403a;
+  --g6: #858b80;
+  --g7: #a3a89f;
+  --g8: #ecebe4;
+
+  --accent: #739bd0;
+  --accent-strong: #8fb0dc;
+  --accent-ink: #0b0e0d;
+  --course: #b56cff;
+  --forecast: #f0b84a;
+  --ok: #8fcf8a;
+  --danger: #ef6a5a;
+
+  --font: "Roboto Condensed Variable", "Roboto Condensed", "Arial Narrow", system-ui, sans-serif;
+  --radius: 3px;
+  --rail-width: 320px;
+  --shadow: 0 8px 24px rgb(0 0 0 / 0.45), 0 2px 6px rgb(0 0 0 / 0.35);
+
+  color-scheme: dark;
+  accent-color: var(--accent);
+}
 
 html,
 body,
 #root {
   margin: 0;
   height: 100%;
-  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  background: var(--g1);
+  color: var(--g8);
+  font: 400 14px/1.35 var(--font);
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
 }
 
-.hud-panel {
+::selection {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--g5) transparent;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.visually-hidden {
   position: absolute;
-  top: 1rem;
-  z-index: 10;
-  background: rgba(17, 17, 20, 0.85);
-  color: #e6e6e6;
-  border: 1px solid #3a3a40;
-  border-radius: 6px;
-  padding: 0.75rem 1rem;
-  max-width: 420px;
-  font-size: 0.85rem;
-  max-height: calc(100vh - 2rem);
-  overflow-y: auto;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
-.hud-panel > * + * {
-  margin-top: 0.6rem;
+.icon {
+  flex: none;
+  display: block;
 }
 
-.hud-panel h1 {
-  font-size: 1rem;
-  margin: 0 0 0.5rem 0;
-  color: #8fd0ff;
-  font-weight: normal;
+.num {
+  font-variant-numeric: tabular-nums;
 }
 
-.hud-panel select {
-  font: inherit;
-  background: #1c1c20;
-  color: inherit;
-  border: 1px solid #3a3a40;
-  border-radius: 3px;
-  padding: 0.1rem 0.3rem;
-}
+/* ---------- Shell ---------- */
 
-.hud-panel dl {
-  margin: 0.6rem 0 0 0;
+.workstation {
+  position: fixed;
+  inset: 0;
   display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 0.2rem 0.6rem;
+  grid-template-columns: var(--rail-width) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "rail map"
+    "rail strip";
 }
 
-.hud-panel dt {
-  color: #9a9aa2;
+.rail {
+  grid-area: rail;
+  overflow-y: auto;
+  background: var(--g2);
+  border-right: 1px solid var(--g4);
+  padding: 0 16px 24px;
 }
 
-.hud-panel dd {
+.map-region {
+  grid-area: map;
+  position: relative;
+  overflow: hidden;
+  background: var(--g0);
+}
+
+.time-strip {
+  grid-area: strip;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 20px;
+  height: 64px;
+  box-sizing: border-box;
+  padding: 0 16px;
+  background: var(--g2);
+  border-top: 1px solid var(--g4);
+}
+
+/* ---------- Generic controls inside chrome ---------- */
+
+/* Frame ticks are buttons drawn as marks, so they opt out of button chrome. */
+:where(.rail, .forecast-drawer, .right-panel, .time-strip) button:where(:not(.unified-timeline-tick)) {
+  font: 600 14px/1 var(--font);
+  letter-spacing: 0.01em;
+  color: var(--g8);
+  background: var(--g3);
+  border: 1px solid var(--g5);
+  border-radius: var(--radius);
+  min-height: 30px;
+  padding: 0 12px;
+  cursor: pointer;
+  transition:
+    background-color 120ms ease-out,
+    border-color 120ms ease-out,
+    color 120ms ease-out;
+}
+
+:where(.rail, .forecast-drawer, .right-panel, .time-strip) button:where(:not(.unified-timeline-tick)):hover:not(:disabled) {
+  background: var(--g4);
+  border-color: var(--g6);
+}
+
+:where(.rail, .forecast-drawer, .right-panel, .time-strip) button:where(:not(.unified-timeline-tick)):disabled {
+  color: var(--g6);
+  background: transparent;
+  border-color: var(--g4);
+  cursor: default;
+}
+
+:where(.rail, .forecast-drawer, .right-panel) :is(select, input[type="text"], input[type="password"], input[type="number"], input[type="datetime-local"], input[type="date"], textarea) {
+  font: 500 14px/1.2 var(--font);
+  color: var(--g8);
+  background: var(--g1);
+  border: 1px solid var(--g5);
+  border-radius: var(--radius);
+  min-height: 30px;
+  padding: 0 8px;
+  box-sizing: border-box;
+  max-width: 100%;
+}
+
+:where(.rail, .forecast-drawer, .right-panel) textarea {
+  padding: 8px;
+  width: 100%;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+:where(.rail, .forecast-drawer, .right-panel) :is(select, input, textarea):focus-visible {
+  border-color: var(--accent);
+  outline-offset: 0;
+}
+
+:where(.rail, .forecast-drawer, .right-panel) ::placeholder {
+  color: var(--g6);
+}
+
+:where(.rail, .forecast-drawer, .right-panel) label {
+  color: var(--g7);
+}
+
+:where(.rail, .forecast-drawer, .right-panel) input[type="range"] {
+  accent-color: var(--accent);
+}
+
+:where(.rail, .forecast-drawer, .right-panel) a {
+  color: var(--accent-strong);
+  text-underline-offset: 3px;
+}
+
+:where(.rail, .forecast-drawer, .right-panel) :is(p, dl) {
   margin: 0;
-  word-break: break-word;
 }
+
+.button-quiet {
+  background: transparent !important;
+}
+
+.icon-button {
+  display: grid;
+  place-items: center;
+  min-width: 30px;
+  padding: 0 !important;
+}
+
+/* ---------- Rail ---------- */
+
+.rail-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 -16px;
+  padding: 14px 16px 12px;
+  background: var(--g2);
+  border-bottom: 1px solid var(--g4);
+}
+
+.wordmark {
+  font: 800 22px/1 var(--font);
+  letter-spacing: -0.01em;
+  text-transform: uppercase;
+}
+
+.feed-status {
+  min-width: 0;
+  font-size: 12px;
+  color: var(--g7);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.feed-status::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--ok);
+  vertical-align: 1px;
+}
+
+.feed-status-error {
+  color: var(--danger);
+}
+
+.feed-status-error::before {
+  background: var(--danger);
+}
+
+.rail-error {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  background: rgb(239 106 90 / 0.12);
+  border: 1px solid rgb(239 106 90 / 0.5);
+  border-radius: var(--radius);
+  color: #f6b0a6;
+  font-size: 13px;
+}
+
+.rail-block {
+  padding: 18px 0 16px;
+  border-bottom: 1px solid var(--g4);
+}
+
+.rail-heading,
+.sidebar-category-title {
+  margin: 0 0 8px;
+  font: 700 13px/1 var(--font);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--g7);
+}
+
+.rail-heading-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.rail-heading-row .rail-heading {
+  margin: 0;
+}
+
+.rail-heading-note {
+  margin-left: 6px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  color: var(--g6);
+}
+
+/* Site */
+
+.site-line {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.site-code {
+  font: 800 34px/0.95 var(--font);
+  letter-spacing: -0.01em;
+}
+
+.site-name {
+  font-size: 16px;
+  color: var(--g7);
+}
+
+.site-select {
+  width: 100%;
+}
+
+.site-nearby {
+  margin-top: 6px;
+}
+
+/* Product and tilt segments: labels are the controls, selection fills them. */
+
+.segment {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.segment-tilts {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.rail .segment button {
+  position: relative;
+  min-height: 36px;
+  padding: 0 4px;
+  font: 700 16px/1 var(--font);
+  letter-spacing: 0.02em;
+  background: var(--g3);
+  border-color: transparent;
+}
+
+.rail .segment-tilts button {
+  min-height: 32px;
+  font-size: 15px;
+}
+
+.rail .segment button[aria-pressed="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+.segment-favorite {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.7;
+}
+
+.segment-empty {
+  grid-column: 1 / -1;
+  color: var(--g6);
+  font-size: 13px;
+  padding: 6px 0;
+}
+
+.rail .favorite-toggle {
+  display: grid;
+  place-items: center;
+  min-height: 26px;
+  width: 26px;
+  padding: 0;
+  background: transparent;
+  border-color: transparent;
+  color: var(--g6);
+}
+
+.rail .favorite-toggle[aria-pressed="true"] {
+  color: var(--accent);
+}
+
+/* Scan facts under the tilt row */
 
 .info-panel {
-  margin: 0;
   display: grid;
   grid-template-columns: auto 1fr;
-  gap: 0.2rem 0.6rem;
-  padding-top: 0.4rem;
-  border-top: 1px solid #3a3a40;
+  gap: 4px 12px;
+  margin: 14px 0 0;
+  font-size: 13px;
 }
 
 .info-panel dt {
-  color: #9a9aa2;
+  color: var(--g6);
 }
 
 .info-panel dd {
   margin: 0;
-  word-break: break-word;
+  color: var(--g8);
+  overflow-wrap: anywhere;
 }
 
-.keyboard-hint {
-  color: #7a7a82;
-  font-size: 0.72rem;
-  border-top: 1px solid #3a3a40;
-  padding-top: 0.4rem;
+/* ---------- Course: probe, cross-section leg, legend ---------- */
+
+.probe-panel {
+  margin-bottom: 14px;
 }
 
-/* Playback controls */
-
-.playback-controls {
-  border-top: 1px solid #3a3a40;
-  padding-top: 0.5rem;
+.probe-panel .course-table {
+  margin-top: 0;
 }
 
-.playback-buttons {
+.probe-value {
+  font-weight: 700;
+}
+
+.probe-value-missing,
+.probe-value-none {
+  font-weight: 500;
+  color: var(--g6);
+}
+
+.probe-value-range_folded {
+  color: var(--forecast);
+}
+
+.probe-latlon {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--g6);
+}
+
+.probe-empty {
+  margin-bottom: 14px;
+  font-size: 13px;
+  color: var(--g6);
+}
+
+.course-actions {
   display: flex;
-  gap: 0.3rem;
-  flex-wrap: wrap;
+  gap: 6px;
 }
 
-.playback-buttons button {
-  font: inherit;
-  background: #1c1c20;
-  color: inherit;
-  border: 1px solid #3a3a40;
-  border-radius: 3px;
-  padding: 0.2rem 0.5rem;
-  cursor: pointer;
+.course-actions button:first-child {
+  flex: 1;
 }
 
-.playback-buttons button:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
-/* "Remote control" transport cluster (previous/play-pause/next/jump-to-
- * latest) -- deliberately given real tactile weight (raised bevel, a
- * pressed-in look while active) so this one cluster reads as a literal
- * transport remote's buttons, distinct from every other flat control in
- * this app. Visual/CSS only -- `PlaybackControls.tsx` keeps every existing
- * handler/disabled-state/keyboard shortcut unchanged; `.remote-btn` layers
- * on top of (and, via the higher-specificity `.playback-buttons .remote-btn`
- * selector, overrides) the plain `.playback-buttons button` reset above. */
-.playback-buttons.remote-cluster {
-  gap: 0.55rem;
-  padding: 0.5rem 0.6rem;
-  background: linear-gradient(to bottom, #1b1b1f, #101012);
-  border: 1px solid #3a3a40;
-  border-radius: 10px;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.04),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.5);
-}
-
-.playback-buttons .remote-btn {
-  font: inherit;
-  font-size: 0.82rem;
+.cross-section-hint {
+  margin-top: 8px;
   font-weight: 600;
-  color: #e6e6e6;
-  background: linear-gradient(to bottom, #38383f 0%, #232327 100%);
-  border: 1px solid #4a4a52;
-  border-radius: 8px;
-  padding: 0.4rem 0.75rem;
-  cursor: pointer;
-  /* The bevel: a hard drop-shadow "leg" (the button's raised depth), a
-   * softer ambient shadow beneath it, and a thin inner highlight along the
-   * top edge -- together read as a real physical key, not flat web chrome. */
-  box-shadow:
-    0 2px 0 #17171a,
-    0 4px 5px rgba(0, 0, 0, 0.45),
-    inset 0 1px 0 rgba(255, 255, 255, 0.09);
-  transition: transform 0.06s ease, box-shadow 0.06s ease, background 0.1s ease;
+  color: var(--course);
 }
 
-.playback-buttons .remote-btn:hover:not(:disabled) {
-  border-color: #5c5c66;
+.course-table,
+.rainbow-panel-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
 }
 
-/* Pressed look: the button's "leg" collapses (drop-shadow shrinks to 0)
- * and an inset shadow replaces the top highlight, reading as the key
- * physically depressing into the housing. */
-.playback-buttons .remote-btn:active:not(:disabled) {
-  transform: translateY(2px);
-  box-shadow: 0 0 0 #17171a, inset 0 2px 5px rgba(0, 0, 0, 0.65);
+.course-table {
+  margin-top: 10px;
 }
 
-.playback-buttons .remote-btn:disabled {
-  opacity: 0.4;
-  cursor: default;
-  box-shadow: 0 1px 0 #17171a;
+.course-table td {
+  padding: 7px 4px;
+  border-top: 1px solid var(--g4);
+  border-bottom: 1px solid var(--g4);
 }
 
-/* Play/Pause: the cluster's primary action gets its own accent + a size
- * bump, matching a remote's larger center transport button. */
-.playback-buttons .remote-btn-play {
-  background: linear-gradient(to bottom, #3d76ad 0%, #2a4f7a 100%);
-  border-color: #5a9bd8;
-  padding: 0.4rem 0.95rem;
+.course-table td.num {
+  text-align: right;
+  font-weight: 700;
+  white-space: nowrap;
 }
 
-.playback-buttons .remote-btn-play:hover:not(:disabled) {
-  border-color: #7ab6ea;
+.course-symbol {
+  width: 1%;
+  white-space: nowrap;
+  color: var(--course);
 }
 
-/* While playing, the Play/Pause button stays visually "held down" -- a
- * physical remote's transport button looks depressed for as long as the
- * mode it started stays active, not just for the instant of the click. */
-.playback-buttons .remote-btn-play.remote-btn-pressed {
-  background: linear-gradient(to bottom, #2a4f7a 0%, #1c3652 100%);
-  box-shadow: 0 0 0 #17171a, inset 0 2px 5px rgba(0, 0, 0, 0.65);
-  transform: translateY(1px);
+.course-symbol .icon {
+  display: inline-block;
+  vertical-align: -3px;
+  margin-right: 2px;
 }
 
-.playback-buttons .remote-btn-latest {
-  border-color: #4f8f5a;
-}
-
-.playback-buttons .remote-btn-latest:hover:not(:disabled) {
-  border-color: #6fd66f;
-}
-
-.playback-status {
-  display: flex;
-  gap: 0.6rem;
-  margin-top: 0.35rem;
-  font-size: 0.78rem;
-  color: #b5b5bc;
-}
-
-.play-mode {
-  text-transform: uppercase;
-  font-weight: bold;
-}
-
-.play-mode-live {
-  color: #6fd66f;
-}
-
-/* S10 Phase 3: a "live" badge whose displayed volume has gone stale (see
-   `useScanHistory`'s `isLiveStale`) must not read the same as a healthy
-   live feed -- overrides `.play-mode-live`'s green with the same warning
-   red used elsewhere for an active/error state. */
-.play-mode-stale {
-  color: #e05a5a;
-}
-
-.play-mode-stale-warning {
-  color: #e05a5a;
-  font-weight: bold;
-}
-
-.play-mode-paused {
-  color: #e0c25a;
-}
-
-.play-mode-playing {
-  color: #8fd0ff;
-}
-
-.playback-speed {
+.cross-section-canvas {
   display: block;
-  margin-top: 0.35rem;
-  font-size: 0.78rem;
+  width: 100%;
+  margin-top: 10px;
+  image-rendering: pixelated;
+  background: var(--g0);
+  border: 1px solid var(--g4);
 }
 
-.playback-frame-index {
-  color: #7a7a82;
+.cross-section-axis {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--g6);
 }
-
-/* Legend */
 
 .legend {
-  border-bottom: 1px solid #3a3a40;
-  padding-bottom: 0.6rem;
+  margin-top: 16px;
 }
 
 .legend-title {
-  color: #8fd0ff;
-  margin-bottom: 0.3rem;
+  font-size: 13px;
+  color: var(--g7);
+  margin-bottom: 6px;
 }
 
 .legend-bar {
-  height: 14px;
-  border-radius: 3px;
-  border: 1px solid #3a3a40;
+  height: 10px;
+  border-radius: 1px;
 }
 
 .legend-domain {
   display: flex;
   justify-content: space-between;
-  font-size: 0.75rem;
-  color: #b5b5bc;
-  margin-top: 0.2rem;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--g7);
 }
 
 .legend-states {
   display: flex;
-  gap: 0.8rem;
-  margin-top: 0.35rem;
-  font-size: 0.75rem;
+  gap: 14px;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--g6);
 }
 
 .legend-swatch {
   display: inline-flex;
   align-items: center;
-  gap: 0.3rem;
+  gap: 5px;
 }
 
 .legend-swatch-box {
   width: 12px;
   height: 12px;
-  border: 1px solid #55555c;
-  border-radius: 2px;
-  display: inline-block;
+  border: 1px solid var(--g5);
 }
 
 .legend-empty {
-  color: #7a7a82;
-  font-size: 0.78rem;
+  color: var(--g6);
+  font-size: 13px;
 }
 
-/* Data probe */
+/* ---------- Collapsible categories (Warnings, Layers, Archive, ...) ---------- */
 
-.probe-panel {
-  border-bottom: 1px solid #3a3a40;
-  padding-bottom: 0.6rem;
-  font-size: 0.8rem;
+.sidebar-category {
+  border-bottom: 1px solid var(--g4);
 }
 
-.probe-panel-title {
-  color: #8fd0ff;
-  margin-bottom: 0.3rem;
-}
-
-.probe-empty {
-  color: #7a7a82;
-}
-
-.probe-polar {
-  color: #b5b5bc;
-  margin-top: 0.2rem;
-}
-
-.probe-value {
-  margin-top: 0.3rem;
-  padding: 0.2rem 0.4rem;
-  border-radius: 3px;
-  display: inline-block;
-  font-weight: bold;
-}
-
-.probe-value-valid {
-  background: rgba(111, 214, 111, 0.18);
-  color: #8fe38f;
-  border: 1px solid #4a9a4a;
-}
-
-.probe-value-missing {
-  background: rgba(150, 150, 160, 0.15);
-  color: #b5b5bc;
-  border: 1px dashed #6a6a72;
-}
-
-.probe-value-range_folded {
-  background: rgba(255, 0, 255, 0.15);
-  color: #ff8fff;
-  border: 1px solid #cc00cc;
-}
-
-.probe-value-none {
-  color: #7a7a82;
-  font-weight: normal;
-}
-
-/* Color-table editor */
-
-.color-table-editor-row {
+.rail .sidebar-category-header {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
-  flex-wrap: wrap;
-  margin-bottom: 0.4rem;
-}
-
-/* The preset picker's own option labels (shipped default color-table
- * names) are long enough that the bare `<select>` is intrinsically wider
- * than a narrow sidebar -- nested flex here (rather than a plain inline
- * label) gives the label a definite resolved width to shrink within, so
- * `min-width: 0` + `flex: 1 1 auto` on the select actually take effect
- * instead of the row just growing wider than its container (this bug
- * predates S09c's sidebar; it just was not exercised the same way when
- * this panel had a wide fixed floating width). */
-.color-table-editor-row label {
-  display: flex;
-  align-items: center;
-  gap: 0.3rem;
-  flex: 1 1 200px;
-  min-width: 0;
-}
-
-.color-table-editor-row select {
-  flex: 1 1 auto;
-  min-width: 0;
-  max-width: 100%;
-}
-
-.color-table-editor-row button {
-  font: inherit;
-  background: #1c1c20;
-  color: inherit;
-  border: 1px solid #3a3a40;
-  border-radius: 3px;
-  padding: 0.2rem 0.5rem;
-  cursor: pointer;
-}
-
-.color-table-editor-textarea {
+  gap: 8px;
   width: 100%;
-  box-sizing: border-box;
-  background: #101012;
-  color: #d8d8de;
-  border: 1px solid #3a3a40;
-  border-radius: 4px;
-  font-family: inherit;
-  font-size: 0.72rem;
-  padding: 0.4rem;
-  resize: vertical;
+  min-height: 44px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  text-align: left;
 }
 
-.color-table-editor-error {
-  margin-top: 0.4rem;
-  color: #ff8f8f;
-  font-size: 0.78rem;
-  word-break: break-word;
+.rail .sidebar-category-header:hover:not(:disabled) {
+  background: transparent;
+  color: var(--g8);
 }
 
-.color-table-editor-ok {
-  margin-top: 0.4rem;
-  color: #8fe38f;
-  font-size: 0.78rem;
-  word-break: break-word;
+.sidebar-category-header .sidebar-category-title {
+  margin: 0;
 }
 
-/* NWS Alerts (S06) */
+.sidebar-category-header:hover .sidebar-category-title {
+  color: var(--g8);
+}
+
+.sidebar-category-chevron,
+.sidebar-section-chevron {
+  color: var(--g6);
+}
+
+.sidebar-category-summary {
+  margin-left: auto;
+  font: 500 13px/1 var(--font);
+  color: var(--g6);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebar-category-body {
+  display: grid;
+  gap: 12px;
+  padding: 2px 0 18px;
+}
+
+.sidebar-section + .sidebar-section {
+  border-top: 1px solid var(--g4);
+}
+
+:where(.rail, .forecast-drawer) .sidebar-section-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 38px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  font-weight: 700;
+  text-align: left;
+}
+
+:where(.rail, .forecast-drawer) .sidebar-section-header:hover:not(:disabled) {
+  background: transparent;
+}
+
+.sidebar-section-body {
+  display: grid;
+  gap: 10px;
+  padding: 0 0 14px;
+}
+
+.map-layer-select,
+.range-field,
+.mrms-product-select,
+.forecast-provider-select,
+.rainbow-panel-field,
+.rainbow-toggle-option,
+.settings-field label {
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.range-field {
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+}
+
+/* ---------- Warnings ---------- */
+
+.alerts-panel {
+  display: grid;
+  gap: 8px;
+}
 
 .alerts-panel-title {
-  color: #8fd0ff;
+  display: none;
 }
 
-.alerts-panel-status {
-  font-size: 0.75rem;
-  color: #b5b5bc;
+.alerts-panel-status,
+.alerts-panel-empty,
+.alerts-panel-footer {
+  font-size: 12px;
+  color: var(--g6);
 }
 
 .alerts-panel-status-error {
-  color: #ff8f8f;
-}
-
-.alerts-panel-empty {
-  color: #7a7a82;
-  font-size: 0.8rem;
-  padding: 0.4rem 0;
+  color: var(--danger);
 }
 
 .alerts-list {
   list-style: none;
   margin: 0;
   padding: 0;
-  max-height: calc(40vh - 6rem);
+  max-height: 260px;
   overflow-y: auto;
+  border-top: 1px solid var(--g4);
 }
 
-.alert-row {
+.alerts-list li {
+  border-bottom: 1px solid var(--g4);
+}
+
+.rail .alert-row {
   display: flex;
   align-items: flex-start;
-  gap: 0.5rem;
+  gap: 10px;
   width: 100%;
-  text-align: left;
-  font: inherit;
-  color: inherit;
+  min-height: 0;
+  padding: 9px 4px;
   background: transparent;
-  border: none;
-  border-bottom: 1px solid #2a2a2e;
-  padding: 0.4rem 0.2rem;
-  cursor: pointer;
+  border: 0;
+  border-radius: 0;
+  text-align: left;
 }
 
-.alert-row:hover {
-  background: rgba(143, 208, 255, 0.08);
+.rail .alert-row:hover:not(:disabled) {
+  background: var(--g3);
 }
 
-.alert-row-selected {
-  background: rgba(143, 208, 255, 0.16);
+.rail .alert-row-selected {
+  background: var(--g3);
+  box-shadow: inset 0 0 0 1px var(--accent);
 }
 
 .alert-severity-dot {
   flex: none;
   width: 10px;
   height: 10px;
+  margin-top: 3px;
   border-radius: 50%;
-  margin-top: 0.2rem;
 }
 
 .alert-row-text {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  gap: 2px;
   min-width: 0;
 }
 
 .alert-row-event {
-  font-weight: bold;
+  font-weight: 700;
 }
 
 .alert-row-headline {
-  font-size: 0.75rem;
-  color: #b5b5bc;
-  white-space: nowrap;
+  font: 400 12px/1.35 var(--font);
+  color: var(--g7);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
 }
 
-.alerts-panel-footer {
-  margin-top: 0.4rem;
-  padding-top: 0.4rem;
-  border-top: 1px solid #3a3a40;
-  font-size: 0.7rem;
-  color: #7a7a82;
+.alert-detail {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  background: var(--g1);
+  border: 1px solid var(--g4);
+  border-radius: var(--radius);
 }
-
-/* Alert details panel */
 
 .alert-detail-header {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 8px;
 }
 
 .alert-detail-severity {
-  font-size: 0.7rem;
-  font-weight: bold;
-  color: #101012;
-  border-radius: 3px;
-  padding: 0.1rem 0.4rem;
+  padding: 3px 7px;
+  border-radius: 2px;
+  font: 700 11px/1 var(--font);
+  letter-spacing: 0.06em;
   text-transform: uppercase;
+  color: #0b0e0d;
 }
 
 .alert-detail-event {
-  font-weight: bold;
   flex: 1;
+  font: 700 17px/1.15 var(--font);
 }
 
-.alert-detail-close {
-  background: transparent;
-  border: none;
-  color: inherit;
-  font-size: 1.2rem;
-  line-height: 1;
-  cursor: pointer;
-  padding: 0 0.2rem;
+.rail .alert-detail-close {
+  min-height: 26px;
+  padding: 0 8px;
 }
 
 .alert-detail-inactive-banner {
-  margin-top: 0.4rem;
-  padding: 0.3rem 0.5rem;
-  background: rgba(255, 143, 143, 0.12);
-  border: 1px solid #cc6a6a;
-  color: #ff8f8f;
-  font-size: 0.75rem;
-  border-radius: 3px;
+  padding: 6px 8px;
+  border: 1px solid var(--g5);
+  color: var(--g7);
+  font-size: 12px;
 }
 
 .alert-detail-headline {
-  margin-top: 0.4rem;
-  font-weight: bold;
-  color: #e0c25a;
+  font-weight: 600;
 }
 
-.alert-detail-fields {
-  margin: 0.5rem 0;
+.alert-detail-fields,
+.mrms-meta,
+.forecast-meta {
   display: grid;
   grid-template-columns: auto 1fr;
-  gap: 0.15rem 0.6rem;
-  font-size: 0.8rem;
+  gap: 4px 12px;
+  font-size: 13px;
 }
 
-.alert-detail-fields dt {
-  color: #9a9aa2;
+:is(.alert-detail-fields, .mrms-meta, .forecast-meta) dt {
+  color: var(--g6);
 }
 
-.alert-detail-fields dd {
+:is(.alert-detail-fields, .mrms-meta, .forecast-meta) dd {
   margin: 0;
+  overflow-wrap: anywhere;
 }
 
 .alert-detail-areas {
-  margin: 0;
-  padding-left: 1rem;
+  font-size: 13px;
+  color: var(--g7);
 }
 
 .alert-detail-section-title {
-  margin-top: 0.5rem;
-  color: #8fd0ff;
-  font-size: 0.8rem;
-  font-weight: bold;
+  font: 700 12px/1 var(--font);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--g7);
 }
 
 .alert-detail-text {
+  margin: 4px 0 0;
   white-space: pre-wrap;
-  font-size: 0.82rem;
-  margin: 0.3rem 0;
+  font-size: 13px;
+  line-height: 1.45;
+  max-width: 65ch;
 }
 
-.alert-detail-instruction .alert-detail-text {
-  color: #ffd9a0;
+.rail .alert-detail-showmore {
+  justify-self: start;
+  min-height: 26px;
 }
 
-.alert-detail-showmore {
-  background: transparent;
-  border: none;
-  color: #8fd0ff;
-  cursor: pointer;
-  font-size: 0.75rem;
-  padding: 0;
+.alert-detail-attribution,
+.mrms-attribution {
+  font-size: 11px;
+  color: var(--g6);
 }
 
-.alert-detail-attribution {
-  margin-top: 0.6rem;
-  padding-top: 0.4rem;
-  border-top: 1px solid #3a3a40;
-  font-size: 0.7rem;
-  color: #7a7a82;
+/* ---------- Layers / MRMS / Rainbow / Archive / Settings / Color table ---------- */
+
+.mrms-panel,
+.rainbow-toggle,
+.rainbow-panel,
+.archive-loader,
+.color-table-editor,
+.forecast-panel {
+  display: grid;
+  gap: 10px;
 }
 
-/* Rainbow nowcast overlay toggle (S09b) */
-
-.rainbow-toggle {
-  border-top: 1px solid #3a3a40;
-  padding-top: 0.4rem;
+.mrms-panel-title,
+.forecast-panel-title {
+  font: 700 14px/1.2 var(--font);
 }
 
-/* S09d Part A: layer/palette/forecast-time/coverage/use-precip-type
- * controls -- plain `<select>`/checkbox rows per this stage's explicit
- * "dropdown, not button-row" UI decision. */
+.mrms-status,
+.rainbow-toggle-status,
+.forecast-status,
+.archive-status,
+.settings-field-status,
+.forecast-model-kind {
+  font-size: 13px;
+  color: var(--g7);
+}
+
+:is(.mrms-status-error, .rainbow-toggle-status-error, .forecast-status-error, .settings-field-status-none, .color-table-editor-error) {
+  color: var(--danger);
+}
+
+:is(.mrms-status-ready, .rainbow-toggle-status-ready, .forecast-status-ready, .settings-field-status-active, .color-table-editor-ok) {
+  color: var(--ok);
+}
+
+.mrms-status-no-coverage-in-view,
+.rainbow-toggle-status-unconfigured {
+  color: var(--g6);
+}
+
 .rainbow-toggle-options {
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-  margin-top: 0.4rem;
-}
-
-.rainbow-toggle-option {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  font-size: 0.78rem;
-}
-
-.rainbow-toggle-option select {
-  flex: 1 1 auto;
-  min-width: 0;
+  display: grid;
+  gap: 8px;
 }
 
 .rainbow-toggle-checkbox {
-  justify-content: flex-start;
+  grid-template-columns: auto 1fr;
+  align-items: center;
 }
 
-.rainbow-toggle-status {
-  margin-top: 0.2rem;
-  font-size: 0.72rem;
-  color: #b5b5bc;
-}
-
-.rainbow-toggle-status-unconfigured {
-  color: #7a7a82;
-}
-
-.rainbow-toggle-status-error {
-  color: #ff8f8f;
-}
-
-.rainbow-toggle-status-ready {
-  color: #8fe38f;
-}
-
-/* S09d Parts B/C: Rainbow Nowcast + Weather point panels -- same dark-HUD
- * palette and `.rainbow-toggle-status*` status-line classes as the tile
- * toggle above, so all three Rainbow panels read as one visual family. */
-
-.rainbow-panel {
+.check-field {
   display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
 }
 
 .rainbow-panel-point {
-  display: flex;
-  gap: 0.5rem;
-}
-
-.rainbow-panel-field {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.4rem;
-  font-size: 0.78rem;
-  flex: 1 1 auto;
-}
-
-.rainbow-panel-field input,
-.rainbow-panel-field select {
-  flex: 1 1 auto;
-  min-width: 0;
-  width: 100%;
-}
-
-.rainbow-panel-button {
-  align-self: flex-start;
-  padding: 0.3rem 0.7rem;
-  font-size: 0.78rem;
-  cursor: pointer;
-}
-
-.rainbow-panel-button:disabled {
-  cursor: default;
-  opacity: 0.6;
-}
-
-/* S09d follow-up: "click the map to set the point" -- the "Pick on map"
- * button both panels get. `aria-pressed` (rather than a second class) drives
- * the armed look so it stays in sync with the actual toggle state instead of
- * a class a caller could forget to also flip. */
-.rainbow-panel-button-secondary {
-  background: transparent;
-  border: 1px solid #5a5a62;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
 }
 
 .rainbow-panel-button-secondary[aria-pressed="true"] {
-  background: #3a6ea5;
-  border-color: #5a9bd8;
-  color: #fff;
+  background: var(--accent) !important;
+  border-color: var(--accent) !important;
+  color: var(--accent-ink) !important;
 }
 
 .rainbow-panel-results {
-  border-top: 1px solid #3a3a40;
-  padding-top: 0.4rem;
-  margin-top: 0.2rem;
+  display: grid;
+  gap: 8px;
 }
 
 .rainbow-panel-summary {
-  font-size: 0.78rem;
-  color: #b5b5bc;
-  margin-bottom: 0.3rem;
+  font-weight: 600;
 }
 
 .rainbow-panel-table-scroll {
-  /* Was 220px while these tables lived in the narrow left sidebar; now
-   * rendered only inside the wider, taller `.right-panel` (see
-   * `RightPanel.tsx`/`RainbowNowcastResults`/`RainbowWeatherResults`), which
-   * has the vertical room to show more rows before this inner scroll
-   * kicks in. */
-  max-height: 340px;
-  overflow-y: auto;
-}
-
-.rainbow-panel-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.72rem;
+  max-height: 280px;
+  overflow: auto;
 }
 
 .rainbow-panel-table th,
 .rainbow-panel-table td {
+  padding: 5px 6px;
+  border-bottom: 1px solid var(--g4);
   text-align: left;
-  padding: 0.15rem 0.4rem 0.15rem 0;
   white-space: nowrap;
 }
 
 .rainbow-panel-table th {
   position: sticky;
   top: 0;
-  background: #1e1e22;
-  color: #b5b5bc;
-  font-weight: 600;
+  background: var(--g2);
+  font: 700 12px/1 var(--font);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--g7);
 }
 
-/* MRMS national-mosaic overlay panel (S09 Phase 3) -- reuses the same
- * dark-HUD palette as `.forecast-*`/`.rainbow-toggle-*` (green/red status
- * colors matching `.rainbow-toggle-status-ready`/`-error`), but its own
- * teal accent (`.mrms-panel-title`) rather than Model Forecast's amber --
- * see that rule's own doc comment for why (sidebar-redesign color-collision
- * fix; Global Contract). */
-
-.mrms-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-}
-
-/* MRMS accent: teal, distinct from Model Forecast's amber (`#ffd27a`,
- * `.forecast-panel-title`/`.forecast-provider-select`) -- Global Contract
- * requires observations and forecasts stay visually distinguishable, and
- * MRMS (an observation) sharing GEFS/HRRR's forecast accent used to
- * undercut exactly that (the sidebar-redesign audit's color-collision
- * finding). */
-.mrms-panel-title {
-  color: #4fd1c5;
-  font-weight: bold;
-}
-
-.mrms-product-select {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  font-size: 0.85rem;
-}
-
-.mrms-product-select select {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-.mrms-status {
-  font-size: 0.78rem;
-  color: #b5b5bc;
-}
-
-.mrms-status-error {
-  color: #ff8f8f;
-}
-
-.mrms-status-ready {
-  color: #8fe38f;
-}
-
-.mrms-status-no-coverage-in-view {
-  color: #e3c88f;
-}
-
-.mrms-retry-button {
-  font: inherit;
-  background: #1c1c20;
-  color: #ff8f8f;
-  border: 1px solid #6a3a3a;
-  border-radius: 3px;
-  padding: 0.15rem 0.5rem;
-  cursor: pointer;
-  align-self: flex-start;
-}
-
-.mrms-refresh-button {
-  font: inherit;
-  background: #1c1c20;
-  color: inherit;
-  border: 1px solid #3a3a40;
-  border-radius: 3px;
-  padding: 0.15rem 0.5rem;
-  cursor: pointer;
-  align-self: flex-start;
-}
-
-.mrms-refresh-button:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-.mrms-meta {
-  margin: 0;
+.settings-field {
   display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 0.2rem 0.6rem;
-  font-size: 0.78rem;
+  gap: 6px;
 }
 
-.mrms-meta dt {
-  color: #9a9aa2;
-}
-
-.mrms-meta dd {
-  margin: 0;
-  word-break: break-word;
-}
-
-.mrms-attribution {
-  margin-top: 0.2rem;
-  padding-top: 0.4rem;
-  border-top: 1px solid #3a3a40;
-  font-size: 0.7rem;
-  color: #7a7a82;
-}
-
-/* Settings section (S09c addendum) -- Rainbow API key field */
-
-.settings-field label {
-  display: block;
-  margin-bottom: 0.3rem;
-}
-
-.settings-field-row {
+.settings-field-row,
+.color-table-editor-row {
   display: flex;
-  gap: 0.4rem;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
 }
 
 .settings-field-row input {
   flex: 1;
-  font: inherit;
-  background: #1c1c20;
-  color: inherit;
-  border: 1px solid #3a3a40;
-  border-radius: 3px;
-  padding: 0.2rem 0.4rem;
-}
-
-.settings-field-row button {
-  font: inherit;
-  background: #1c1c20;
-  color: inherit;
-  border: 1px solid #3a3a40;
-  border-radius: 3px;
-  padding: 0.2rem 0.55rem;
-  cursor: pointer;
-  flex: none;
-}
-
-.settings-field-status {
-  margin-top: 0.35rem;
-  font-size: 0.72rem;
-  color: #8fe38f;
-}
-
-.settings-field-status-active {
-  color: #8fe38f;
-}
-
-.settings-field-status-none {
-  color: #7a7a82;
+  min-width: 0;
 }
 
 .settings-field-note {
-  margin-top: 0.35rem;
-  font-size: 0.72rem;
-  color: #b5b5bc;
+  font-size: 12px;
+  color: var(--g6);
 }
 
-/* Model forecast panel (S08 follow-up) */
-
-.forecast-panel-title {
-  color: #ffd27a;
-  font-weight: bold;
+.color-table-editor-textarea {
+  min-height: 140px;
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace !important;
 }
 
-.forecast-provider-select {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  font-size: 0.85rem;
-}
+/* ---------- Map overlays ---------- */
 
-.forecast-provider-select select {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-.forecast-status {
-  font-size: 0.78rem;
-  color: #b5b5bc;
-}
-
-.forecast-status-error {
-  color: #ff8f8f;
-}
-
-.forecast-retry-button {
-  font: inherit;
-  background: #1c1c20;
-  color: #ff8f8f;
-  border: 1px solid #6a3a3a;
-  border-radius: 3px;
-  padding: 0.15rem 0.5rem;
-  cursor: pointer;
-  align-self: flex-start;
-}
-
-.forecast-model-kind {
-  font-size: 0.75rem;
-  color: #8fd0ff;
-}
-
-.forecast-controls {
-  display: flex;
-  gap: 0.8rem;
-  flex-wrap: wrap;
-}
-
-.forecast-meta {
-  margin: 0;
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 0.2rem 0.6rem;
-  font-size: 0.78rem;
-}
-
-.forecast-meta dt {
-  color: #9a9aa2;
-}
-
-.forecast-meta dd {
-  margin: 0;
-  word-break: break-word;
-}
-
-.forecast-canvas {
-  width: 100%;
-  height: auto;
-  border: 1px solid #3a3a40;
-  border-radius: 4px;
-  background: #101012;
-  display: block;
-}
-
-.forecast-canvas-caption {
-  font-size: 0.7rem;
-  color: #7a7a82;
-  text-align: center;
-}
-
-/* Unified observed/forecast timeline (S09) -- see
- * `timeline/UnifiedTimeline.tsx`'s doc comment. Reuses the same dark-HUD
- * palette as everything above (`.hud-panel`, `.forecast-*`,
- * `.play-mode-*`): green for observed (matches `.play-mode-live`), amber
- * for forecast (matches `.forecast-panel-title`/`-provider-button-active`),
- * so the color language for "which source" is consistent app-wide, not a
- * one-off invented here. */
-
-.unified-timeline {
-  border-top: 1px solid #3a3a40;
-  padding-top: 0.4rem;
-  padding-bottom: 0.4rem;
-}
-
-.unified-timeline-header {
-  display: flex;
-  align-items: baseline;
-  gap: 0.4rem;
-  font-size: 0.78rem;
-  margin-bottom: 0.4rem;
-  flex-wrap: wrap;
-}
-
-.unified-timeline-source {
-  font-weight: bold;
-}
-
-.unified-timeline-source-observed {
-  color: #6fd66f;
-}
-
-.unified-timeline-source-forecast {
-  color: #ffd27a;
-}
-
-.unified-timeline-divider {
-  color: #7a7a82;
-}
-
-.unified-timeline-track {
-  position: relative;
-  height: 34px;
-  background: #1c1c20;
-  border: 1px solid #3a3a40;
-  border-radius: 4px;
-  cursor: pointer;
-  /* This track owns horizontal drag gestures itself (see the pointer
-   * handlers in `UnifiedTimeline.tsx`) -- without this, touch browsers
-   * intercept the drag as a page-scroll/pan gesture instead. */
-  touch-action: none;
-}
-
-.unified-timeline-now-marker {
+.right-panel {
   position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 0;
-  border-left: 2px solid #ff8f3a;
-  /* Positioned but non-interactive -- must never steal a drag/click from
-   * the track underneath it (the stage's "unmistakable present boundary"
-   * is a visual requirement, not a third interactive target). */
-  pointer-events: none;
-  z-index: 3;
-}
-
-.unified-timeline-now-label {
-  position: absolute;
-  top: -1.05rem;
-  left: 2px;
-  font-size: 0.65rem;
-  color: #ff8f3a;
-  font-weight: bold;
-  white-space: nowrap;
-}
-
-.unified-timeline-tick {
-  position: absolute;
-  top: 4px;
-  bottom: 4px;
-  width: 3px;
-  margin-left: -1.5px;
-  padding: 0;
-  border: none;
-  border-radius: 2px;
-  cursor: pointer;
-  z-index: 2;
-}
-
-/* Observed: solid fill. Forecast: dashed (repeating-gradient) fill -- a
- * distinct *line-style*, not just a distinct color, per the stage spec
- * ("distinct styling -- e.g. color/line-style -- for observed vs. forecast
- * ticks, not just position"). */
-.unified-timeline-tick-observed {
-  background: #6fd66f;
-  opacity: 0.55;
-}
-
-.unified-timeline-tick-forecast {
-  background: repeating-linear-gradient(to bottom, #ffd27a 0, #ffd27a 4px, transparent 4px, transparent 8px);
-  opacity: 0.7;
-}
-
-.unified-timeline-tick-active {
-  opacity: 1;
-  width: 5px;
-  margin-left: -2.5px;
-  z-index: 4;
-  box-shadow: 0 0 0 1px #101012;
-}
-
-.unified-timeline-tick-observed.unified-timeline-tick-active {
-  background: #8fffb0;
-}
-
-.unified-timeline-tick-forecast.unified-timeline-tick-active {
-  background: repeating-linear-gradient(to bottom, #ffe6ad 0, #ffe6ad 4px, transparent 4px, transparent 8px);
-}
-
-.unified-timeline-tick:disabled {
-  cursor: default;
-  opacity: 0.3;
-}
-
-.unified-timeline-labels {
-  display: flex;
-  justify-content: space-between;
-  font-size: 0.65rem;
-  color: #7a7a82;
-  margin-top: 0.25rem;
-}
-
-/* S09c UI shell: slim always-on top/bottom chrome + one collapsible
- * sidebar, replacing the always-on floating hud-panel-left/right/alerts/
- * alert-detail/forecast boxes that used to all be visible at once. Extends
- * the existing dark-HUD palette/typography above (`.hud-panel` and its
- * descendant rules) rather than introducing a second design language --
- * see `Sidebar`/`SidebarSection`'s doc comments for how each piece reuses
- * it. */
-
-.top-bar,
-.bottom-bar {
-  position: fixed;
-  left: 0;
-  right: 0;
-  z-index: 20;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem 1rem;
-  flex-wrap: wrap;
-  background: rgba(17, 17, 20, 0.9);
-  color: #e6e6e6;
-  font-size: 0.8rem;
-  padding: 0.4rem 0.75rem;
-  box-sizing: border-box;
-}
-
-.top-bar {
-  top: 0;
-  justify-content: space-between;
-  border-bottom: 1px solid #3a3a40;
-}
-
-.bottom-bar {
-  bottom: 0;
-  flex-direction: column;
-  justify-content: center;
-  border-top: 1px solid #3a3a40;
-}
-
-/* Nested here instead of centered as a standalone floating box -- drop
- * the borders/paddings those components use when they were their own
- * top-level hud-panel, since `.bottom-bar` already draws the boundary. */
-.bottom-bar .playback-controls,
-.bottom-bar .keyboard-hint {
-  border-top: none;
-  padding-top: 0;
-}
-
-.bottom-bar .unified-timeline {
-  border-top: none;
-  padding-bottom: 0;
-  width: min(720px, 96vw);
-}
-
-.top-bar-left {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  min-width: 0;
-}
-
-.top-bar-title {
-  color: #8fd0ff;
-}
-
-.top-bar-status {
-  display: flex;
-  gap: 0.4rem 0.9rem;
-  flex-wrap: wrap;
-  color: #b5b5bc;
-  font-size: 0.75rem;
-  min-width: 0;
-}
-
-.top-bar-status-item {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 40vw;
-}
-
-.top-bar-status-error {
-  color: #ff8f8f;
-}
-
-.sidebar-toggle {
-  font: inherit;
-  background: #1c1c20;
-  color: inherit;
-  border: 1px solid #3a3a40;
-  border-radius: 3px;
-  padding: 0.2rem 0.55rem;
-  cursor: pointer;
-  line-height: 1.3;
-  flex: none;
-}
-
-/* Sidebar: reuses `.hud-panel`'s base look (background/border/color/
- * font-size, plus its `select`/`dl`/`h1` descendant rules a few lines up)
- * -- only the position/size rules that differ for a fixed, full-height
- * slide-in panel (instead of a small floating box) are overridden here.
- * Hidden off-screen by default (`.sidebar` alone, no `.sidebar-open`) so
- * the map is the unobstructed default view; width caps at 92vw so it
- * never overflows a narrow window. */
-.hud-panel.sidebar {
-  position: fixed;
-  inset: 0 auto 0 0;
-  width: min(360px, 92vw);
-  max-width: none;
-  max-height: none;
-  border-width: 0 1px 0 0;
-  border-radius: 0;
-  padding: 3.25rem 1rem 4.5rem 1rem;
-  box-sizing: border-box;
-  transform: translateX(-100%);
-  transition: transform 0.2s ease;
-  z-index: 15;
-  display: flex;
-  flex-direction: column;
+  top: 12px;
+  right: 12px;
+  z-index: 10;
+  width: min(360px, calc(100% - 24px));
+  max-height: calc(100% - 24px);
   overflow-y: auto;
-  /* Explicit, rather than relying on the browser's default computed
-   * value: some `<select>`s inside (e.g. the color-table editor's preset
-   * picker, whose option labels are long moment/table names) are
-   * intrinsically wider than the sidebar itself -- without this, setting
-   * `overflow-y: auto` alone makes `overflow-x` compute to `auto` too
-   * (per the CSS overflow spec), silently making the whole sidebar
-   * horizontally scrollable. Selects/inputs are also explicitly capped
-   * below so their content is still fully visible, just wrapped/clipped
-   * sanely instead of pushing the sidebar wider. */
-  overflow-x: hidden;
+  padding: 4px 14px 14px;
+  background: var(--g2);
+  border: 1px solid var(--g4);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
 }
 
-.hud-panel.sidebar select,
-.hud-panel.sidebar textarea,
-.hud-panel.sidebar input[type="text"],
-.hud-panel.sidebar input[type="password"] {
-  max-width: 100%;
-  min-width: 0;
-  box-sizing: border-box;
-}
-
-.hud-panel.sidebar.sidebar-open {
-  transform: translateX(0);
-}
-
-.sidebar-section {
-  border-bottom: 1px solid #2a2a2e;
-  padding-bottom: 0.5rem;
-}
-
-.sidebar-section:last-child {
-  border-bottom: none;
-}
-
-.sidebar-section-header {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  width: 100%;
-  background: transparent;
-  border: none;
-  color: #8fd0ff;
-  font: inherit;
-  font-size: 0.88rem;
-  text-align: left;
-  padding: 0.3rem 0;
-  cursor: pointer;
-}
-
-.sidebar-section-chevron {
-  color: #7aa6c2;
-  width: 1em;
-  display: inline-block;
-}
-
-.sidebar-section-body {
-  display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
-  padding: 0.4rem 0 0.2rem 1.3rem;
-}
-
-/* Sidebar redesign: a `SidebarSection` nested one level inside a
- * `SidebarCategory` (or inside the pinned "Live Radar" group below) --
- * e.g. "Legend & Probe", "Storm Motion (SRV)", "Color Table Editor" inside
- * Live Radar, or the two Rainbow point panels inside "Point Forecasts".
- * Trims this section's own indent/border so a category's indent doesn't
- * compound with a section's into an overly-deep stair-step, and drops the
- * divider border a top-level section uses to separate itself from its
- * sidebar siblings (a nested section already has its category's own
- * `.sidebar-category-body` padding for separation). */
-.sidebar-section-nested {
-  border-bottom: none;
-  padding-bottom: 0;
-}
-
-.sidebar-section-nested .sidebar-section-header {
-  font-size: 0.82rem;
-  color: #b8d4e6;
-}
-
-.sidebar-section-nested .sidebar-section-body {
-  padding-left: 0.9rem;
-}
-
-/* Sidebar redesign: the pinned "Live Radar" group -- site/elevation/
- * moment/opacity, used every session, so unlike everything else in the
- * sidebar (see `SidebarCategory`) it is never collapsible at all. Visually
- * distinguished from a plain `SidebarSection` by a solid (not dashed-by-
- * omission) top accent bar and a static title with no chevron, so it reads
- * immediately as "always here" rather than "collapsed right now". */
-.sidebar-live-radar {
-  display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
-  padding: 0.2rem 0 0.6rem 0;
-  border-bottom: 1px solid #2a2a2e;
-  border-top: 2px solid #8fd0ff;
-}
-
-.sidebar-live-radar-title {
-  color: #8fd0ff;
-  font-size: 0.88rem;
-  font-weight: bold;
-  padding-top: 0.2rem;
-}
-
-/* Sidebar redesign: a top-level, collapsed-by-default category grouping
- * several sections/panels under one header with a live one-line status
- * summary (`SidebarCategory.tsx`) -- replaces eight flat, equally-weighted
- * `SidebarSection`s with real hierarchy ("Map Layers", "Point Forecasts",
- * "Model Forecast", "Alerts", "Settings"). Deliberately a visually
- * heavier header than `.sidebar-section-header` (larger, bolder, brighter
- * chevron) so category > section > field reads at a glance. */
-.sidebar-category {
-  border-bottom: 1px solid #2a2a2e;
-  padding-bottom: 0.5rem;
-}
-
-.sidebar-category:last-child {
-  border-bottom: none;
-}
-
-.sidebar-category-header {
-  display: flex;
-  align-items: baseline;
-  gap: 0.4rem;
-  width: 100%;
-  background: transparent;
-  border: none;
-  color: #cfe8ff;
-  font: inherit;
-  font-size: 0.92rem;
-  font-weight: bold;
-  text-align: left;
-  padding: 0.35rem 0;
-  cursor: pointer;
-  flex-wrap: wrap;
-}
-
-.sidebar-category-chevron {
-  color: #8fd0ff;
-  width: 1em;
-  display: inline-block;
-  font-weight: normal;
-}
-
-.sidebar-category-title {
-  color: #cfe8ff;
-}
-
-.sidebar-category-summary {
-  color: #9a9aa2;
-  font-size: 0.76rem;
-  font-weight: normal;
-}
-
-.sidebar-category-body {
-  display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
-  padding: 0.4rem 0 0.2rem 1.3rem;
-}
-
-/* Sidebar redesign: the single "Active Map Layer" control inside "Map
- * Layers" that replaces three independent live-radar/Rainbow/MRMS
- * checkboxes -- exclusivity is the control itself (one `<select>`, one
- * value) rather than hidden logic across three separate toggles. */
-.map-layer-select {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  font-size: 0.85rem;
-}
-
-.map-layer-select select {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-/* UI polish pass on S09d: right-docked results panel (`RightPanel.tsx`) --
- * Rainbow Nowcast/Forecast used to render their result tables inline in
- * the left sidebar's narrow control-rail column; both now keep only their
- * inputs there and dock their tables here instead, where tabular data has
- * room to breathe. Reuses `.hud-panel`'s base dark-HUD look (background/
- * border/color/font-size, plus its `h1`/`select` descendant rules) the same
- * way `.hud-panel.sidebar` already does for the left dock -- only the
- * position/size rules differ, mirrored on the opposite edge. `top`/`bottom`
- * clear the fixed top/bottom chrome exactly like `.hud-panel.sidebar`'s own
- * padding does, so this can never sit underneath (or peek out above/below)
- * `.top-bar`/`.bottom-bar`. Left at the base `.hud-panel` z-index (10) --
- * below both the chrome bars (20) and the sidebar (15) -- so on a narrow
- * window where an open sidebar and this dock would otherwise collide, the
- * sidebar (the control surface the user is actively using) wins rather
- * than the two silently fighting for the same pixels. */
-.hud-panel.right-panel {
-  position: fixed;
-  top: 3.25rem;
-  right: 1rem;
-  bottom: 4.5rem;
-  left: auto;
-  width: min(480px, 92vw);
-  max-width: none;
-  max-height: none;
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  overflow-y: auto;
-}
-
-.right-panel-section {
-  border-bottom: 1px solid #2a2a2e;
-  padding-bottom: 0.6rem;
-}
-
-.right-panel-section:last-child {
-  border-bottom: none;
-  padding-bottom: 0;
+.right-panel-section + .right-panel-section {
+  border-top: 1px solid var(--g4);
 }
 
 .right-panel-section-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.5rem;
-  margin: 0 0 0.4rem 0;
+  min-height: 40px;
 }
 
 .right-panel-section-title {
-  color: #8fd0ff;
-  font-size: 0.88rem;
-  font-weight: normal;
   margin: 0;
+  font: 700 13px/1 var(--font);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--forecast);
 }
 
-.right-panel-dismiss {
-  flex: none;
+.right-panel .right-panel-dismiss {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  min-height: 28px;
+  padding: 0;
   background: transparent;
-  border: 1px solid #3a3a3e;
-  border-radius: 3px;
-  color: #b8b8bc;
-  line-height: 1;
-  font-size: 0.95rem;
-  padding: 0.05rem 0.4rem;
+  border-color: transparent;
+}
+
+.forecast-drawer {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 11;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  /* A narrow side panel: the radar stays visible while forecasts are open. */
+  width: min(380px, calc(100% - 24px));
+  max-height: calc(100% - 24px);
+  background: var(--g2);
+  border: 1px solid var(--g4);
+  border-top: 2px solid var(--forecast);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.forecast-drawer[hidden] {
+  display: none;
+}
+
+.forecast-drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--g4);
+}
+
+.forecast-drawer-head h2 {
+  margin: 0;
+  font: 700 15px/1 var(--font);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--forecast);
+}
+
+.forecast-drawer-body {
+  display: grid;
+  overflow-y: auto;
+}
+
+.forecast-drawer-model,
+.forecast-drawer-points {
+  padding: 14px;
+}
+
+.forecast-drawer-points {
+  border-top: 1px solid var(--g4);
+}
+
+.forecast-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.forecast-canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  background: var(--g0);
+  border: 1px solid var(--g4);
+}
+
+.forecast-canvas-caption {
+  font-size: 12px;
+  color: var(--g6);
+}
+
+.maplibregl-ctrl-attrib {
+  background: rgb(14 17 16 / 0.8) !important;
+  color: var(--g7) !important;
+  font-family: var(--font) !important;
+}
+
+.maplibregl-ctrl-attrib a {
+  color: var(--g7) !important;
+}
+
+.maplibregl-ctrl-attrib-button {
+  filter: invert(0.85);
+}
+
+/* Says plainly that the map is showing forecast radar, not observed radar. */
+.map-forecast-badge {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 6px 6px 12px;
+  font-size: 13px;
+  color: var(--g8);
+  background: var(--g2);
+  border: 1px solid var(--g4);
+  border-left: 3px solid var(--forecast);
+  border-radius: var(--radius);
+}
+
+.map-forecast-badge strong {
+  color: var(--forecast);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.map-forecast-loading {
+  color: var(--g7);
+}
+
+.map-forecast-badge button {
+  font: 600 13px/1 var(--font);
+  color: var(--g8);
+  background: var(--g3);
+  border: 1px solid var(--g5);
+  border-radius: var(--radius);
+  min-height: 28px;
+  padding: 0 10px;
   cursor: pointer;
 }
 
-.right-panel-dismiss:hover {
-  background: #2a2a2e;
-  color: #fff;
+/* ---------- Time strip ---------- */
+
+.playback-controls {
+  display: grid;
+  grid-template-columns: auto auto;
+  grid-template-rows: auto auto;
+  grid-auto-flow: column;
+  align-items: center;
+  gap: 2px 16px;
 }
 
-@media (max-width: 480px) {
-  .top-bar-status-item {
-    max-width: 60vw;
+.playback-buttons {
+  grid-row: 1 / -1;
+  display: flex;
+  gap: 4px;
+}
+
+.time-strip .remote-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 36px;
+  min-height: 36px;
+  padding: 0 8px;
+}
+
+.time-strip .remote-btn-play {
+  min-width: 46px;
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+.time-strip .remote-btn-play:hover:not(:disabled) {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+}
+
+.time-strip .remote-btn-play:disabled {
+  background: var(--g3);
+  color: var(--g6);
+}
+
+.time-strip .remote-btn-latest {
+  font-size: 13px;
+}
+
+.playback-status {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.play-mode {
+  font: 700 12px/1 var(--font);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--g7);
+}
+
+.play-mode-live::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 5px;
+  border-radius: 50%;
+  background: var(--ok);
+  vertical-align: 1px;
+}
+
+.play-mode-live {
+  color: var(--ok);
+}
+
+.play-mode-playing {
+  color: var(--accent);
+}
+
+.play-mode-stale,
+.play-mode-stale-warning {
+  color: var(--forecast);
+}
+
+.play-mode-stale::before {
+  background: var(--forecast);
+}
+
+.playback-time {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--g8);
+}
+
+.playback-age {
+  color: var(--g7);
+}
+
+.playback-frame-index {
+  color: var(--g6);
+}
+
+.playback-speed {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--g7);
+}
+
+.playback-speed input {
+  width: 90px;
+  accent-color: var(--accent);
+}
+
+.playback-speed-value {
+  min-width: 48px;
+  color: var(--g8);
+}
+
+.unified-timeline {
+  min-width: 0;
+  padding-top: 13px; /* room for the NOW label above the track */
+}
+
+.unified-timeline-header {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.unified-timeline-source {
+  font-weight: 700;
+}
+
+.unified-timeline-source-observed {
+  color: var(--g8);
+}
+
+.unified-timeline-source-forecast {
+  color: var(--forecast);
+}
+
+.unified-timeline-divider {
+  color: var(--g6);
+}
+
+/* Past (observed) is solid; beyond NOW (35%, see PAST_FRACTION) is hatched forecast time. */
+.unified-timeline-track {
+  position: relative;
+  height: 24px;
+  border: 1px solid var(--g4);
+  border-radius: var(--radius);
+  cursor: pointer;
+  touch-action: none;
+  background:
+    linear-gradient(90deg, var(--g3) 0 35%, transparent 35%),
+    repeating-linear-gradient(135deg, rgb(240 184 74 / 0.1) 0 5px, transparent 5px 10px),
+    var(--g1);
+}
+
+.unified-timeline-now-marker {
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  width: 0;
+  border-left: 2px solid var(--g8);
+  pointer-events: none;
+  z-index: 3;
+}
+
+.unified-timeline-now-label {
+  position: absolute;
+  top: -15px;
+  left: 4px;
+  font: 700 10px/1 var(--font);
+  letter-spacing: 0.12em;
+  color: var(--g8);
+  white-space: nowrap;
+}
+
+.unified-timeline-tick {
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  min-width: 0;
+  min-height: 0;
+  margin-left: -1px;
+  padding: 0;
+  border: none;
+  border-radius: 1px;
+  cursor: pointer;
+  z-index: 2;
+}
+
+.unified-timeline-tick-observed {
+  background: var(--g7);
+  opacity: 0.6;
+}
+
+.unified-timeline-tick-forecast {
+  background: var(--forecast);
+  opacity: 0.55;
+}
+
+.unified-timeline-tick-active {
+  opacity: 1;
+  width: 4px;
+  margin-left: -2px;
+  top: 2px;
+  bottom: 2px;
+  z-index: 4;
+  box-shadow: 0 0 0 2px var(--g1);
+}
+
+.unified-timeline-tick-observed.unified-timeline-tick-active {
+  background: var(--accent);
+}
+
+.unified-timeline-tick-forecast.unified-timeline-tick-active {
+  background: var(--forecast);
+}
+
+/* Not published yet: a dim stub, not a selectable hour. */
+.unified-timeline-tick-unpublished {
+  background: var(--g5);
+  opacity: 0.5;
+  top: 9px;
+  bottom: 9px;
+  cursor: default;
+}
+
+.unified-timeline-tick:hover:not(:disabled) {
+  opacity: 1;
+}
+
+.unified-timeline-tick:disabled {
+  cursor: default;
+  opacity: 0.25;
+}
+
+.unified-timeline-labels {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  white-space: nowrap;
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--g6);
+}
+
+.time-strip .forecast-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 46px;
+  padding: 0 14px;
+  text-align: left;
+  color: var(--forecast);
+  border-color: rgb(240 184 74 / 0.45);
+}
+
+.forecast-toggle span {
+  display: grid;
+  gap: 3px;
+  font: 700 14px/1 var(--font);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.forecast-toggle small {
+  font: 500 12px/1 var(--font);
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--g7);
+}
+
+.time-strip .forecast-toggle[aria-expanded="true"] {
+  background: rgb(240 184 74 / 0.14);
+  border-color: var(--forecast);
+}
+
+/* ---------- Narrow screens: map first, strip, then the rail ---------- */
+
+@media (max-width: 900px) {
+  .workstation {
+    position: static;
+    min-height: 100%;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 60vh auto auto;
+    grid-template-areas:
+      "map"
+      "strip"
+      "rail";
+  }
+
+  .rail {
+    overflow: visible;
+    border-right: 0;
+  }
+
+  .time-strip {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
+    height: auto;
+    padding: 10px 16px;
+  }
+
+  .playback-status {
+    flex-wrap: wrap;
+    white-space: normal;
+  }
+
+  .time-strip .forecast-toggle {
+    justify-self: stretch;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
   }
 }

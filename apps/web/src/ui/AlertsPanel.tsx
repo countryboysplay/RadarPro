@@ -10,12 +10,14 @@ export interface AlertsPanelProps {
   onSelect: (key: string) => void;
   lastPolledAt: number | null;
   heldCount: number;
+  /** Shown instead of "no active alerts" when the list is a filtered subset. */
+  emptyText?: string;
 }
 
 function describeStatus(status: AlertPollStatus, error: string | null, lastPolledAt: number | null): string {
   if (status === "loading") return "loading NWS alerts…";
   if (status === "error") return `poll error: ${error ?? "unknown"} (showing last-known alerts)`;
-  if (lastPolledAt) return `updated ${new Date(lastPolledAt).toLocaleTimeString()}`;
+  if (lastPolledAt) return `updated ${new Date(lastPolledAt).toLocaleTimeString(undefined, { hour12: true })}`;
   return "up to date";
 }
 
@@ -35,6 +37,7 @@ export function AlertsPanel({
   onSelect,
   lastPolledAt,
   heldCount,
+  emptyText = "no active alerts",
 }: AlertsPanelProps) {
   return (
     <div className="alerts-panel">
@@ -45,7 +48,7 @@ export function AlertsPanel({
 
       {alerts.length === 0 ? (
         <div className="alerts-panel-empty">
-          {status === "loading" ? "checking for active alerts…" : "no active alerts"}
+          {status === "loading" ? "checking for active alerts…" : emptyText}
         </div>
       ) : (
         <ul className="alerts-list">

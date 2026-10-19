@@ -80,6 +80,8 @@ export interface HistoryEntryMeta {
   /** The S3 object key -- also the cache/eviction key. */
   key: string;
   startTimeMillis: number;
+  /** Changes when the held bytes change: a real-time volume grows chunk by chunk under one key. */
+  revision?: number;
 }
 
 interface HistoryState {
@@ -96,7 +98,7 @@ interface HistoryState {
 
 type HistoryAction =
   | { type: "RESET" }
-  | { type: "SCAN_ADDED"; key: string; startTimeMillis: number }
+  | { type: "SCAN_ADDED"; key: string; startTimeMillis: number; revision?: number }
   | { type: "STEP"; delta: -1 | 1 }
   | { type: "TOGGLE_PLAY" }
   | { type: "ADVANCE_FRAME" }
@@ -109,6 +111,10 @@ const MIN_FRAME_MS = 100;
 const MAX_FRAME_MS = 4000;
 export const DEFAULT_FRAME_MS = 700;
 const ARCHIVE_MAX_SCANS = 10;
+
+function utcDay(d: Date) {
+  return { year: d.getUTCFullYear(), month: d.getUTCMonth() + 1, day: d.getUTCDate() };
+}
 
 export function initialState(maxEntries: number = MAX_HISTORY_SCANS): HistoryState {
   return { entries: [], currentIndex: -1, playMode: "live", frameMs: DEFAULT_FRAME_MS, maxEntries: clampHistoryLimit(maxEntries) };
@@ -138,11 +144,23 @@ export function historyReducer(state: HistoryState, action: HistoryAction): Hist
       return { ...initialState(state.maxEntries), frameMs: state.frameMs };
 
     case "SCAN_ADDED": {
-      const grown = [...state.entries, { key: action.key, startTimeMillis: action.startTimeMillis }];
+      const existing = state.entries.findIndex((e) => e.key === action.key);
+      if (existing !== -1) {
+        // Same volume again: an in-place update when its bytes grew, otherwise nothing to do.
+        if (state.entries[existing].revision === action.revision) return state;
+        const entries = state.entries.map((e, i) => (i === existing ? { ...e, revision: action.revision } : e));
+        return { ...state, entries };
+      }
+      // Kept in time order: backfill adds older scans while the poller adds newer ones.
+      const currentKey = state.entries[state.currentIndex]?.key;
+      const grown = [...state.entries, { key: action.key, startTimeMillis: action.startTimeMillis, revision: action.revision }].sort(
+        (a, b) => a.startTimeMillis - b.startTimeMillis,
+      );
+      const heldIndex = currentKey === undefined ? state.currentIndex : grown.findIndex((e) => e.key === currentKey);
       // Evict oldest first (FIFO) once over the cap -- shift every held
       // index down to match, so "previous/next" and "playing" keep
       // pointing at the same logical frame across an eviction.
-      const trimmed = trimToCap(grown, state.currentIndex, state.maxEntries);
+      const trimmed = trimToCap(grown, heldIndex, state.maxEntries);
       const entries = trimmed.entries;
       let currentIndex = trimmed.currentIndex;
       // "Live" mode always tracks the newest held frame -- this is the
@@ -308,7 +326,7 @@ export function useScanHistory(icao: string, maxEntries: number = MAX_HISTORY_SC
 
   const onVolumeBytes = useCallback((bytes: Uint8Array, volume: DiscoveredVolume) => {
     bytesRef.current.set(volume.key, bytes);
-    dispatch({ type: "SCAN_ADDED", key: volume.key, startTimeMillis: volume.startTimeMillis });
+    dispatch({ type: "SCAN_ADDED", key: volume.key, startTimeMillis: volume.startTimeMillis, revision: bytes.length });
   }, []);
 
   // An object, not a number, so retrying the same time is still a new value and re-runs the load.
@@ -317,26 +335,43 @@ export function useScanHistory(icao: string, maxEntries: number = MAX_HISTORY_SC
   const [archiveStatus, setArchiveStatus] = useState<string | null>(null);
   const pollEvent = useScanPoller(icao, onVolumeBytes, archiveStartMillis === null);
 
-  // Archive mode: swap the live history for the requested day's scans.
-  // Leaving archive mode (or switching sites) cancels any in-flight loads.
+  // Live: backfill the site's recent scans. Archive: swap in the requested
+  // day's scans. Switching sites or modes cancels any in-flight loads.
   useEffect(() => {
     dispatch({ type: "RESET" });
     bytesRef.current.clear();
+    const controller = new AbortController();
     if (archive === null) {
       setArchiveStatus(null);
-      return;
+      // Live backfill: fill the loop with the site's recent scans at once instead
+      // of waiting hours for the poller to collect them. Newest first, so the
+      // most useful frames land first. The real-time poller adds the volume in progress.
+      void (async () => {
+        try {
+          const now = new Date();
+          const today = await discoverDay(icao, utcDay(now), controller.signal);
+          const listed =
+            today.length >= maxEntriesRef.current
+              ? today
+              : [...(await discoverDay(icao, utcDay(new Date(now.getTime() - 86_400_000)), controller.signal)), ...today];
+          const picked = listed.slice(-maxEntriesRef.current).reverse();
+          for (const volume of picked) {
+            onVolumeBytes(await downloadVolume(volume.key, controller.signal), volume);
+          }
+        } catch (err) {
+          if (err instanceof DOMException && err.name === "AbortError") return;
+          // Not fatal: the poller still delivers new scans, the loop just starts short.
+          console.warn(`[scan] backfill for ${icao} stopped: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      })();
+      return () => controller.abort();
     }
     const { startMillis } = archive;
-    const controller = new AbortController();
     void (async () => {
       try {
         const d = new Date(startMillis);
         setArchiveStatus("listing archived scans…");
-        const day = await discoverDay(
-          icao,
-          { year: d.getUTCFullYear(), month: d.getUTCMonth() + 1, day: d.getUTCDate() },
-          controller.signal,
-        );
+        const day = await discoverDay(icao, utcDay(d), controller.signal);
         // shortcut: same UTC day only, a window crossing midnight stops at 23:59Z.
         // Pre-2017 volumes are ~45 MB uncompressed each; cap RAM regardless of the live cache size.
         const limit = Math.min(maxEntriesRef.current, ARCHIVE_MAX_SCANS);

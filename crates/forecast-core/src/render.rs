@@ -139,6 +139,28 @@ pub fn display_scale(variable: ForecastVariable) -> DisplayScale {
                 s(25.0, [200, 30, 30, 255]),
             ],
         ),
+        // NWS-style reflectivity ramp; below 5 dBZ is clear so the map shows
+        // through, the way radar displays leave no-echo areas empty.
+        ForecastVariable::CompositeReflectivity => (
+            "dBZ",
+            -10.0,
+            75.0,
+            vec![
+                s(-10.0, [0, 0, 0, 0]),
+                s(4.9, [0, 0, 0, 0]),
+                s(5.0, [4, 233, 231, 255]),
+                s(15.0, [3, 0, 244, 255]),
+                s(20.0, [2, 253, 2, 255]),
+                s(30.0, [0, 142, 0, 255]),
+                s(35.0, [253, 248, 2, 255]),
+                s(45.0, [253, 149, 0, 255]),
+                s(50.0, [253, 0, 0, 255]),
+                s(60.0, [188, 0, 0, 255]),
+                s(65.0, [248, 0, 253, 255]),
+                s(70.0, [152, 84, 198, 255]),
+                s(75.0, [253, 253, 253, 255]),
+            ],
+        ),
         ForecastVariable::GeopotentialHeight => (
             "m",
             4800.0,
@@ -251,6 +273,13 @@ mod tests {
         assert!((hpa[1] - 980.0).abs() < 1e-3);
         field.unit = "%";
         assert_eq!(to_display_values(&field), field.values);
+    }
+
+    #[test]
+    fn reflectivity_is_clear_below_5_dbz_and_opaque_above() {
+        let lut = display_scale(ForecastVariable::CompositeReflectivity).palette_lut();
+        assert_eq!(lut[0][3], 0, "no-echo floor must be transparent");
+        assert_eq!(lut[lut.len() - 1][3], 255);
     }
 
     #[test]

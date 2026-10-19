@@ -1,4 +1,5 @@
 import type { PlayMode } from "../scan/useScanHistory";
+import { Icon } from "./Icon";
 
 export interface PlaybackControlsProps {
   playMode: PlayMode;
@@ -30,12 +31,11 @@ export interface PlaybackControlsProps {
 }
 
 function formatTime(ms: number): string {
-  return new Date(ms).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "medium" });
+  return new Date(ms).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit", second: "2-digit", hour12: true });
 }
 
-/** Round an age in milliseconds down to a human "Xm"/"Xh Ym" label -- only
- * ever shown once an age is already well past `STALE_LIVE_AFTER_MS` (tens of
- * minutes), so minute granularity (no seconds) is the right precision. */
+/** Round an age in milliseconds down to a human "Xm"/"Xh Ym" label. Volumes
+ * complete every several minutes, so minute granularity is the right precision. */
 function formatAge(ms: number): string {
   const totalMinutes = Math.max(1, Math.floor(ms / 60_000));
   if (totalMinutes < 60) return `${totalMinutes}m`;
@@ -77,8 +77,8 @@ export function PlaybackControls({
   return (
     <div className="playback-controls">
       <div className="playback-buttons remote-cluster">
-        <button type="button" className="remote-btn" onClick={onPrevious} disabled={disabled} title="Previous scan (Left arrow)">
-          ⏮ Prev
+        <button type="button" className="remote-btn" onClick={onPrevious} disabled={disabled} title="Previous scan (Left arrow)" aria-label="Previous scan">
+          <Icon name="prev" />
         </button>
         <button
           type="button"
@@ -86,11 +86,12 @@ export function PlaybackControls({
           onClick={onTogglePlay}
           disabled={disabled}
           title="Play/Pause (Space)"
+          aria-label={playMode === "playing" ? "Pause" : "Play"}
         >
-          {playMode === "playing" ? "⏸ Pause" : "▶ Play"}
+          <Icon name={playMode === "playing" ? "pause" : "play"} filled={playMode !== "playing"} />
         </button>
-        <button type="button" className="remote-btn" onClick={onNext} disabled={disabled} title="Next scan (Right arrow)">
-          Next ⏭
+        <button type="button" className="remote-btn" onClick={onNext} disabled={disabled} title="Next scan (Right arrow)" aria-label="Next scan">
+          <Icon name="next" />
         </button>
         <button
           type="button"
@@ -99,7 +100,7 @@ export function PlaybackControls({
           disabled={disabled || playMode === "live"}
           title="Jump to latest and resume live polling (L)"
         >
-          ⏭⏭ Latest
+          <Icon name="latest" /> Latest
         </button>
       </div>
       <div className="playback-status">
@@ -108,18 +109,21 @@ export function PlaybackControls({
         </span>
         {isLiveStale && currentVolumeAgeMillis !== null && (
           <span className="play-mode-stale-warning" title="The live feed has not produced a newer scan in a while -- see Settings > Network diagnostics.">
-            ⚠ no new scan in {formatAge(currentVolumeAgeMillis)}
+            no new scan in {formatAge(currentVolumeAgeMillis)}
           </span>
         )}
         <span className="playback-time">
           {currentTimeMillis !== null ? formatTime(currentTimeMillis) : "no scan loaded"}
         </span>
+        {!isLiveStale && currentVolumeAgeMillis !== null && (
+          <span className="playback-age">{formatAge(currentVolumeAgeMillis)} ago</span>
+        )}
         <span className="playback-frame-index">
           (frame {entriesCount === 0 ? 0 : currentIndex + 1} / {entriesCount})
         </span>
       </div>
       <label className="playback-speed">
-        Speed{" "}
+        <span>Speed</span>
         <input
           type="range"
           min={100}
@@ -127,8 +131,8 @@ export function PlaybackControls({
           step={50}
           value={frameMs}
           onChange={(e) => onFrameMsChange(Number(e.target.value))}
-        />{" "}
-        {frameMs} ms/frame
+        />
+        <span className="playback-speed-value">{frameMs} ms</span>
       </label>
     </div>
   );

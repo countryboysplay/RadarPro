@@ -29,6 +29,17 @@ impl HrrrProvider {
     pub fn default_bucket() -> Result<Self, HrrrError> {
         Ok(Self::new(HrrrClient::default_bucket()?))
     }
+
+    /// Forecast hours of `run` published so far (a run fills in over about an hour).
+    pub async fn published_forecast_hours(&self, run: RunReference) -> Result<Vec<u16>, HrrrError> {
+        let prefix = crate::keys::run_product_prefix(run, Product::CONUS_SURFACE);
+        let keys = self.client.list_objects(&prefix).await?;
+        Ok(crate::keys::published_forecast_hours(
+            run,
+            Product::CONUS_SURFACE,
+            &keys,
+        ))
+    }
 }
 
 impl forecast_core::provider::ForecastProvider for HrrrProvider {

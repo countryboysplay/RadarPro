@@ -16,6 +16,7 @@
 // already does for the left dock -- see `.right-panel`'s CSS doc comment
 // for the position/size rules specific to this side.
 import type { ReactNode } from "react";
+import { Icon } from "./Icon";
 
 export interface RightPanelSection {
   /** Stable React key -- also doubles as a natural id if this ever needs
@@ -55,7 +56,7 @@ export function RightPanel({ sections }: RightPanelProps) {
                 title="Dismiss"
                 onClick={section.onDismiss}
               >
-                ×
+                <Icon name="close" size={16} />
               </button>
             )}
           </div>

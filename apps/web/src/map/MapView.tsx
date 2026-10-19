@@ -11,6 +11,12 @@ import { pointInAlertGeometry } from "../alerts/geometryHitTest";
 import type { MrmsViewport } from "../mrms/types";
 import { isDesktop } from "../platform/desktop";
 import { registerDesktopRainbowProtocol } from "../rainbow/desktopTiles";
+import {
+  FORECAST_CENTER_LAT,
+  FORECAST_CENTER_LON,
+  FORECAST_HALF_EXTENT_LAT,
+  FORECAST_HALF_EXTENT_LON,
+} from "../forecast/useForecastProvider";
 
 // S10 follow-up: register the `rainbow-tile://` custom MapLibre protocol
 // once per app lifetime, only inside the desktop shell -- this is the one
@@ -43,9 +49,9 @@ function drawRangeRings(map: MapLibreMap, canvas: HTMLCanvasElement, rings: numb
   ctx.clearRect(0, 0, width, height);
   if (!rings || rings.length === 0) return;
 
-  ctx.strokeStyle = "#7aa6c2";
+  ctx.strokeStyle = "#a3a89f";
   ctx.lineWidth = 1;
-  ctx.globalAlpha = 0.65;
+  ctx.globalAlpha = 0.5;
   for (const ring of rings) {
     if (ring.length === 0) continue;
     ctx.beginPath();
@@ -57,6 +63,94 @@ function drawRangeRings(map: MapLibreMap, canvas: HTMLCanvasElement, rings: numb
     ctx.closePath();
     ctx.stroke();
   }
+}
+
+/**
+ * Paint the model field (rendered plate carrée over the fixed forecast
+ * extent) onto the map. Longitude is linear in both projections, latitude
+ * isn't, so each source row is drawn to its own Mercator band.
+ */
+function drawForecastField(map: MapLibreMap, canvas: HTMLCanvasElement, field: HTMLCanvasElement | null) {
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (!field || !canvas.clientWidth) return;
+  const scale = canvas.width / canvas.clientWidth;
+  ctx.setTransform(scale, 0, 0, scale, 0, 0);
+  ctx.imageSmoothingEnabled = false;
+  const west = FORECAST_CENTER_LON - FORECAST_HALF_EXTENT_LON;
+  const east = FORECAST_CENTER_LON + FORECAST_HALF_EXTENT_LON;
+  const north = FORECAST_CENTER_LAT + FORECAST_HALF_EXTENT_LAT;
+  const rowDeg = (2 * FORECAST_HALF_EXTENT_LAT) / field.height;
+  for (let row = 0; row < field.height; row++) {
+    const top = map.project([west, north - row * rowDeg]);
+    const bottom = map.project([east, north - (row + 1) * rowDeg]);
+    ctx.drawImage(field, 0, row, field.width, 1, top.x, top.y, bottom.x - top.x, bottom.y - top.y + 0.5);
+  }
+}
+
+export interface CourseLeg {
+  a: { lat: number; lon: number };
+  b: { lat: number; lon: number } | null;
+}
+
+/** Course ink: the one colour reserved for marks the user places on the radar. */
+const COURSE_INK = "#b56cff";
+const COURSE_CASING = "#0e1110";
+
+/**
+ * Draw the user's cross-section leg the way an orienteering course is
+ * printed: start triangle pointing down the leg, the leg line, a finish
+ * double circle. Drawn on the rings canvas (after the rings, never
+ * clearing it), with a dark casing so the ink separates from the echoes
+ * beneath. `progress` (0-1) draws the leg partway for its entry motion.
+ */
+function drawCourse(map: MapLibreMap, canvas: HTMLCanvasElement, course: CourseLeg | null, progress = 1) {
+  const ctx = canvas.getContext("2d");
+  if (!ctx || !course) return;
+  const a = map.project([course.a.lon, course.a.lat]);
+  const b = course.b ? map.project([course.b.lon, course.b.lat]) : null;
+  const angle = b ? Math.atan2(b.y - a.y, b.x - a.x) : -Math.PI / 2;
+  const triangle = [0, (2 * Math.PI) / 3, (4 * Math.PI) / 3].map((t) => ({
+    x: a.x + 13 * Math.cos(angle + t),
+    y: a.y + 13 * Math.sin(angle + t),
+  }));
+  const end = b && { x: a.x + (b.x - a.x) * progress, y: a.y + (b.y - a.y) * progress };
+
+  ctx.save();
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  for (const [color, width] of [
+    [COURSE_CASING, 7],
+    [COURSE_INK, 3],
+  ] as const) {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.beginPath();
+    triangle.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
+    ctx.closePath();
+    ctx.stroke();
+    if (b && end) {
+      // The leg runs between the symbols, not through them.
+      const len = Math.hypot(end.x - a.x, end.y - a.y);
+      const [ux, uy] = [Math.cos(angle), Math.sin(angle)];
+      if (len > 26) {
+        ctx.beginPath();
+        ctx.moveTo(a.x + ux * 14, a.y + uy * 14);
+        ctx.lineTo(end.x - (progress === 1 ? ux * 12 : 0), end.y - (progress === 1 ? uy * 12 : 0));
+        ctx.stroke();
+      }
+      if (progress === 1) {
+        for (const r of [11, 6.5]) {
+          ctx.beginPath();
+          ctx.arc(b.x, b.y, r, 0, 2 * Math.PI);
+          ctx.stroke();
+        }
+      }
+    }
+  }
+  ctx.restore();
 }
 
 /**
@@ -212,7 +306,7 @@ function syncRainbowLayer(
 }
 
 /**
- * OpenFreeMap's "Liberty" style (https://openfreemap.org) -- a full
+ * OpenFreeMap's "Dark" style (https://openfreemap.org) -- a full
  * OpenStreetMap-derived vector basemap (streets, cities/labels, land
  * use, etc.), served from OpenFreeMap's own infrastructure.
  *
@@ -232,7 +326,7 @@ function syncRainbowLayer(
  * OpenFreeMap's/OSM's built-in attribution control by default; do not
  * remove it.
  */
-const MAP_STYLE_URL = "https://tiles.openfreemap.org/styles/liberty";
+const MAP_STYLE_URL = "https://tiles.openfreemap.org/styles/dark";
 
 /** Click radius (px) for picking a radar-site dot. */
 const SITE_HIT_RADIUS_PX = 10;
@@ -377,6 +471,13 @@ export interface MapViewProps {
    * style controls already are. Defaults to `1` (fully opaque) so behavior
    * is unchanged for a caller that hasn't wired this up. */
   radarOpacity?: number;
+  /** The cross-section leg, drawn on the map in course ink. */
+  course?: CourseLeg | null;
+  /** The painted model-field canvas, drawn on the map (in place of the radar) while `forecastOnMap`. */
+  forecastCanvasRef?: RefObject<HTMLCanvasElement>;
+  forecastOnMap?: boolean;
+  /** Changes whenever the model field is repainted, so the map copy redraws. */
+  forecastKey?: string;
   /** Fired on every map `move`/`zoom`/`resize`/`load`, with the map's
    * current viewport already resolved to the plain center/half-extent
    * camera `useMrmsOverlay` consumes (see `viewportFromMapBounds`) --
@@ -426,6 +527,10 @@ export function MapView({
   mrmsEnabled = false,
   radarOpacity = 1,
   onMrmsViewportChange,
+  course = null,
+  forecastCanvasRef,
+  forecastOnMap = false,
+  forecastKey = "",
 }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
@@ -439,6 +544,11 @@ export function MapView({
   sweepRangeKmRef.current = sweepRangeKm;
   const rangeRingsRef = useRef<number[][][] | null>(rangeRings);
   rangeRingsRef.current = rangeRings;
+  const courseRef = useRef<CourseLeg | null>(course);
+  courseRef.current = course;
+  const forecastOverlayRef = useRef<HTMLCanvasElement>(null);
+  const forecastFieldRef = useRef<HTMLCanvasElement | null>(null);
+  forecastFieldRef.current = forecastOnMap ? (forecastCanvasRef?.current ?? null) : null;
   const alertsRef = useRef<AlertFeatureCollection | null>(alerts);
   alertsRef.current = alerts;
   const selectedAlertKeyRef = useRef<string | null>(selectedAlertKey);
@@ -475,9 +585,9 @@ export function MapView({
         source: "radar-sites",
         paint: {
           "circle-radius": ["case", ["==", ["get", "icao"], selectedIcaoRef.current], 6, 4],
-          "circle-color": ["case", ["==", ["get", "icao"], selectedIcaoRef.current], "#ffd34d", "#5ab0ff"],
-          "circle-stroke-color": "#0b1220",
-          "circle-stroke-width": 1.5,
+          "circle-color": ["case", ["==", ["get", "icao"], selectedIcaoRef.current], COURSE_INK, "#a3a89f"],
+          "circle-stroke-color": COURSE_CASING,
+          "circle-stroke-width": 2,
         },
       });
     });
@@ -496,7 +606,7 @@ export function MapView({
     if (!map?.getLayer("radar-sites")) return;
     const isSelected: ExpressionSpecification = ["==", ["get", "icao"], site.icao];
     map.setPaintProperty("radar-sites", "circle-radius", ["case", isSelected, 6, 4]);
-    map.setPaintProperty("radar-sites", "circle-color", ["case", isSelected, "#ffd34d", "#5ab0ff"]);
+    map.setPaintProperty("radar-sites", "circle-color", ["case", isSelected, COURSE_INK, "#a3a89f"]);
   }, [site.icao]);
 
   // S09b: keep the Rainbow raster layer in sync with the resolved tile URL
@@ -552,6 +662,7 @@ export function MapView({
           ringsCanvas.style.height = mapCanvas.style.height;
         }
         drawRangeRings(map, ringsCanvas, rangeRingsRef.current);
+        drawCourse(map, ringsCanvas, courseRef.current);
       }
 
       // Same backing-buffer sync for the alert-polygon overlay -- see
@@ -566,6 +677,16 @@ export function MapView({
           alertsCanvas.style.height = mapCanvas.style.height;
         }
         drawAlerts(map, alertsCanvas, alertsRef.current, selectedAlertKeyRef.current);
+      }
+
+      const forecastOverlay = forecastOverlayRef.current;
+      if (forecastOverlay) {
+        const mapCanvas = map.getCanvas();
+        if (forecastOverlay.width !== mapCanvas.width || forecastOverlay.height !== mapCanvas.height) {
+          forecastOverlay.width = mapCanvas.width;
+          forecastOverlay.height = mapCanvas.height;
+        }
+        drawForecastField(map, forecastOverlay, forecastFieldRef.current);
       }
 
       // S09 Phase 3: same backing-buffer sync as rings/alerts above -- the
@@ -620,7 +741,33 @@ export function MapView({
     const ringsCanvas = ringsCanvasRef.current;
     if (!map || !ringsCanvas) return;
     drawRangeRings(map, ringsCanvas, rangeRings);
+    drawCourse(map, ringsCanvas, courseRef.current);
   }, [rangeRings]);
+
+  // Redraw the course leg when it changes; a newly completed leg draws
+  // itself from start to finish over 200 ms (the one authored motion).
+  useEffect(() => {
+    const map = mapRef.current;
+    const ringsCanvas = ringsCanvasRef.current;
+    if (!map || !ringsCanvas) return;
+    const animate = course?.b && !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const started = performance.now();
+    let frame = 0;
+    const draw = () => {
+      const t = animate ? Math.min(1, (performance.now() - started) / 200) : 1;
+      drawRangeRings(map, ringsCanvas, rangeRingsRef.current);
+      drawCourse(map, ringsCanvas, course, 1 - (1 - t) ** 3);
+      if (t < 1) frame = requestAnimationFrame(draw);
+    };
+    draw();
+    return () => cancelAnimationFrame(frame);
+  }, [course]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    const overlay = forecastOverlayRef.current;
+    if (map && overlay) drawForecastField(map, overlay, forecastFieldRef.current);
+  }, [forecastOnMap, forecastKey]);
 
   // Redraw alert polygons whenever the active set or selection changes
   // (map pan/zoom/resize is handled by `updateOverlay` above).
@@ -787,7 +934,7 @@ export function MapView({
           // of always fully opaque, e.g. to see map labels/city names
           // through it. Purely a display preference layered on top of the
           // same mutual-exclusivity gate, never a way to defeat it.
-          opacity: rainbowEnabled || mrmsEnabled ? 0 : radarOpacity,
+          opacity: rainbowEnabled || mrmsEnabled || forecastOnMap ? 0 : radarOpacity,
         }}
       />
       {/* S09 Phase 3: MRMS national-mosaic overlay -- a full-viewport raster
@@ -822,6 +969,19 @@ export function MapView({
           see `drawRangeRings`'s doc comment for why a native MapLibre
           layer (painted into the map's own canvas, underneath the sweep
           canvas) would draw under the echoes. */}
+      {/* Forecast radar past NOW: same slot as the radar, which it replaces while shown. */}
+      <canvas
+        ref={forecastOverlayRef}
+        style={{
+          position: "absolute",
+          zIndex: 1,
+          top: 0,
+          left: 0,
+          width: "100%",
+          height: "100%",
+          pointerEvents: "none",
+        }}
+      />
       <canvas
         ref={ringsCanvasRef}
         style={{

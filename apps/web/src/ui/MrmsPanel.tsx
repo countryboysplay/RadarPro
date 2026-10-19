@@ -14,7 +14,7 @@ function formatTime(iso: string | undefined): string {
   if (!iso) return "—";
   const ms = Date.parse(iso);
   if (Number.isNaN(ms)) return iso;
-  return new Date(ms).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+  return new Date(ms).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short", hour12: true });
 }
 
 function describePhase(phase: MrmsPhase, error: string | null): string {

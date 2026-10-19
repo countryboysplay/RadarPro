@@ -68,7 +68,7 @@ function buildListUrl(prefix: string, continuationToken: string | null): string 
  * UI for anywhere close to a minute. A permanent failure (404, other 4xx)
  * is never retried.
  */
-async function fetchWithRetry(url: string, init: RequestInit, maxAttempts = 4): Promise<Response> {
+export async function fetchWithRetry(url: string, init: RequestInit, maxAttempts = 4): Promise<Response> {
   let attempt = 0;
   let delayMs = 500;
   for (;;) {

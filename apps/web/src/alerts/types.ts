@@ -119,5 +119,6 @@ export function formatAlertTime(epochMillis: number): string {
   return new Date(epochMillis).toLocaleString(undefined, {
     dateStyle: "medium",
     timeStyle: "short",
+    hour12: true,
   });
 }

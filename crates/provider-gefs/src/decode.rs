@@ -118,7 +118,10 @@ pub fn idx_names(
         // specific time-window promise, so a 0-3-hour average is a
         // reasonable "cloud cover" value.
         ForecastVariable::CloudCover => Some(("TCDC", "entire atmosphere", "%", 6, 1)),
-        ForecastVariable::Precipitation1h | ForecastVariable::GeopotentialHeight => None,
+        // GEFS publishes no simulated reflectivity; HRRR is the source for it.
+        ForecastVariable::Precipitation1h
+        | ForecastVariable::GeopotentialHeight
+        | ForecastVariable::CompositeReflectivity => None,
     }
 }
 
