@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { parseHail, parseMeso, parseNst, parseTvs } from "../storms/nst";
 import { closestApproach, stormAlerts } from "../storms/nearbyHazards";
+import { placeLabel } from "../storms/labelPlacement";
 import type { StormCell, StormTracks } from "../storms/nst";
 import { parseObjectKey } from "../nexrad/keys";
 import { clampHistoryLimit, historyReducer, initialState } from "../scan/useScanHistory";
@@ -320,5 +321,29 @@ describe("stormAlerts heading", () => {
     ]);
     expect(alerts.map((a) => a.key)).toEqual(["KTLX:C3"]);
     expect(alerts[0].title).toMatch(/near you$/);
+  });
+});
+
+describe("placeLabel", () => {
+  const none = { segments: [], circles: [], rects: [] };
+  const up = { x: 0, y: -1 };
+  it("uses the preferred side when it is clear", () => {
+    const box = placeLabel({ x: 100, y: 100 }, 30, 16, up, none);
+    expect(box.y + box.h).toBeCloseTo(86);
+    expect(box.x + box.w / 2).toBeCloseTo(100);
+  });
+  it("moves off a neighbour's track crossing the preferred spot", () => {
+    const track: [{ x: number; y: number }, { x: number; y: number }] = [{ x: 50, y: 78 }, { x: 150, y: 78 }];
+    const box = placeLabel({ x: 100, y: 100 }, 30, 16, up, { ...none, segments: [track] });
+    expect(box.y + box.h < 74 || box.y > 82).toBe(true);
+    expect(box.y).toBeGreaterThan(80); // the next clear spot, beside the dot, not further up past the line
+  });
+  it("keeps clear of a meso ring and an earlier label", () => {
+    const ring = { x: 100, y: 70, r: 12, ring: true };
+    const earlier = { x: 105, y: 80, w: 40, h: 16 };
+    const box = placeLabel({ x: 100, y: 100 }, 30, 16, up, { segments: [], circles: [ring], rects: [earlier] });
+    const overlapsEarlier = box.x < earlier.x + earlier.w && earlier.x < box.x + box.w && box.y < earlier.y + earlier.h && earlier.y < box.y + box.h;
+    expect(overlapsEarlier).toBe(false);
+    expect(Math.hypot(box.x + box.w / 2 - 100, box.y + box.h / 2 - 70)).toBeGreaterThan(20);
   });
 });

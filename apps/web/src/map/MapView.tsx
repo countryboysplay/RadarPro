@@ -10,6 +10,7 @@ import { SEVERITY_COLORS, severityRank } from "../alerts/types";
 import { pointInAlertGeometry } from "../alerts/geometryHitTest";
 import type { MyLocation } from "../location/useMyLocation";
 import type { StormCell, StormTracks } from "../storms/nst";
+import { placeLabel, type Obstacles, type Pt } from "../storms/labelPlacement";
 import type { MrmsViewport } from "../mrms/types";
 import type { RadarView } from "../radar/useRadarRenderer";
 import { isDesktop } from "../platform/desktop";
@@ -334,12 +335,17 @@ function drawStormTracks(map: MapLibreMap, canvas: HTMLCanvasElement, tracks: St
     ctx.strokeStyle = ctx.fillStyle = color;
     shape(0);
   };
+  // Everything a label must stay clear of; labels go last, on top.
+  const obstacles: Obstacles = { segments: [], circles: [], rects: [] };
+  const labels: { at: Pt; parts: [string, string][]; preferred: Pt }[] = [];
   for (const cell of tracks.cells) {
     line(cell.past, PAPER_INK, 2.5, false);
     line(cell.forecast, FORECAST_AMBER, 3.5, true);
+    for (const track of [cell.past, cell.forecast]) {
+      const px = track.map((pt) => map.project(pt));
+      px.slice(1).forEach((p, i) => obstacles.segments.push([px[i], p]));
+    }
   }
-  ctx.font = "700 13px 'Roboto Condensed Variable', 'Roboto Condensed', 'Arial Narrow', sans-serif";
-  ctx.textBaseline = "middle";
   for (const cell of tracks.cells) {
     const p = map.project(cell.at);
     if (cell.id === selectedId) {
@@ -382,10 +388,7 @@ function drawStormTracks(map: MapLibreMap, canvas: HTMLCanvasElement, tracks: St
     if (isNew) parts.push(["NEW", INK_MUTED]);
     // Severe hail (1"+ by NWS's estimate) as its size, in danger red after the ID.
     if (hail) parts.push([hail, DANGER_RED]);
-    const gap = 4;
-    const width = parts.reduce((sum, [text]) => sum + ctx.measureText(text).width + gap, -gap);
-    // Label on the upper side of the forecast track, clear of the line and arrow;
-    // upper right when there is no track.
+    // Preferred spot: the upper side of the forecast track; upper right when there is no track.
     let nx = Math.SQRT1_2;
     let ny = -Math.SQRT1_2;
     if (!isNew) {
@@ -395,16 +398,8 @@ function drawStormTracks(map: MapLibreMap, canvas: HTMLCanvasElement, tracks: St
       ny = (next.x - p.x) / len;
       if (ny > 0) [nx, ny] = [-nx, -ny];
     }
-    let x = p.x + nx * 14 - (nx < 0 ? width : 0);
-    const y = p.y + ny * 14;
-    ctx.lineWidth = 4;
-    ctx.strokeStyle = COURSE_CASING;
-    for (const [text, color] of parts) {
-      ctx.fillStyle = color;
-      ctx.strokeText(text, x, y);
-      ctx.fillText(text, x, y);
-      x += ctx.measureText(text).width + gap;
-    }
+    labels.push({ at: p, parts, preferred: { x: nx, y: ny } });
+    obstacles.circles.push({ x: p.x, y: p.y, r: cell.id === selectedId ? 13 : 9, ring: false });
   }
   // Mesocyclones: a danger-red circle at the circulation's own size (never
   // under 9px); solid when its base is near the ground, dashed when aloft.
@@ -421,6 +416,7 @@ function drawStormTracks(map: MapLibreMap, canvas: HTMLCanvasElement, tracks: St
     ctx.lineWidth = 3;
     ctx.strokeStyle = DANGER_RED;
     ctx.stroke();
+    obstacles.circles.push({ x: p.x, y: p.y, r, ring: true });
   }
   ctx.setLineDash([]);
   // TVS: a point-down triangle in danger red, on top of everything else;
@@ -441,6 +437,24 @@ function drawStormTracks(map: MapLibreMap, canvas: HTMLCanvasElement, tracks: St
     if (!tvs.elevated) {
       ctx.fillStyle = DANGER_RED;
       ctx.fill();
+    }
+    obstacles.circles.push({ x: p.x, y: p.y, r: 11, ring: false });
+  }
+  ctx.font = "700 13px 'Roboto Condensed Variable', 'Roboto Condensed', 'Arial Narrow', sans-serif";
+  ctx.textBaseline = "middle";
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = COURSE_CASING;
+  const gap = 4;
+  for (const { at, parts, preferred } of labels) {
+    const width = parts.reduce((sum, [text]) => sum + ctx.measureText(text).width + gap, -gap);
+    const box = placeLabel(at, width, 16, preferred, obstacles);
+    obstacles.rects.push(box);
+    let x = box.x;
+    for (const [text, color] of parts) {
+      ctx.fillStyle = color;
+      ctx.strokeText(text, x, box.y + box.h / 2);
+      ctx.fillText(text, x, box.y + box.h / 2);
+      x += ctx.measureText(text).width + gap;
     }
   }
   ctx.restore();
