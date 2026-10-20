@@ -8,6 +8,7 @@ import type { StormCell, StormTracks } from "../storms/nst";
 import { parseObjectKey } from "../nexrad/keys";
 import { parsePlacefile } from "../placefiles/placefile";
 import { fetchMds, fetchWatches } from "../spc/spc";
+import { lsrLayer } from "../spc/lsr";
 import { clampHistoryLimit, historyReducer, initialState } from "../scan/useScanHistory";
 import { alertNearSite, pointInAlertGeometry } from "../alerts/geometryHitTest";
 import { coveringAlerts } from "../location/useMyLocation";
@@ -436,5 +437,29 @@ describe("SPC watches and MDs", () => {
     ]);
     expect(layer.file.items[0].hover).toContain("Watch chance 40%");
     expect(layer.file.items[2].hover).not.toContain("Watch chance");
+  });
+});
+
+describe("lsrLayer", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("keeps chaser reports, newest on top, with size and remarks in the hover", () => {
+    // Node has no OffscreenCanvas; the icon sheet only needs to exist.
+    const ctx = new Proxy({}, { get: () => () => {}, set: () => true });
+    vi.stubGlobal("OffscreenCanvas", class { getContext = () => ctx; transferToImageBitmap = () => ({}) });
+    const report = (typetext: string, valid: string, extra: object = {}) => ({
+      properties: { typetext, valid, lon: -97, lat: 35, magf: null, unit: null, qualifier: null, city: "2 N Moore", county: "Cleveland", st: "OK", source: "Trained Spotter", remark: null, ...extra },
+    });
+    const layer = lsrLayer(
+      [
+        report("HAIL", "2024-05-06T23:10:00Z", { magf: 1.75, unit: "Inch", remark: "Golf ball hail." }),
+        report("TORNADO", "2024-05-06T22:40:00Z"),
+        report("NON-TSTM WND GST", "2024-05-06T22:00:00Z", { magf: 64, unit: "MPH" }),
+      ],
+      "test",
+    );
+    expect(layer.file.items.map((i) => (i.kind === "icon" ? i.index : 0))).toEqual([1, 3]);
+    expect(layer.file.items[1].hover).toMatch(/^Hail 1.75 in · .+\n2 N Moore, Cleveland Co., OK\nSource: Trained Spotter\nGolf ball hail.$/);
+    expect(layer.file.items[0].hover).toMatch(/^Tornado · /);
   });
 });

@@ -63,6 +63,7 @@ import { usePlacefiles } from "./placefiles/usePlacefiles";
 import { MdText, SpcPanel } from "./ui/SpcPanel";
 import { useSpc } from "./spc/useSpc";
 import { OUTLOOK_NAMES, type OutlookKind } from "./spc/spc";
+import { LSR_WINDOW_HOURS } from "./spc/lsr";
 import { UnifiedTimeline } from "./timeline/UnifiedTimeline";
 import { Icon } from "./ui/Icon";
 import { useNearbyStormTracks, useStormTracks } from "./storms/useStormTracks";
@@ -699,7 +700,10 @@ export default function App() {
   useEffect(() => localStorage.setItem("radarpro.spcOutlook", spcOutlook), [spcOutlook]);
   const [showWatches, setShowWatches] = useRememberedFlag("radarpro.showWatches", true);
   const [showMds, setShowMds] = useRememberedFlag("radarpro.showMds", true);
-  const spc = useSpc(spcOutlook, showWatches, showMds, archiveFrameMs);
+  const [showReports, setShowReports] = useRememberedFlag("radarpro.showReports", true);
+  const spc = useSpc(spcOutlook, showWatches, showMds, showReports, archiveFrameMs);
+  // Reports draw over placefiles: spotters often sit right on the reports they file.
+  const overlayPlacefiles = useMemo(() => (spc.reports ? [...placefiles.layers, spc.reports] : placefiles.layers), [spc.reports, placefiles.layers]);
   const [selectedMd, setSelectedMd] = useState<string | null>(null);
   const [placeHover, setPlaceHover] = useState<string | null>(null);
   // Same notification and sound as a covering warning when a storm with a TVS,
@@ -1388,6 +1392,13 @@ export default function App() {
             <input type="checkbox" checked={showStormTracks} onChange={(e) => setShowStormTracks(e.target.checked)} />
             <span>Show NWS storm cells, tracks, TVS, mesocyclones and severe hail</span>
           </label>
+          <label className="check-field">
+            <input type="checkbox" checked={showReports} onChange={(e) => setShowReports(e.target.checked)} />
+            <span>
+              Show NWS storm reports (tornado, funnel, hail, wind, flash flood) from the last {LSR_WINDOW_HOURS} hours{showReports ? ` (${spc.reportCount})` : ""}
+            </span>
+          </label>
+          {showReports && spc.reportsError && <div className="settings-field-status settings-field-status-none">Storm reports failed: {spc.reportsError}</div>}
         </SidebarCategory>
 
         <SidebarCategory
@@ -1672,7 +1683,7 @@ export default function App() {
           myLocation={myLocation.location}
           centerOnMeRequest={centerOnMeRequest}
           stormTracks={showStormTracks || momentCode === "SRV" ? stormTracks.tracks : null}
-          placefiles={placefiles.layers}
+          placefiles={overlayPlacefiles}
           spcLayers={spc.layers}
           onPlaceHover={setPlaceHover}
           selectedStormId={momentCode === "SRV" && !manualStormMotion ? (selectedStorm?.id ?? null) : null}
