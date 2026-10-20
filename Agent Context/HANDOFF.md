@@ -996,6 +996,33 @@ which is only the harness placeholder now.)
 - Sounding fallback with a non-HRRR model loaded assumes the HRRR run 2 h before the valid hour.
 - Verified in Chrome (T, Td, wind on map, geography lines up with the Great Lakes/coast) and the desktop app (RTMA loads; recheck runs clean). A real hour rollover wasn't watched.
 
+## Owner preferences (read before starting)
+Collected from Claude's memory on the old computer (2026-10-20); these override defaults.
+
+**Approvals and questions**
+- Ask before every commit and every push; one approval covers one commit. Exception: when the owner says "commit and push", do both.
+- Before asking to commit, run `/ponytail:ponytail-review` on the change, fix what it finds (or say what was left and why), then ask.
+- Ask one question at a time, then stop and wait. Give decisions as multiple choice with a recommendation.
+- Owner decides fast and prefers working code over perfect design; once a direction is set, just build it.
+
+**How to work**
+- Ponytail mode: the smallest complete change, no features nobody asked for. End replies with what was skipped and any risk.
+- New data source: measure it first (size, speed, CORS, format), then put the real options to the owner before designing. 5.2 and 5.3 both went this way.
+- Test every feature in Chrome and in the desktop app (CDP) before calling it done, and say plainly what was not verified.
+- Update the docs with each feature: README, PRODUCT.md, DESIGN.md, an ADR for data-source or format decisions, plus PLAN.md and this file.
+- The owner lets Claude do the end-of-session handoff and push docs to main when asked; check CI after pushing.
+
+**Product rules**
+- "Time is everything" (the owner chases storms): automatic behaviour over toggles and selection steps; manual override only as a fallback.
+- Every RadarScope Pro Tier 1 and Tier 2 feature must ship before the app is finished (parity table in PLAN.md).
+- Primary use: a storm chaser on a laptop in a vehicle; phones get the fallback layout only. The map stays dominant; nothing hides the radar.
+- US chaser units: °F, kt, miles. Times are 12-hour local.
+- Design follows DESIGN.md: dark theme; #739BD0 (a favourite) only for selection/primary action; #b56cff only for marks the user places; amber only for model time. Set-once options go in the Settings window, keeping the sidebar lean.
+
+**Code rules**
+- Never run prettier or `cargo fmt` under `apps/` (wide lines on purpose); crates are rustfmt-checked in CI.
+- Adding a Tauri plugin: the JS and Rust versions must match or the build fails.
+
 ## START HERE (next session, after 2026-10-20)
 - main is at the docs commit after `7262c3a` (Phase 5.3 RTMA), pushed. Session 10 shipped `b0a292a` (5.2 soundings), `e0ecc5d` (sounding plot colours + docs), `7262c3a` (5.3 RTMA). CI green for `b0a292a` and `e0ecc5d`; `7262c3a` was still running at handoff (check `gh run list`).
 - Next task: Phase 5.4 observed balloon soundings (RAOB, 00Z/12Z) near the view, in the same skew-T/hodograph view as 5.2 (`SoundingView` takes a `Sounding`; add a source). First step, as in 5.2/5.3: measure the data source before designing (candidates: IEM `json/raob.py`, University of Wyoming; check CORS, size and latency), then put the choice to the owner.
