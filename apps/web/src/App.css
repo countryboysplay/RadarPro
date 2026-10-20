@@ -1487,6 +1487,12 @@ body,
   box-shadow: var(--shadow);
 }
 
+/* Placefile hover text: multi-line (spotter name, time, contact). */
+.map-probe-place {
+  white-space: pre-line;
+  font-weight: 400;
+}
+
 .map-probe-tip strong {
   font-weight: 700;
   color: var(--g8);

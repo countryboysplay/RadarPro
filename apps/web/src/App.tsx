@@ -58,6 +58,8 @@ import { MrmsPanel } from "./ui/MrmsPanel";
 import { SettingsPanel } from "./ui/SettingsPanel";
 import { SidebarSection } from "./ui/SidebarSection";
 import { SidebarCategory } from "./ui/SidebarCategory";
+import { PlacefilesPanel } from "./ui/PlacefilesPanel";
+import { usePlacefiles } from "./placefiles/usePlacefiles";
 import { UnifiedTimeline } from "./timeline/UnifiedTimeline";
 import { Icon } from "./ui/Icon";
 import { useNearbyStormTracks, useStormTracks } from "./storms/useStormTracks";
@@ -686,6 +688,8 @@ export default function App() {
   const archiveFrameMs = history.archiveStartMillis !== null ? (history.entries[history.currentIndex]?.startTimeMillis ?? null) : null;
   const stormTracksWanted = (showStormTracks || momentCode === "SRV") && (history.archiveStartMillis === null || archiveFrameMs !== null);
   const stormTracks = useStormTracks(icao, stormTracksWanted, archiveFrameMs);
+  const placefiles = usePlacefiles();
+  const [placeHover, setPlaceHover] = useState<string | null>(null);
   // Same notification and sound as a covering warning when a storm with a TVS,
   // mesocyclone or severe hail is within ~15 mi of you, or its forecast track
   // brings it there within 30 min. Uses the radars nearest you, whatever site
@@ -926,6 +930,7 @@ export default function App() {
   const handleCursorLeave = useCallback(() => {
     setCursor(null);
     setProbe(null);
+    setPlaceHover(null);
   }, []);
 
   // Color-table editor plumbing: `activeColorTableJson` reads current wasm
@@ -1364,6 +1369,10 @@ export default function App() {
           </label>
         </SidebarCategory>
 
+        <SidebarCategory title="Placefiles" summary={`${placefiles.layers.length} on`}>
+          <PlacefilesPanel entries={placefiles.entries} onChange={placefiles.setEntries} status={placefiles.status} />
+        </SidebarCategory>
+
         <SidebarCategory title="My location" summary={summarizeMyLocation(showMyLocation, myLocation, coveringMe.length)}>
           <label className="check-field">
             <input type="checkbox" checked={showMyLocation} onChange={(e) => setShowMyLocation(e.target.checked)} />
@@ -1622,6 +1631,8 @@ export default function App() {
           myLocation={myLocation.location}
           centerOnMeRequest={centerOnMeRequest}
           stormTracks={showStormTracks || momentCode === "SRV" ? stormTracks.tracks : null}
+          placefiles={placefiles.layers}
+          onPlaceHover={setPlaceHover}
           selectedStormId={momentCode === "SRV" && !manualStormMotion ? (selectedStorm?.id ?? null) : null}
           forecastCanvasRef={forecastCanvasRef}
           forecastOnMap={forecastOnMap}
@@ -1640,10 +1651,11 @@ export default function App() {
         )}
 
         <RightPanel sections={rightPanelSections} />
-        {cursor && momentCode && (
+        {cursor && (momentCode || placeHover) && (
           <div className="map-probe-tip" style={{ left: cursor.x + 14, top: cursor.y + 14 }} aria-hidden="true">
-            <strong>{probeText(probe)}</strong>
-            {probe && ` · ${probe.slantRangeKm.toFixed(0)} km ${probe.azimuthDeg.toFixed(0).padStart(3, "0")}°`}
+            {momentCode && <strong>{probeText(probe)}</strong>}
+            {momentCode && probe && ` · ${probe.slantRangeKm.toFixed(0)} km ${probe.azimuthDeg.toFixed(0).padStart(3, "0")}°`}
+            {placeHover && <div className="map-probe-place">{placeHover}</div>}
           </div>
         )}
 

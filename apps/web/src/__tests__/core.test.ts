@@ -6,6 +6,7 @@ import { closestApproach, stormAlerts } from "../storms/nearbyHazards";
 import { placeLabel } from "../storms/labelPlacement";
 import type { StormCell, StormTracks } from "../storms/nst";
 import { parseObjectKey } from "../nexrad/keys";
+import { parsePlacefile } from "../placefiles/placefile";
 import { clampHistoryLimit, historyReducer, initialState } from "../scan/useScanHistory";
 import { alertNearSite, pointInAlertGeometry } from "../alerts/geometryHitTest";
 import { coveringAlerts } from "../location/useMyLocation";
@@ -345,5 +346,58 @@ describe("placeLabel", () => {
     const overlapsEarlier = box.x < earlier.x + earlier.w && earlier.x < box.x + box.w && box.y < earlier.y + earlier.h && earlier.y < box.y + box.h;
     expect(overlapsEarlier).toBe(false);
     expect(Math.hypot(box.x + box.w / 2 - 100, box.y + box.h / 2 - 70)).toBeGreaterThan(20);
+  });
+});
+
+describe("parsePlacefile", () => {
+  it("reads a Spotter Network object with icon, text and hover", () => {
+    const pf = parsePlacefile(
+      [
+        "Refresh: 1",
+        "Title: Spotter Network Positions",
+        'Font: 1, 11, 0, "Courier New"',
+        'IconFile: 1, 30, 30, 15, 15, "/iconsheets/Spotternet_096.png"',
+        "Object: 41.5,-88.25",
+        'Icon: 0,0,000,1,6,"Jane Doe\\n2026-10-20 14:54:31 UTC"',
+        'Text: 15, 10, 1, "Jane, Doe"',
+        "End:",
+      ].join("\n"),
+      "https://www.spotternetwork.org/feeds/gr.txt",
+    );
+    expect(pf.title).toBe("Spotter Network Positions");
+    expect(pf.refreshSeconds).toBe(60);
+    expect(pf.iconFiles.get(1)?.url).toBe("https://www.spotternetwork.org/iconsheets/Spotternet_096.png");
+    expect(pf.items[0]).toMatchObject({ kind: "icon", anchor: [-88.25, 41.5], at: [0, 0], file: 1, index: 6, hover: "Jane Doe\n2026-10-20 14:54:31 UTC" });
+    expect(pf.items[1]).toMatchObject({ kind: "text", anchor: [-88.25, 41.5], at: [15, 10], text: "Jane, Doe" });
+  });
+
+  it("reads lines, polygon contours, colors and thresholds, and skips triangles", () => {
+    const pf = parsePlacefile(
+      [
+        "; comment",
+        "Threshold: 50",
+        "Color: 255 0 0",
+        'Line: 2, 0, "Track"',
+        "35, -97",
+        "36, -98",
+        "End:",
+        "Triangles:",
+        "1, 2",
+        "3, 4",
+        "5, 6",
+        "End:",
+        "Polygon:",
+        "30, -90, 0, 255, 0, 128",
+        "31, -90",
+        "31, -91",
+        "30, -90",
+        "End:",
+        "Place: 40, -100, Some Town",
+      ].join("\n"),
+    );
+    expect(pf.items.map((i) => i.kind)).toEqual(["line", "polygon", "text"]);
+    expect(pf.items[0]).toMatchObject({ points: [[-97, 35], [-98, 36]], width: 2, color: "rgba(255, 0, 0, 1)", threshold: 50, hover: "Track", anchor: null });
+    expect(pf.items[1]).toMatchObject({ contours: [[[-90, 30], [-90, 31], [-91, 31], [-90, 30]]], color: "rgba(0, 255, 0, 0.5019607843137255)" });
+    expect(pf.items[2]).toMatchObject({ kind: "text", at: [-100, 40], text: "Some Town" });
   });
 });

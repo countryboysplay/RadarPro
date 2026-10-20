@@ -148,6 +148,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_diagnostics,
             nws_products::nws_radar_product,
+            nws_products::fetch_url,
             rainbow::rainbow_get_snapshot,
             rainbow::rainbow_probe_tile,
             rainbow::rainbow_fetch_tile,

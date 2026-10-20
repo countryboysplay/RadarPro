@@ -14,6 +14,8 @@ import { placeLabel, type Obstacles, type Pt } from "../storms/labelPlacement";
 import type { MrmsViewport } from "../mrms/types";
 import type { RadarView } from "../radar/useRadarRenderer";
 import { isDesktop } from "../platform/desktop";
+import { drawPlacefiles, placeHoverAt } from "../placefiles/draw";
+import type { PlacefileLayer } from "../placefiles/usePlacefiles";
 import { registerDesktopRainbowProtocol } from "../rainbow/desktopTiles";
 import {
   FORECAST_CENTER_LAT,
@@ -591,6 +593,8 @@ function siteAtPoint(map: MapLibreMap, px: { x: number; y: number }): RadarSite 
   return best;
 }
 
+const NO_PLACEFILES: PlacefileLayer[] = [];
+
 const SITES_GEOJSON = {
   type: "FeatureCollection" as const,
   features: RADAR_SITES.map((s) => ({
@@ -719,6 +723,10 @@ export interface MapViewProps {
   /** Storm cell SRV takes its motion from, ringed on the map. Clicking any
    * storm centers the map on it, which is how SRV picks its storm. */
   selectedStormId?: string | null;
+  /** Placefiles switched on, drawn over warnings and under storm tracks. */
+  placefiles?: PlacefileLayer[];
+  /** Hover text of the placefile item under the cursor, or null. */
+  onPlaceHover?: (text: string | null) => void;
   /** The cross-section leg, drawn on the map in course ink. */
   course?: CourseLeg | null;
   /** The painted model-field canvas, drawn on the map (in place of the radar) while `forecastOnMap`. */
@@ -779,6 +787,8 @@ export function MapView({
   centerOnMeRequest = 0,
   stormTracks = null,
   selectedStormId = null,
+  placefiles = NO_PLACEFILES,
+  onPlaceHover,
   forecastCanvasRef,
   forecastOnMap = false,
   forecastKey = "",
@@ -810,6 +820,10 @@ export function MapView({
   stormTracksRef.current = stormTracks;
   const selectedStormIdRef = useRef<string | null>(selectedStormId);
   selectedStormIdRef.current = selectedStormId;
+  const placefilesRef = useRef(placefiles);
+  placefilesRef.current = placefiles;
+  const onPlaceHoverRef = useRef(onPlaceHover);
+  onPlaceHoverRef.current = onPlaceHover;
   const appliedRainbowUrlRef = useRef<string | null>(null);
   const onMrmsViewportChangeRef = useRef(onMrmsViewportChange);
   onMrmsViewportChangeRef.current = onMrmsViewportChange;
@@ -963,6 +977,7 @@ export function MapView({
           alertsCanvas.style.height = mapCanvas.style.height;
         }
         drawAlerts(map, alertsCanvas, alertsRef.current, selectedAlertKeyRef.current);
+        drawPlacefiles(map, alertsCanvas, placefilesRef.current);
         drawStormTracks(map, alertsCanvas, stormTracksRef.current, selectedStormIdRef.current);
         drawMyLocation(map, alertsCanvas, myLocationRef.current);
       }
@@ -1063,9 +1078,10 @@ export function MapView({
     const alertsCanvas = alertsCanvasRef.current;
     if (!map || !alertsCanvas) return;
     drawAlerts(map, alertsCanvas, alerts, selectedAlertKey);
+    drawPlacefiles(map, alertsCanvas, placefiles);
     drawStormTracks(map, alertsCanvas, stormTracks, selectedStormId);
     drawMyLocation(map, alertsCanvas, myLocation);
-  }, [alerts, selectedAlertKey, myLocation, stormTracks, selectedStormId]);
+  }, [alerts, selectedAlertKey, myLocation, stormTracks, selectedStormId, placefiles]);
 
   // Bring a newly selected warning into view (a list click may pick one far
   // off screen); left alone when it is already fully visible.
@@ -1146,6 +1162,8 @@ export function MapView({
         map!.getCanvas().style.cursor = "crosshair";
         return;
       }
+      // Hover text only; placefile items aren't clickable, so no pointer cursor.
+      onPlaceHoverRef.current?.(placeHoverAt(map!, placefilesRef.current, e.point));
       const hit =
         stormAtPoint(map!, stormTracksRef.current, e.point) ||
         alertAtPoint(e.lngLat) ||

@@ -4,6 +4,7 @@ import { copyFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
+import type { IncomingMessage, ServerResponse } from "node:http";
 
 const require = createRequire(import.meta.url);
 
@@ -86,8 +87,37 @@ const tgftpProxy = {
   },
 };
 
+/**
+ * `/fetch-url?url=...`: relays any http(s) URL for placefiles, whose servers
+ * send no CORS headers (the desktop app uses its `fetch_url` command).
+ */
+function fetchUrlProxyPlugin(): Plugin {
+  const relay = async (req: IncomingMessage, res: ServerResponse, next: () => void) => {
+    if (!req.url?.startsWith("/fetch-url?")) return next();
+    const target = new URL(req.url, "http://localhost").searchParams.get("url") ?? "";
+    if (!/^https?:\/\//.test(target)) {
+      res.statusCode = 400;
+      return res.end("only http and https URLs");
+    }
+    try {
+      const upstream = await fetch(target, { signal: AbortSignal.timeout(20_000) });
+      res.statusCode = upstream.status;
+      res.setHeader("content-type", upstream.headers.get("content-type") ?? "application/octet-stream");
+      res.end(Buffer.from(await upstream.arrayBuffer()));
+    } catch {
+      res.statusCode = 502;
+      res.end("could not reach the server");
+    }
+  };
+  return {
+    name: "fetch-url-proxy",
+    configureServer: (server) => void server.middlewares.use(relay),
+    configurePreviewServer: (server) => void server.middlewares.use(relay),
+  };
+}
+
 export default defineConfig({
-  plugins: [react(), copyMapLibreWorkerPlugin()],
+  plugins: [react(), copyMapLibreWorkerPlugin(), fetchUrlProxyPlugin()],
   clearScreen: false,
   server: {
     port: 5173,
