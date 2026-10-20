@@ -13,7 +13,7 @@ preserved end to end rather than smoothed away for looks.
 
 ## Status
 
-Working desktop (Windows, Tauri) and web workstation, through stage S11 and roadmap Phases 0-4:
+Working desktop (Windows, Tauri) and web workstation, through stage S11, roadmap Phases 0-4 and Phase 5.1:
 
 - **Live NEXRAD Level II** for ~160 WSR-88D sites, from the real-time
   chunk feed (the newest scan fills in tilt by tilt within seconds; falls
@@ -42,6 +42,10 @@ Working desktop (Windows, Tauri) and web workstation, through stage S11 and road
 - **Model forecasts** (GEFS ensemble, HRRR): temperature, dewpoint,
   humidity, wind components, gusts, sea-level pressure, cloud cover (in the
   Forecast panel).
+- **Severe-weather model fields** (HRRR, hourly to +18 h, on the map past
+  NOW with a colour key): surface-based and mixed-layer CAPE, 0-1 and 0-3 km
+  storm-relative helicity, 0-6 km bulk shear (kt), LCL height, and the
+  fixed-layer significant tornado parameter (STP).
 - **NWS alerts**, live polygons with lifecycle tracking and hazard tags
   (tornado detection, damage threat, hail size, wind gust); archived scans
   show the warnings and special weather statements in effect at that time.

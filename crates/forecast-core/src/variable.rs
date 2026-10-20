@@ -9,14 +9,13 @@
 //! provider-native variable/level name and unit alongside this canonical
 //! identity, so nothing is discarded at the provider boundary.
 //!
-//! Per the S08 stage file, this includes every named canonical variable
-//! ("temperature_2m, dewpoint_2m, wind_u_10m, wind_v_10m, wind_gust, MSLP,
-//! precipitation_1h, cloud_cover, geopotential_height, relative_humidity")
-//! even though, as of this stage, only `Temperature2m` is actually decoded
-//! by any provider (`provider-gefs` and `provider-hrrr` both still decode
-//! only 2m temperature, matching S07's own "avoid premature abstractions"
-//! rule) -- a future stage adding a second decoded variable to either
-//! provider needs no change to this enum.
+//! It started (S08) with the stage file's named variables; simulated
+//! reflectivity and the HRRR severe-weather fields (CAPE, helicity, shear,
+//! LCL, STP; Phase 5.1) were added since. Which provider decodes which is
+//! each provider's `decode::idx_names`; `Precipitation1h` and
+//! `GeopotentialHeight` are named here but not decoded by any provider yet.
+//! Derived variables (shear, STP) are computed by the provider from several
+//! messages (`provider-hrrr::decode::derive`).
 
 /// A forecast variable RadarPro can name canonically, independent of which
 /// provider (or GRIB2 message, or future non-GRIB2 source) actually

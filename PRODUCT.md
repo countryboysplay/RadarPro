@@ -57,6 +57,9 @@ switching between apps.
   you and severe storms nearby.
 - Forecasts (GEFS ensemble, HRRR): temperature, dewpoint, humidity, wind
   components, gusts, sea-level pressure, cloud cover.
+- HRRR severe-weather fields on the map: SBCAPE, MLCAPE, 0-1/0-3 km SRH,
+  0-6 km shear, LCL height, fixed-layer STP. Not yet: point soundings
+  (skew-T/hodograph), RTMA surface analysis, observed balloon soundings.
 - NWS alert polygons with lifecycle tracking and hazard tags; archived scans
   show the warnings in effect then; Rainbow Weather tiles, nowcast
   and point forecast (needs an API key).
