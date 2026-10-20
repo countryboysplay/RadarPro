@@ -50,7 +50,7 @@ From the owner's screenshot of RadarScope Pro's subscription screen
 | GOES satellite products | ❌ | Phase 8.1 |
 | METAR surface observations | ❌ | Phase 8.2 |
 | Archived NWS bulletins | ✅ warnings, advisories, SPS, watches, MDs and storm reports in effect at the archived scan, with full text (IEM) | done |
-| Atmospheric soundings | ◐ HRRR forecast skew-T + hodograph (5.2) | observed RAOB is 5.4 |
+| Atmospheric soundings | ✅ HRRR forecast (5.2) and observed RAOB (5.4) skew-T + hodograph | done |
 | Shear and hail contours | ❌ (MRMS hail is a grid only) | Phase 9 |
 | Detailed road layer | ◐ basemap highways and main roads | Phase 8.4 |
 | Satellite map layer | ❌ | Phase 8.3 |
@@ -87,9 +87,7 @@ KDP computed on the device.
    insect disc).
 5. ~~**Update HANDOFF.md** with the 2026-10-20 work~~: done (end of the
    sixth session).
-6. **GPU pixel test crash** (ACCESS_VIOLATION, also on old code). Retest
-   with the laptop screen only, without the DisplayLink dock. If it passes,
-   note it in HANDOFF and move on.
+6. ~~**GPU pixel test crash**~~ Gone on the new PC (RTX 5070, 2026-10-20): radar-render --lib 51, forecast-core --lib 41, provider-hrrr cross_provider_render 1, all pass.
 
 ## Phase 1: chase safety and reliability (M), done 2026-10-20
 
@@ -228,6 +226,8 @@ per layer (topmost per 4 px cell): 20k clustered bolts draw ~5-15 ms.
 5.1 done 2026-10-20 (`f9ade59`): SBCAPE, MLCAPE, SRH 0-1/0-3, 0-6 km shear (kt), LCL, fixed-layer STP on the map with a colour key.
 
 5.3 done 2026-10-20 (`7262c3a`): RTMA as a third model in the Forecast drawer; T/Td (°F), wind speed and gust (kt) on the map, hourly in-place refresh.
+
+5.4 done 2026-10-20: observed balloon soundings, "Observed" tab in the sounding panel, nearest site, IEM (ADR-0017).
 
 5.2 done 2026-10-20 (`b0a292a`): point sounding (Course block, "Sounding at a point") in the right panel: skew-T, hodograph, SBCAPE, LCL. Data sources and fallback in ADR-0016.
 

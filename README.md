@@ -54,6 +54,9 @@ Working desktop (Windows, Tauri) and web workstation, through stage S11, roadmap
 - **HRRR point soundings**: click the map for a skew-T, hodograph, SBCAPE
   and LCL at the forecast hour shown (39 levels via Open-Meteo, or a coarse
   5-level NOAA column when Open-Meteo is slow; see ADR-0016).
+- **Observed balloon soundings**: the same click, "Observed" tab: the
+  nearest RAOB site's latest 00Z/12Z launch (before the scan in archive
+  mode), from IEM; see ADR-0017.
 - **NWS alerts**, live polygons with lifecycle tracking and hazard tags
   (tornado detection, damage threat, hail size, wind gust); archived scans
   show the warnings and special weather statements in effect at that time.

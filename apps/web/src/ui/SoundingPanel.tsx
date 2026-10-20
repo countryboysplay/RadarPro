@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { fetchSounding, surfaceParcel, type Sounding, type SoundingLevel } from "../forecast/sounding";
+import { fetchRaobSounding, fetchSounding, surfaceParcel, type Sounding, type SoundingLevel } from "../forecast/sounding";
 import { celsiusToFahrenheit } from "../rainbow/units";
 import type { LatLonPoint } from "./CrossSectionPanel";
 
@@ -10,7 +10,7 @@ export interface SoundingPanelProps {
   onClear: () => void;
 }
 
-/** Rail controls: arm a map click for an HRRR sounding. The plot is `SoundingView`, in the right panel. */
+/** Rail controls: arm a map click for a sounding (HRRR or observed). The plot is `SoundingView`, in the right panel. */
 export function SoundingPanel({ point, picking, onStartPick, onClear }: SoundingPanelProps) {
   return (
     <div className="sounding-panel">
@@ -24,7 +24,7 @@ export function SoundingPanel({ point, picking, onStartPick, onClear }: Sounding
           </button>
         )}
       </div>
-      {picking && <div className="cross-section-hint">Click the map for an HRRR sounding</div>}
+      {picking && <div className="cross-section-hint">Click the map for a sounding</div>}
     </div>
   );
 }
@@ -34,16 +34,23 @@ export interface SoundingViewProps {
   validMs: number;
   /** The HRRR run for the NOAA fallback (the loaded one, or an assumed recent one); null for none. */
   hrrrRunInitMs: number | null;
+  /** Observed tab: the latest balloon launch at or before this (the archived scan, else now). */
+  observedAtMs: number;
 }
 
-/** Skew-T and hodograph of the HRRR column at `point`, valid `validMs`. */
-export function SoundingView({ point, validMs, hrrrRunInitMs }: SoundingViewProps) {
+type Kind = "hrrr" | "observed";
+
+/** Skew-T and hodograph at `point`: the HRRR column valid `validMs`, or the nearest observed balloon sounding. */
+export function SoundingView({ point, validMs, hrrrRunInitMs, observedAtMs }: SoundingViewProps) {
+  const [kind, setKind] = useState<Kind>("hrrr");
   const [state, setState] = useState<{ sounding: Sounding | null; error: string | null }>({ sounding: null, error: null });
   // Finished soundings by point and hour, so stepping or looping the forecast doesn't refetch them.
   const cache = useRef(new Map<string, Sounding>());
+  // Balloons launch twice a day: key observed soundings by the 12-h slot, not the minute.
+  const observedSlot = Math.floor(observedAtMs / 43_200_000);
 
   useEffect(() => {
-    const key = `${point.lat}|${point.lon}|${validMs}`;
+    const key = kind === "hrrr" ? `${point.lat}|${point.lon}|${validMs}` : `obs|${point.lat}|${point.lon}|${observedSlot}`;
     const cached = cache.current.get(key);
     if (cached) {
       setState({ sounding: cached, error: null });
@@ -51,20 +58,34 @@ export function SoundingView({ point, validMs, hrrrRunInitMs }: SoundingViewProp
     }
     const controller = new AbortController();
     setState({ sounding: null, error: null });
-    fetchSounding(point.lat, point.lon, validMs, hrrrRunInitMs, controller.signal).then(
+    const request =
+      kind === "hrrr"
+        ? fetchSounding(point.lat, point.lon, validMs, hrrrRunInitMs, controller.signal)
+        : fetchRaobSounding(point.lat, point.lon, (observedSlot + 1) * 43_200_000 - 1);
+    request.then(
       (sounding) => {
         cache.current.set(key, sounding);
-        setState({ sounding, error: null });
+        if (!controller.signal.aborted) setState({ sounding, error: null });
       },
       (err) => !controller.signal.aborted && setState({ sounding: null, error: err instanceof Error ? err.message : String(err) }),
     );
     return () => controller.abort();
-  }, [point.lat, point.lon, validMs, hrrrRunInitMs]);
+  }, [kind, point.lat, point.lon, validMs, hrrrRunInitMs, observedSlot]);
 
-  const valid = new Date(validMs).toISOString().slice(0, 16).replace("T", " ") + "Z";
+  const tabs = (
+    <div className="sounding-tabs" role="group" aria-label="Sounding source">
+      {(["hrrr", "observed"] as const).map((k) => (
+        <button key={k} type="button" aria-pressed={kind === k} onClick={() => setKind(k)}>
+          {k === "hrrr" ? "HRRR" : "Observed"}
+        </button>
+      ))}
+    </div>
+  );
   const { sounding, error } = state;
-  if (error) return <div className="probe-empty">No sounding: {error}</div>;
-  if (!sounding) return <div className="probe-empty">Loading HRRR sounding for {valid}…</div>;
+  const shownMs = kind === "hrrr" ? validMs : (sounding?.validMs ?? observedAtMs);
+  const valid = new Date(shownMs).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true });
+  if (error) return <div className="sounding-view">{tabs}<div className="probe-empty">No sounding: {error}</div></div>;
+  if (!sounding) return <div className="sounding-view">{tabs}<div className="probe-empty">Loading {kind === "hrrr" ? `HRRR sounding for ${valid}` : "nearest balloon sounding"}…</div></div>;
 
   const parcel = surfaceParcel(sounding.levels);
   const sfc = sounding.levels[0];
@@ -72,8 +93,17 @@ export function SoundingView({ point, validMs, hrrrRunInitMs }: SoundingViewProp
   const cape = sounding.coarse ? sounding.modelCape : parcel.cape;
   return (
     <div className="sounding-view">
+      {tabs}
       <div className="sounding-meta">
-        <span className="sounding-valid">Valid {valid}</span> · {point.lat.toFixed(2)}, {point.lon.toFixed(2)}
+        {sounding.site ? (
+          <>
+            <span className="sounding-observed">{sounding.site}</span> · launched {valid}
+          </>
+        ) : (
+          <>
+            <span className="sounding-valid">Valid {valid}</span> · {point.lat.toFixed(2)}, {point.lon.toFixed(2)}
+          </>
+        )}
       </div>
       <div className="sounding-plots">
         <SkewT levels={sounding.levels} parcel={parcel.path} />
@@ -142,7 +172,7 @@ function SkewT({ levels, parcel }: { levels: SoundingLevel[]; parcel: { p: numbe
         </g>
       ))}
       <polyline points={polyline(parcel)} fill="none" stroke={PLOT.parcel} strokeDasharray="4 3" />
-      <polyline points={polyline(levels.map((l) => ({ p: l.p, t: l.td })))} fill="none" stroke={PLOT.td} strokeWidth={2} />
+      <polyline points={polyline(levels.filter((l) => !Number.isNaN(l.td)).map((l) => ({ p: l.p, t: l.td })))} fill="none" stroke={PLOT.td} strokeWidth={2} />
       <polyline points={polyline(levels.map((l) => ({ p: l.p, t: l.t })))} fill="none" stroke={PLOT.t} strokeWidth={2} />
     </svg>
   );

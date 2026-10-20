@@ -1162,7 +1162,7 @@ export default function App() {
   if (soundingPoint) {
     rightPanelSections.push({
       key: "sounding",
-      title: "HRRR sounding",
+      title: "Sounding",
       onDismiss: () => setSoundingPoint(null),
       children: (
         <SoundingView
@@ -1170,6 +1170,7 @@ export default function App() {
           validMs={soundingValidMs}
           // With another model loaded, assume the HRRR run from 2 h before: by then its early hours are always out.
           hrrrRunInitMs={forecast.providerId === "hrrr" && forecast.run ? Date.parse(forecast.run.initTime) : Math.floor(soundingValidMs / 3_600_000) * 3_600_000 - 2 * 3_600_000}
+          observedAtMs={archiveFrameMs ?? Date.now()}
         />
       ),
     });

@@ -531,6 +531,24 @@ body,
   color: var(--forecast);
 }
 
+.sounding-observed {
+  font-weight: 700;
+  color: var(--g8);
+}
+
+.sounding-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.sounding-tabs button[aria-pressed="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
 .sounding-plots {
   display: grid;
   grid-template-columns: 3fr 2fr;

@@ -17,6 +17,7 @@ import { formatTags } from "../alerts/types";
 import { clampHistoryLimit, historyReducer, initialState } from "../scan/useScanHistory";
 import { alertNearSite, pointInAlertGeometry } from "../alerts/geometryHitTest";
 import { coveringAlerts } from "../location/useMyLocation";
+import { raobLevels } from "../forecast/sounding";
 import { parseColorTableJson } from "../colorTables/colorTableJson";
 import { fetchOpenMeteoSounding, surfaceParcel } from "../forecast/sounding";
 import { leadHourOptions, variableAvailable, variableOnMap } from "../forecast/useForecastProvider";
@@ -691,5 +692,20 @@ describe("forecast variables per model", () => {
     expect(variableOnMap("temperature_2m", "gefs")).toBe(false);
     expect(variableOnMap("temperature_2m", "hrrr")).toBe(true);
     expect(variableOnMap("mslp", "hrrr")).toBe(false);
+  });
+});
+
+describe("raobLevels", () => {
+  it("starts at the first full level and interpolates missing winds in height", () => {
+    const levels = raobLevels([
+      { pres: 1000, hght: 202, tmpc: null, dwpc: null, drct: null, sknt: null },
+      { pres: 983, hght: 357, tmpc: 10.8, dwpc: 8.7, drct: 180, sknt: 0 },
+      { pres: 970, hght: 457, tmpc: 16, dwpc: 6, drct: null, sknt: null },
+      { pres: 950, hght: 557, tmpc: 17, dwpc: null, drct: 180, sknt: 20 },
+    ]);
+    expect(levels.map((l) => l.p)).toEqual([983, 970, 950]);
+    expect(levels[1].v).toBeCloseTo(10);
+    expect(levels[1].u).toBeCloseTo(0);
+    expect(Number.isNaN(levels[2].td)).toBe(true);
   });
 });

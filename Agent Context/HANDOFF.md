@@ -996,6 +996,11 @@ which is only the harness placeholder now.)
 - Sounding fallback with a non-HRRR model loaded assumes the HRRR run 2 h before the valid hour.
 - Verified in Chrome (T, Td, wind on map, geography lines up with the Great Lakes/coast) and the desktop app (RTMA loads; recheck runs clean). A real hour rollover wasn't watched.
 
+## 2026-10-20 — Phase 5.4 observed balloon soundings (new PC)
+- Repo freshly cloned to `D:\RadarPro` on a new PC with an **RTX 5070**; `npm ci` in `apps/web` and `apps/desktop` needed after a clone. The old GPU crashes are gone: `radar-render --lib` 51, `forecast-core --lib` 41, `provider-hrrr --test cross_provider_render` 1, all pass (PLAN Phase 0.6 closed). Headless Chrome (`--headless=new --enable-unsafe-webgpu`) has WebGPU here, so `apps/desktop/scripts/cdp.mjs` can drive a headless page on port 9222 with no window: the owner games while Claude works, so never pop or focus windows (tauri dev opens one).
+- Owner chose IEM (ADR-0017) and "same click, 2 tabs". `fetchRaobSounding` / `raobLevels` in `forecast/sounding.ts`: one all-sites `raob.py?ts=` per 00Z/12Z (cached unless under 6 h old), sites from `RAOB.geojson`, nearest usable profile, steps back up to 2 days. `SoundingView` has an HRRR | Observed switch; Observed takes `observedAtMs` (archive frame, else now). The panel is titled "Sounding" now, and its times are 12-hour local (they were UTC "Z").
+- Verified in headless Chrome: live KTLX click -> "KOUN Norman OK · 47 mi W · launched Oct 20, 7:00 AM", surface 51/48 °F matching the raw IEM row, skew-T + hodograph drawn; archive 2024-05-06 23Z -> KOUN 12Z (105 levels); HRRR tab still loads via Open-Meteo. Not verified: the desktop app (would open a window), and specials (18Z), which aren't looked for.
+
 ## Owner preferences (read before starting)
 Collected from Claude's memory on the old computer (2026-10-20); these override defaults.
 
@@ -1025,7 +1030,7 @@ Collected from Claude's memory on the old computer (2026-10-20); these override 
 
 ## START HERE (next session, after 2026-10-20)
 - main is at the docs commit after `7262c3a` (Phase 5.3 RTMA), pushed. Session 10 shipped `b0a292a` (5.2 soundings), `e0ecc5d` (sounding plot colours + docs), `7262c3a` (5.3 RTMA). CI green for `b0a292a` and `e0ecc5d`; `7262c3a` was still running at handoff (check `gh run list`).
-- Next task: Phase 5.4 observed balloon soundings (RAOB, 00Z/12Z) near the view, in the same skew-T/hodograph view as 5.2 (`SoundingView` takes a `Sounding`; add a source). First step, as in 5.2/5.3: measure the data source before designing (candidates: IEM `json/raob.py`, University of Wyoming; check CORS, size and latency), then put the choice to the owner.
+- Next task: Phase 6 (export: PNG image, then loop GIF/MP4) per PLAN.md. Done since: Phase 5.4 observed balloon soundings (RAOB, 00Z/12Z) near the view, in the same skew-T/hodograph view as 5.2 (`SoundingView` takes a `Sounding`; add a source). First step, as in 5.2/5.3: measure the data source before designing (candidates: IEM `json/raob.py`, University of Wyoming; check CORS, size and latency), then put the choice to the owner.
 - Still to see live: an RTMA hour rollover swapping in place (recheck every 120 s in `useForecastProvider`); HRRR temperature/dewpoint on the map.
 - Known limits: Open-Meteo free tier (soundings) was overloaded/429 much of 2026-10-20 and is non-commercial only (ADR-0016); the NOAA fallback needs the desktop app or dev-server relay. STP loop downloads ~190 MB (only on play). The installed desktop app predates 5.2/5.3 (rebuild with `npm run tauri:build`).
 - Browser testing: two Chrome browsers are connected to the extension now; the owner must pick one before browser tools work. The desktop app over CDP needs no pick: start it with `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222 npx tauri dev --config '{"build":{"beforeDevCommand":""}}'` from `apps/desktop`, then `node apps/desktop/scripts/cdp.mjs eval "<js>"` or `node apps/desktop/scripts/cdp.mjs shot out.png`.

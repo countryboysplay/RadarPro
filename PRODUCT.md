@@ -64,7 +64,10 @@ switching between apps.
   NOAA column when Open-Meteo is slow, see ADR-0016).
 - RTMA hourly 2.5 km surface analysis (temperature, dewpoint, wind speed,
   gust) on the map as a third model, refreshed each hour. Surface fields
-  read in °F and kt. Not yet: observed balloon soundings.
+  read in °F and kt.
+- Observed balloon soundings (RAOB): the sounding panel's "Observed" tab
+  shows the nearest launch site's latest 00Z/12Z sounding, or the one before
+  an archived scan (IEM, ADR-0017).
 - NWS alert polygons with lifecycle tracking and hazard tags; archived scans
   show the warnings in effect then; Rainbow Weather tiles, nowcast
   and point forecast (needs an API key).

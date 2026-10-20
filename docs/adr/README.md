@@ -20,3 +20,4 @@ This index lists RadarPro's ADRs in order. See `Agent Context/templates/ADR_TEMP
 | [0014](0014-mrms-grib2-png-unpack-and-local-discipline.md) | MRMS GRIB2 PNG-unpack feature selection, local-use discipline, and missing-value sentinels | Accepted |
 | [0015](0015-glm-lightning-hdf5-pure.md) | GOES GLM lightning: `hdf5-pure` for netCDF4 in the browser, two satellites split at 106 W | Accepted |
 | [0016](0016-hrrr-point-sounding-sources.md) | HRRR point soundings: Open-Meteo first, a 5-level NOMADS crop as fallback | Accepted |
+| [0017](0017-observed-raob-soundings-iem.md) | Observed balloon soundings from IEM, nearest site to the click | Accepted |

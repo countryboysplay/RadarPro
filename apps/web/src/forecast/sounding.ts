@@ -4,6 +4,7 @@
 // NOMADS crop of the HRRR surface file: 5 pressure levels, so labelled coarse.
 import { fetchUrlBytes } from "../placefiles/usePlacefiles";
 import { ensureForecastWasmModuleLoaded, sampleHrrrColumn } from "./wasmModule";
+import { legLengthAndBearing } from "../ui/CrossSectionPanel";
 
 export interface SoundingLevel {
   /** hPa */
@@ -29,6 +30,8 @@ export interface Sounding {
   source: string;
   /** HRRR's own surface CAPE (J/kg), for the coarse column whose 500 mb top would cut the parcel's CAPE short. */
   modelCape: number | null;
+  /** Observed soundings: the launch site and where it is from the click, e.g. "KOUN Norman OK · 47 mi W". */
+  site?: string;
 }
 
 export const OPEN_METEO_TIMEOUT_MS = 8_000;
@@ -133,6 +136,98 @@ export async function fetchSounding(lat: number, lon: number, validMs: number, h
     if (signal.aborted || hrrrRunInitMs === null) throw err;
     return fetchNomadsSounding(lat, lon, hrrrRunInitMs, validMs, signal);
   }
+}
+
+// ---- Observed balloon soundings (Phase 5.4, IEM; CORS-open) ----
+
+const IEM = "https://mesonet.agron.iastate.edu";
+const SYNOPTIC_MS = 12 * 3_600_000;
+
+interface RaobSite {
+  name: string;
+  lat: number;
+  lon: number;
+}
+
+interface IemLevel {
+  pres: number | null;
+  hght: number | null;
+  tmpc: number | null;
+  dwpc: number | null;
+  drct: number | null;
+  sknt: number | null;
+}
+
+let raobSites: Promise<Map<string, RaobSite>> | null = null;
+const raobLaunches = new Map<number, Promise<{ station: string; profile: IemLevel[] }[]>>();
+
+function loadRaobSites(): Promise<Map<string, RaobSite>> {
+  raobSites ??= fetch(`${IEM}/geojson/network/RAOB.geojson`)
+    .then((r) => r.json())
+    .then((body) => {
+      const sites = new Map<string, RaobSite>();
+      for (const f of body.features) {
+        const [lon, lat] = f.geometry.coordinates;
+        sites.set(f.properties.sid, { name: String(f.properties.sname).split(" -- ")[0].replace(/\s+/g, " ").replace(/\/US$/, ""), lat, lon });
+      }
+      return sites;
+    });
+  raobSites.catch(() => (raobSites = null));
+  return raobSites;
+}
+
+/** Every US launch at one synoptic time in one request (~650 KB), cached: one fetch serves any click. */
+function loadRaobLaunches(ms: number): Promise<{ station: string; profile: IemLevel[] }[]> {
+  let launches = raobLaunches.get(ms);
+  if (!launches) {
+    const ts = new Date(ms).toISOString().slice(0, 13).replace(/\D/g, "") + "00";
+    launches = fetch(`${IEM}/json/raob.py?ts=${ts}`).then((r) => r.json()).then((body) => body.profiles ?? []);
+    raobLaunches.set(ms, launches);
+    launches.catch(() => raobLaunches.delete(ms));
+    // Launches keep arriving for hours after the synoptic time, so a recent time isn't kept.
+    if (Date.now() - ms < 6 * 3_600_000) launches.finally(() => raobLaunches.delete(ms)).catch(() => {});
+  }
+  return launches;
+}
+
+/** IEM levels to ours: surface first; winds missing on significant levels are interpolated in height. */
+export function raobLevels(profile: IemLevel[]): SoundingLevel[] {
+  const rows = profile.filter((l) => l.pres !== null && l.hght !== null && l.tmpc !== null);
+  const first = rows.findIndex((l) => l.dwpc !== null && l.drct !== null && l.sknt !== null);
+  if (first < 0) return [];
+  const used = rows.slice(first);
+  const winds = used.filter((l) => l.drct !== null && l.sknt !== null).map((l) => ({ z: l.hght!, ...windToUv(l.sknt!, l.drct!) }));
+  return used.map((l) => {
+    let i = winds.findIndex((w) => w.z >= l.hght!);
+    if (i < 0) i = winds.length - 1;
+    const a = winds[Math.max(0, i - 1)];
+    const b = winds[i];
+    const f = b.z === a.z ? 1 : Math.min(1, Math.max(0, (l.hght! - a.z) / (b.z - a.z)));
+    // Td stops in dry upper air; NaN leaves a gap in the Td line.
+    return { p: l.pres!, z: l.hght!, t: l.tmpc!, td: l.dwpc ?? NaN, u: a.u + f * (b.u - a.u), v: a.v + f * (b.v - a.v) };
+  });
+}
+
+/** The nearest site's latest launch at or before `atMs` (looks back up to 2 days, since a launch can be late or missing). */
+export async function fetchRaobSounding(lat: number, lon: number, atMs: number): Promise<Sounding> {
+  const sites = await loadRaobSites();
+  let ms = Math.floor(atMs / SYNOPTIC_MS) * SYNOPTIC_MS;
+  // ponytail: takes the newest time with any launch in, so right after 00Z/12Z a far site that reported early beats a near one still on its way; prefer a near older launch if that bites.
+  for (let tries = 0; tries < 4; tries++, ms -= SYNOPTIC_MS) {
+    let best: { km: number; sounding: Sounding } | null = null;
+    for (const { station, profile } of await loadRaobLaunches(ms)) {
+      const site = sites.get(station);
+      if (!site) continue;
+      const { km, deg } = legLengthAndBearing({ lat, lon }, site);
+      if (best && km >= best.km) continue;
+      const levels = raobLevels(profile);
+      if (levels.length < 2) continue;
+      const where = `${Math.round(km / 1.609)} mi ${["N", "NE", "E", "SE", "S", "SW", "W", "NW"][Math.round(deg / 45) % 8]}`;
+      best = { km, sounding: { lat: site.lat, lon: site.lon, validMs: ms, levels, coarse: false, source: "Observed balloon sounding via Iowa Environmental Mesonet", modelCape: null, site: `${station} ${site.name} · ${where}` } };
+    }
+    if (best) return best.sounding;
+  }
+  throw new Error("no balloon launches found in the last 2 days");
 }
 
 // ---- Parcel math (surface-based) ----
