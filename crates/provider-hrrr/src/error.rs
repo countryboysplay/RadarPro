@@ -68,8 +68,7 @@ pub enum HrrrError {
 
     #[error(
         "{url}: unsupported Grid Definition Template 3.30 earth shape (WMO Code Table 3.2 value \
-         {shape}) -- this crate only supports shape 6 (spherical, radius 6,371,229.0 m), the \
-         only value real HRRR messages have been empirically observed to use"
+         {shape}) -- only a spherical earth is supported (HRRR uses shape 6, RTMA shape 1)"
     )]
     UnsupportedEarthShape { url: String, shape: u8 },
 

@@ -737,6 +737,8 @@ export interface MapViewProps {
   /** The painted model-field canvas, drawn on the map (in place of the radar) while `forecastOnMap`. */
   forecastCanvasRef?: RefObject<HTMLCanvasElement>;
   forecastOnMap?: boolean;
+  /** 0-1; below 1 for fields with no clear areas, so the basemap labels show through. */
+  forecastOpacity?: number;
   /** Changes whenever the model field is repainted, so the map copy redraws. */
   forecastKey?: string;
   /** Fired on every map `move`/`zoom`/`resize`/`load`, with the map's
@@ -797,6 +799,7 @@ export function MapView({
   onPlaceHover,
   forecastCanvasRef,
   forecastOnMap = false,
+  forecastOpacity = 1,
   forecastKey = "",
 }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -1317,6 +1320,7 @@ export function MapView({
         style={{
           position: "absolute",
           zIndex: 1,
+          opacity: forecastOpacity,
           top: 0,
           left: 0,
           width: "100%",

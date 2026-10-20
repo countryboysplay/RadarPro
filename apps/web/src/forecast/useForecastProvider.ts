@@ -36,26 +36,41 @@ export const FORECAST_HALF_EXTENT_LAT = 20;
 const DISCOVER_LOOKBACK_DAYS = 5;
 
 /** Forecast variables (canonical names, see `forecast-core`'s
- * `ForecastVariable::canonical_name`). `hrrrOnly`: GEFS has no such field.
- * `onMap`: drawn on the map in place of the radar (clear where it is low). */
+ * `ForecastVariable::canonical_name`). `models`: which providers publish it
+ * (absent: GEFS and HRRR). `onMap`: drawn on the map in place of the radar
+ * (clear where it is low); GEFS's coarse global grid stays in the panel.
+ * `opaque`: has no clear areas, so it is drawn see-through to keep the map's labels readable. */
 export const FORECAST_VARIABLES = [
-  { id: "composite_reflectivity", label: "Simulated reflectivity", hrrrOnly: true, onMap: true },
-  { id: "stp", label: "Significant tornado parameter (STP)", hrrrOnly: true, onMap: true },
-  { id: "sbcape", label: "CAPE, surface-based", hrrrOnly: true, onMap: true },
-  { id: "mlcape", label: "CAPE, mixed-layer", hrrrOnly: true, onMap: true },
-  { id: "srh_0_1km", label: "Helicity 0–1 km", hrrrOnly: true, onMap: true },
-  { id: "srh_0_3km", label: "Helicity 0–3 km", hrrrOnly: true, onMap: true },
-  { id: "bulk_shear_0_6km", label: "Bulk shear 0–6 km", hrrrOnly: true, onMap: true },
-  { id: "lcl_height", label: "LCL height (cloud base)", hrrrOnly: true, onMap: true },
-  { id: "temperature_2m", label: "Temperature (2 m)" },
-  { id: "dewpoint_2m", label: "Dewpoint (2 m)" },
+  { id: "composite_reflectivity", label: "Simulated reflectivity", models: ["hrrr"], onMap: true },
+  { id: "stp", label: "Significant tornado parameter (STP)", models: ["hrrr"], onMap: true },
+  { id: "sbcape", label: "CAPE, surface-based", models: ["hrrr"], onMap: true },
+  { id: "mlcape", label: "CAPE, mixed-layer", models: ["hrrr"], onMap: true },
+  { id: "srh_0_1km", label: "Helicity 0–1 km", models: ["hrrr"], onMap: true },
+  { id: "srh_0_3km", label: "Helicity 0–3 km", models: ["hrrr"], onMap: true },
+  { id: "bulk_shear_0_6km", label: "Bulk shear 0–6 km", models: ["hrrr"], onMap: true },
+  { id: "lcl_height", label: "LCL height (cloud base)", models: ["hrrr"], onMap: true },
+  { id: "temperature_2m", label: "Temperature (2 m)", models: ["gefs", "hrrr", "rtma"], onMap: true, opaque: true },
+  { id: "dewpoint_2m", label: "Dewpoint (2 m)", models: ["gefs", "hrrr", "rtma"], onMap: true, opaque: true },
+  { id: "wind_speed_10m", label: "Wind speed (10 m)", models: ["hrrr", "rtma"], onMap: true },
+  { id: "wind_gust", label: "Wind gust", models: ["gefs", "hrrr", "rtma"], onMap: true },
   { id: "relative_humidity", label: "Relative humidity" },
-  { id: "wind_gust", label: "Wind gust" },
-  { id: "wind_u_10m", label: "Wind, east–west (10 m)" },
-  { id: "wind_v_10m", label: "Wind, north–south (10 m)" },
+  { id: "wind_u_10m", label: "Wind, east–west (10 m)", models: ["gefs", "hrrr", "rtma"] },
+  { id: "wind_v_10m", label: "Wind, north–south (10 m)", models: ["gefs", "hrrr", "rtma"] },
   { id: "mslp", label: "Sea-level pressure" },
-  { id: "cloud_cover", label: "Cloud cover" },
+  { id: "cloud_cover", label: "Cloud cover", models: ["gefs", "hrrr", "rtma"] },
 ] as const;
+
+/** Whether `providerId` publishes variable `id`. */
+export function variableAvailable(id: string, providerId: ForecastProviderId | null): boolean {
+  const v = FORECAST_VARIABLES.find((x) => x.id === id);
+  return !!v && providerId !== null && ("models" in v ? (v.models as readonly string[]).includes(providerId) : providerId !== "rtma");
+}
+
+/** Whether `id` is drawn on the map for `providerId` (never GEFS: its 0.5° global grid is too coarse). */
+export function variableOnMap(id: string, providerId: ForecastProviderId | null): boolean {
+  const v = FORECAST_VARIABLES.find((x) => x.id === id);
+  return !!v && "onMap" in v && providerId !== "gefs";
+}
 
 const DEFAULT_VARIABLE = "composite_reflectivity";
 
@@ -65,6 +80,8 @@ const HRRR_LEAD_HOUR_OPTIONS = Array.from({ length: 19 }, (_, h) => h);
 
 /** Selectable forecast lead times (hours) for a provider. */
 export function leadHourOptions(providerId: ForecastProviderId | null): number[] {
+  // RTMA is an analysis: one valid time, no forecast hours.
+  if (providerId === "rtma") return [0];
   return providerId === "hrrr" ? HRRR_LEAD_HOUR_OPTIONS : GEFS_LEAD_HOUR_OPTIONS;
 }
 
@@ -379,7 +396,7 @@ export function useForecastProvider(canvasRef: RefObject<HTMLCanvasElement>) {
       freeHandle();
       framesRef.current.clear();
       // Discovery only guarantees +0h is out for HRRR's newest run; later hours publish over the next hour.
-      const firstLead = providerId === "hrrr" ? 0 : DEFAULT_LEAD_HOURS;
+      const firstLead = providerId === "gefs" ? DEFAULT_LEAD_HOURS : 0;
       setState((s) => ({
         providerId,
         phase: "loading-module",
@@ -388,8 +405,8 @@ export function useForecastProvider(canvasRef: RefObject<HTMLCanvasElement>) {
         run: null,
         grid: null,
         leadHours: firstLead,
-        // GEFS has no simulated reflectivity; fall back to temperature there.
-        variable: providerId !== "hrrr" && FORECAST_VARIABLES.some((v) => v.id === s.variable && "hrrrOnly" in v) ? "temperature_2m" : s.variable,
+        // E.g. GEFS and RTMA have no simulated reflectivity; fall back to temperature there.
+        variable: variableAvailable(s.variable, providerId) ? s.variable : "temperature_2m",
         ensemble: null,
         cachedLeads: [],
         publishedLeads: null,
@@ -477,19 +494,35 @@ export function useForecastProvider(canvasRef: RefObject<HTMLCanvasElement>) {
     const handle = handleRef.current;
     if (!handle || state.run === null) return;
     const generation = generationRef.current;
+    const initTime = state.run.initTime;
+    // RTMA is "now": pick up each new hourly analysis in place, without dropping back to radar.
+    const refreshAnalysis = async () => {
+      const job = queueRef.current.then(() => withTimeout(handle.discoverLatestRun(DISCOVER_LOOKBACK_DAYS), "discoverLatestRun"));
+      queueRef.current = job.catch(() => undefined);
+      const runJson = (await job) as string;
+      const run = JSON.parse(runJson) as ForecastRunMetadata;
+      if (generation !== generationRef.current || run.initTime === initTime) return;
+      framesRef.current.clear();
+      const { grid, imageData } = await renderFrame(handle, variableRef.current, 0, null);
+      if (generation !== generationRef.current) return;
+      paint(imageData);
+      setState((s) => ({ ...s, run, grid, cachedLeads: cachedLeadsFor(variableRef.current, null) }));
+    };
     const check = () =>
-      queueRef.current
-        .then(() => handle.publishedLeadHours() as Promise<string>)
-        .then((json) => {
-          if (generation === generationRef.current) {
-            setState((s) => ({ ...s, publishedLeads: JSON.parse(json) as number[] | null }));
-          }
-        })
-        .catch((err) => console.warn(`[forecast] published-hours check failed: ${errMessage(err)}`));
-    void check();
+      (state.providerId === "rtma"
+        ? refreshAnalysis()
+        : queueRef.current
+            .then(() => handle.publishedLeadHours() as Promise<string>)
+            .then((json) => {
+              if (generation === generationRef.current) {
+                setState((s) => ({ ...s, publishedLeads: JSON.parse(json) as number[] | null }));
+              }
+            })
+      ).catch((err) => console.warn(`[forecast] recheck failed: ${errMessage(err)}`));
+    if (state.providerId !== "rtma") void check();
     const timer = setInterval(check, PUBLISHED_RECHECK_MS);
     return () => clearInterval(timer);
-  }, [state.run]);
+  }, [state.run, state.providerId, paint, renderFrame]);
 
   /** Retry the current provider's pipeline from scratch after an error
    * (e.g. a transient discovery/network failure) -- equivalent to

@@ -123,6 +123,7 @@ pub fn idx_names(
         ForecastVariable::Precipitation1h
         | ForecastVariable::GeopotentialHeight
         | ForecastVariable::CompositeReflectivity
+        | ForecastVariable::WindSpeed10m
         | ForecastVariable::SbCape
         | ForecastVariable::MlCape
         | ForecastVariable::Srh01

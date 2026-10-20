@@ -32,6 +32,8 @@ pub enum ForecastVariable {
     WindV10m,
     /// Surface wind gust.
     WindGust,
+    /// 10-meter wind speed (RTMA publishes it; HRRR derives it from u/v).
+    WindSpeed10m,
     /// Mean sea level pressure.
     Mslp,
     /// 1-hour accumulated precipitation.
@@ -65,12 +67,13 @@ pub enum ForecastVariable {
 impl ForecastVariable {
     /// Every canonical variable, in declaration order -- useful for a UI
     /// variable picker or an exhaustiveness check in a test.
-    pub const ALL: [ForecastVariable; 18] = [
+    pub const ALL: [ForecastVariable; 19] = [
         ForecastVariable::Temperature2m,
         ForecastVariable::Dewpoint2m,
         ForecastVariable::WindU10m,
         ForecastVariable::WindV10m,
         ForecastVariable::WindGust,
+        ForecastVariable::WindSpeed10m,
         ForecastVariable::Mslp,
         ForecastVariable::Precipitation1h,
         ForecastVariable::CloudCover,
@@ -96,6 +99,7 @@ impl ForecastVariable {
             Self::WindU10m => "wind_u_10m",
             Self::WindV10m => "wind_v_10m",
             Self::WindGust => "wind_gust",
+            Self::WindSpeed10m => "wind_speed_10m",
             Self::Mslp => "mslp",
             Self::Precipitation1h => "precipitation_1h",
             Self::CloudCover => "cloud_cover",
@@ -138,6 +142,7 @@ impl ForecastVariable {
             Self::WindU10m => (2, 2),      // UGRD
             Self::WindV10m => (2, 3),      // VGRD
             Self::WindGust => (2, 22),     // GUST
+            Self::WindSpeed10m => (2, 1),  // WIND
             // MSLET (NCEP's Eta-model-reduction mean sea level pressure --
             // what NCEP model output conventionally calls "MSLP", and the
             // message `provider-gefs` decodes for this variable), NOT the

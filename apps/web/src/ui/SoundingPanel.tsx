@@ -32,7 +32,7 @@ export function SoundingPanel({ point, picking, onStartPick, onClear }: Sounding
 export interface SoundingViewProps {
   point: LatLonPoint;
   validMs: number;
-  /** The app's HRRR run, for the NOAA fallback; null when HRRR isn't loaded. */
+  /** The HRRR run for the NOAA fallback (the loaded one, or an assumed recent one); null for none. */
   hrrrRunInitMs: number | null;
 }
 

@@ -5,8 +5,8 @@
 // `provider-hrrr` decide everything about discovery, decoding, and units;
 // this app only ever renders what `ProviderHandle` hands back.
 
-/** The two concrete providers `forecast-web`'s `ProviderHandle` accepts. */
-export type ForecastProviderId = "gefs" | "hrrr";
+/** The concrete providers `forecast-web`'s `ProviderHandle` accepts. */
+export type ForecastProviderId = "gefs" | "hrrr" | "rtma";
 
 /** Mirrors `ModelMetadataJson` -- a provider's static identity/description,
  * available with no network call via `ProviderHandle.metadata()`. */

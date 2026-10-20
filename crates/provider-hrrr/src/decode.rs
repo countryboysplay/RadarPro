@@ -65,11 +65,6 @@ use grib::{Code::Name, GridDefinitionTemplateValues, LatLons};
 /// this stage's verification used.
 const GRID_TEMPLATE_LAMBERT_CONFORMAL: u16 = 30;
 
-/// WMO Code Table 3.2 value `6`: "Earth assumed spherical with radius =
-/// 6,371,229.0 m" -- the only earth shape every real HRRR message fetched
-/// during this stage's verification used.
-const EARTH_SHAPE_SPHERICAL_6371229: u8 = 6;
-
 /// GRIB2 Product Definition Template 4.0 ("Analysis or forecast at a
 /// horizontal level or in a horizontal layer at a point in time") -- the
 /// deterministic template every real HRRR message fetched during this
@@ -162,6 +157,7 @@ pub fn idx_names(variable: ForecastVariable) -> Option<MessageSpec> {
         }
         ForecastVariable::Precipitation1h
         | ForecastVariable::GeopotentialHeight
+        | ForecastVariable::WindSpeed10m
         | ForecastVariable::BulkShear06
         | ForecastVariable::Stp => None,
     }
@@ -178,6 +174,11 @@ const SHEAR_V_0_6KM: MessageSpec = ("VVCSH", "0-6000 m above ground", "m/s", 2, 
 pub fn input_messages(variable: ForecastVariable) -> Option<Vec<MessageSpec>> {
     match variable {
         ForecastVariable::BulkShear06 => Some(vec![SHEAR_U_0_6KM, SHEAR_V_0_6KM]),
+        // Speed is the same whether the components are grid- or earth-relative.
+        ForecastVariable::WindSpeed10m => Some(vec![
+            idx_names(ForecastVariable::WindU10m)?,
+            idx_names(ForecastVariable::WindV10m)?,
+        ]),
         ForecastVariable::Stp => Some(vec![
             idx_names(ForecastVariable::SbCape)?,
             idx_names(ForecastVariable::LclHeight)?,
@@ -192,7 +193,7 @@ pub fn input_messages(variable: ForecastVariable) -> Option<Vec<MessageSpec>> {
 /// Native unit of a derived variable's values.
 pub fn derived_unit(variable: ForecastVariable) -> &'static str {
     match variable {
-        ForecastVariable::BulkShear06 => "m/s",
+        ForecastVariable::BulkShear06 | ForecastVariable::WindSpeed10m => "m/s",
         _ => "",
     }
 }
@@ -220,7 +221,7 @@ pub fn derive(variable: ForecastVariable, inputs: &[Vec<f32>]) -> Vec<f32> {
     let shear =
         |u: &[f32], v: &[f32]| -> Vec<f32> { u.iter().zip(v).map(|(u, v)| u.hypot(*v)).collect() };
     match (variable, inputs) {
-        (ForecastVariable::BulkShear06, [u, v]) => shear(u, v),
+        (ForecastVariable::BulkShear06 | ForecastVariable::WindSpeed10m, [u, v]) => shear(u, v),
         (ForecastVariable::Stp, [cape, lcl, srh, u, v]) => cape
             .iter()
             .zip(lcl)
@@ -352,13 +353,19 @@ pub fn decode_message(
         });
     };
 
-    if template30.earth_shape.shape != EARTH_SHAPE_SPHERICAL_6371229 {
-        return Err(HrrrError::UnsupportedEarthShape {
-            url: url.to_string(),
-            shape: template30.earth_shape.shape,
-        });
-    }
-    let earth_radius_m = forecast_core::projection::HRRR_EARTH_RADIUS_M;
+    // HRRR is shape 6 (6,371,229 m); RTMA's NDFD grid is shape 1 with its own
+    // radius (6,371,200 m). Any sphere works; an oblate spheroid does not.
+    let earth_radius_m = match template30.earth_shape.radii() {
+        // `grib` multiplies shape 1's radius by 10^scale where GRIB2 divides; RTMA's scale is 0,
+        // but a radius far from Earth's would misplace the whole field, so refuse it.
+        Some((a, b)) if a == b && (6.3e6..6.4e6).contains(&a) => a,
+        _ => {
+            return Err(HrrrError::UnsupportedEarthShape {
+                url: url.to_string(),
+                shape: template30.earth_shape.shape,
+            })
+        }
+    };
 
     let ni = template30.ni;
     let nj = template30.nj;

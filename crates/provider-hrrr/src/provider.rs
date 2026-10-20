@@ -8,6 +8,7 @@ use forecast_core::grid::{ForecastGrid, NativeVariableMetadata};
 use forecast_core::model::{ModelMetadata, ModelRun};
 use forecast_core::request::FieldRequest;
 use forecast_core::time::UtcTimestamp;
+use forecast_core::variable::ForecastVariable;
 
 /// NOAA HRRR, via the anonymous `noaa-hrrr-bdp-pds` S3 bucket.
 ///
@@ -100,52 +101,59 @@ impl forecast_core::provider::ForecastProvider for HrrrProvider {
             }
         })?;
 
-        let idx_text = self.client.fetch_idx_text(&idx_key).await?;
-        let entries = crate::idx::parse_idx(&idx_key, &idx_text)?;
-        // A derived field (shear, STP) needs several messages; each is one range GET.
-        let mut grids = Vec::with_capacity(specs.len());
-        for spec in specs {
-            let (idx_variable, idx_level, ..) = spec;
-            let position = entries
-                .iter()
-                .position(|e| e.variable == idx_variable && e.level == idx_level)
-                .ok_or_else(|| HrrrError::FieldNotFoundInIdx {
-                    url: idx_key.clone(),
-                    variable: idx_variable.to_string(),
-                    level: idx_level.to_string(),
-                })?;
-            let content_length = if position + 1 == entries.len() {
-                Some(self.client.content_length(&key).await?)
-            } else {
-                None
-            };
-            let (start, end) = crate::idx::byte_range(&key, &entries, position, content_length)?;
-            let bytes = self.client.fetch_byte_range(&key, start, end).await?;
-            grids.push(crate::decode::decode_message(
-                &key,
-                &bytes,
-                request.variable,
-                spec,
-            )?);
-        }
-        if grids.len() == 1 {
-            return Ok(grids.remove(0));
-        }
-        let names =
-            |f: fn(&ForecastGrid) -> &str| grids.iter().map(f).collect::<Vec<_>>().join(",");
-        let native = NativeVariableMetadata {
-            provider_variable_name: names(|g| &g.native.provider_variable_name),
-            provider_level_name: names(|g| &g.native.provider_level_name),
-            native_unit: crate::decode::derived_unit(request.variable),
-        };
-        let inputs: Vec<Vec<f32>> = grids
-            .iter_mut()
-            .map(|g| std::mem::take(&mut g.values))
-            .collect();
-        let mut grid = grids.remove(0);
-        grid.values = crate::decode::derive(request.variable, &inputs);
-        grid.unit = native.native_unit;
-        grid.native = native;
-        Ok(grid)
+        fetch_messages(&self.client, &key, &idx_key, request.variable, specs).await
     }
+}
+
+/// Fetch `specs` (one range GET each) from the GRIB2 object `key` and decode
+/// them as `variable`; several messages are combined by
+/// [`crate::decode::derive`]. Shared by HRRR and RTMA.
+pub(crate) async fn fetch_messages(
+    client: &HrrrClient,
+    key: &str,
+    idx_key: &str,
+    variable: ForecastVariable,
+    specs: Vec<crate::decode::MessageSpec>,
+) -> Result<ForecastGrid, HrrrError> {
+    let idx_text = client.fetch_idx_text(idx_key).await?;
+    let entries = crate::idx::parse_idx(idx_key, &idx_text)?;
+    // A derived field (shear, STP) needs several messages; each is one range GET.
+    let mut grids = Vec::with_capacity(specs.len());
+    for spec in specs {
+        let (idx_variable, idx_level, ..) = spec;
+        let position = entries
+            .iter()
+            .position(|e| e.variable == idx_variable && e.level == idx_level)
+            .ok_or_else(|| HrrrError::FieldNotFoundInIdx {
+                url: idx_key.to_string(),
+                variable: idx_variable.to_string(),
+                level: idx_level.to_string(),
+            })?;
+        let content_length = if position + 1 == entries.len() {
+            Some(client.content_length(key).await?)
+        } else {
+            None
+        };
+        let (start, end) = crate::idx::byte_range(key, &entries, position, content_length)?;
+        let bytes = client.fetch_byte_range(key, start, end).await?;
+        grids.push(crate::decode::decode_message(key, &bytes, variable, spec)?);
+    }
+    if grids.len() == 1 {
+        return Ok(grids.remove(0));
+    }
+    let names = |f: fn(&ForecastGrid) -> &str| grids.iter().map(f).collect::<Vec<_>>().join(",");
+    let native = NativeVariableMetadata {
+        provider_variable_name: names(|g| &g.native.provider_variable_name),
+        provider_level_name: names(|g| &g.native.provider_level_name),
+        native_unit: crate::decode::derived_unit(variable),
+    };
+    let inputs: Vec<Vec<f32>> = grids
+        .iter_mut()
+        .map(|g| std::mem::take(&mut g.values))
+        .collect();
+    let mut grid = grids.remove(0);
+    grid.values = crate::decode::derive(variable, &inputs);
+    grid.unit = native.native_unit;
+    grid.native = native;
+    Ok(grid)
 }

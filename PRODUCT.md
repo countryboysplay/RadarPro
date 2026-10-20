@@ -61,8 +61,10 @@ switching between apps.
   0-6 km shear, LCL height, fixed-layer STP.
 - HRRR point sounding: click the map for a skew-T, hodograph, SBCAPE and LCL
   at the forecast hour shown (39 levels from Open-Meteo; a coarse 5-level
-  NOAA column when Open-Meteo is slow, see ADR-0016). Not yet: RTMA surface
-  analysis, observed balloon soundings.
+  NOAA column when Open-Meteo is slow, see ADR-0016).
+- RTMA hourly 2.5 km surface analysis (temperature, dewpoint, wind speed,
+  gust) on the map as a third model, refreshed each hour. Surface fields
+  read in °F and kt. Not yet: observed balloon soundings.
 - NWS alert polygons with lifecycle tracking and hazard tags; archived scans
   show the warnings in effect then; Rainbow Weather tiles, nowcast
   and point forecast (needs an API key).

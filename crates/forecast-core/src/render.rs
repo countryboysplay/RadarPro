@@ -73,11 +73,35 @@ impl DisplayScale {
 pub fn display_scale(variable: ForecastVariable) -> DisplayScale {
     let s = PaletteStop::new;
     let (unit, min, max, stops) = match variable {
-        ForecastVariable::Temperature2m | ForecastVariable::Dewpoint2m => (
-            "°C",
-            DEFAULT_MIN_CELSIUS,
-            DEFAULT_MAX_CELSIUS,
-            default_temperature_palette_stops(),
+        // Surface fields read in US chaser units (°F, kt), as on the map.
+        ForecastVariable::Temperature2m => (
+            "°F",
+            -20.0,
+            110.0,
+            vec![
+                s(-20.0, [90, 40, 150, 255]),
+                s(0.0, [40, 60, 190, 255]),
+                s(32.0, [80, 170, 230, 255]),
+                s(50.0, [90, 190, 110, 255]),
+                s(70.0, [240, 210, 60, 255]),
+                s(90.0, [230, 110, 40, 255]),
+                s(110.0, [170, 20, 40, 255]),
+            ],
+        ),
+        // Moisture: brown when dry, green from the mid 50s, teal at tropical values.
+        ForecastVariable::Dewpoint2m => (
+            "°F",
+            -10.0,
+            80.0,
+            vec![
+                s(-10.0, [120, 80, 40, 255]),
+                s(30.0, [170, 130, 80, 255]),
+                s(45.0, [200, 190, 150, 255]),
+                s(55.0, [90, 180, 90, 255]),
+                s(65.0, [20, 120, 50, 255]),
+                s(72.0, [30, 150, 170, 255]),
+                s(80.0, [60, 80, 200, 255]),
+            ],
         ),
         // Signed components: diverging blue (negative) / white / red (positive).
         ForecastVariable::WindU10m | ForecastVariable::WindV10m => (
@@ -90,17 +114,12 @@ pub fn display_scale(variable: ForecastVariable) -> DisplayScale {
                 s(30.0, [190, 30, 40, 255]),
             ],
         ),
-        ForecastVariable::WindGust => (
-            "m/s",
+        // Clear under 10 kt so the map shows through calm areas.
+        ForecastVariable::WindGust | ForecastVariable::WindSpeed10m => (
+            "kt",
             0.0,
-            40.0,
-            vec![
-                s(0.0, [235, 240, 245, 255]),
-                s(10.0, [90, 170, 220, 255]),
-                s(20.0, [240, 200, 40, 255]),
-                s(30.0, [220, 60, 30, 255]),
-                s(40.0, [150, 20, 140, 255]),
-            ],
+            70.0,
+            severe_ramp(s, [9.9, 10.0, 20.0, 30.0, 40.0, 50.0, 70.0]),
         ),
         ForecastVariable::Mslp => (
             "hPa",
@@ -233,11 +252,27 @@ fn severe_ramp(s: fn(f32, [u8; 4]) -> PaletteStop, at: [f32; 7]) -> Vec<PaletteS
 }
 
 /// Convert a decoded field into a *new* display-unit array matching
-/// [`display_scale`]: Kelvin -> Celsius, Pa -> hPa, shear m/s -> kt, anything
+/// [`display_scale`]: 2 m temperature and dew point Kelvin -> °F, other
+/// Kelvin -> Celsius, Pa -> hPa, shear/gust/wind speed m/s -> kt, anything
 /// else unchanged. Never mutates `field.values`.
 pub fn to_display_values(field: &ForecastGrid) -> Vec<f32> {
-    if field.variable == ForecastVariable::BulkShear06 {
+    if matches!(
+        field.variable,
+        ForecastVariable::BulkShear06 | ForecastVariable::WindGust | ForecastVariable::WindSpeed10m
+    ) {
         return field.values.iter().map(|&ms| ms * 1.943_844).collect();
+    }
+    if field.unit == "K"
+        && matches!(
+            field.variable,
+            ForecastVariable::Temperature2m | ForecastVariable::Dewpoint2m
+        )
+    {
+        return field
+            .values
+            .iter()
+            .map(|&k| (k - 273.15) * 1.8 + 32.0)
+            .collect();
     }
     // HRRR leaves some LCLs missing; the GPU's handling of NaN is undefined, so
     // draw them as "no cloud base" (the clear top of the scale).
@@ -338,6 +373,25 @@ mod tests {
         assert!((hpa[1] - 980.0).abs() < 1e-3);
         field.unit = "%";
         assert_eq!(to_display_values(&field), field.values);
+    }
+
+    #[test]
+    fn surface_fields_display_in_fahrenheit_and_knots() {
+        let mut field = sample_field(vec![273.15, 310.928, 255.372, 0.0]);
+        field.variable = ForecastVariable::Dewpoint2m;
+        let f = to_display_values(&field);
+        assert!((f[0] - 32.0).abs() < 1e-3);
+        assert!((f[1] - 100.0).abs() < 1e-2);
+        assert!((f[2] - 0.0).abs() < 1e-2);
+        field.variable = ForecastVariable::WindSpeed10m;
+        field.unit = "m/s";
+        field.values = vec![10.0, 0.0, 0.0, 0.0];
+        assert!((to_display_values(&field)[0] - 19.438).abs() < 1e-2);
+        assert_eq!(
+            display_scale(ForecastVariable::WindSpeed10m).palette_lut()[0][3],
+            0,
+            "calm is clear"
+        );
     }
 
     #[test]

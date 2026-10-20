@@ -4,6 +4,7 @@ import {
   FORECAST_RENDER_WIDTH,
   FORECAST_VARIABLES,
   leadHourOptions,
+  variableAvailable,
   type ForecastPhase,
   type useForecastProvider,
 } from "./useForecastProvider";
@@ -12,6 +13,7 @@ import type { ForecastEnsembleSpec, ForecastGridMetadata, ForecastProviderId } f
 const PROVIDERS: { id: ForecastProviderId; label: string }[] = [
   { id: "gefs", label: "GEFS" },
   { id: "hrrr", label: "HRRR" },
+  { id: "rtma", label: "RTMA" },
 ];
 
 function describePhase(phase: ForecastPhase, providerId: ForecastProviderId | null, error: string | null): string {
@@ -112,7 +114,7 @@ export function ForecastPanel({ canvasRef, forecast }: ForecastPanelProps) {
 
   return (
     <div className="forecast-panel">
-      <div className="forecast-panel-title">Model Forecast (GEFS/HRRR) — not observed radar</div>
+      <div className="forecast-panel-title">Model Forecast (GEFS/HRRR/RTMA) — not observed radar</div>
 
       <label className="forecast-provider-select">
         <span>Model</span>
@@ -151,7 +153,7 @@ export function ForecastPanel({ canvasRef, forecast }: ForecastPanelProps) {
         <label>
           Variable{" "}
           <select value={forecast.variable} disabled={busy} onChange={(e) => forecast.setVariable(e.target.value)}>
-            {FORECAST_VARIABLES.filter((v) => !("hrrrOnly" in v) || forecast.providerId === "hrrr").map((v) => (
+            {FORECAST_VARIABLES.filter((v) => variableAvailable(v.id, forecast.providerId)).map((v) => (
               <option key={v.id} value={v.id}>
                 {v.label}
               </option>

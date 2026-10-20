@@ -38,7 +38,9 @@ pub mod error;
 pub mod idx;
 pub mod keys;
 pub mod provider;
+pub mod rtma;
 mod xml;
 
 pub use error::HrrrError;
 pub use provider::HrrrProvider;
+pub use rtma::RtmaProvider;

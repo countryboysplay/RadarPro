@@ -46,7 +46,7 @@ use forecast_core::provider::ForecastProvider;
 use forecast_core::request::FieldRequest;
 use forecast_core::variable::ForecastVariable;
 use provider_gefs::GefsProvider;
-use provider_hrrr::HrrrProvider;
+use provider_hrrr::{HrrrProvider, RtmaProvider};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::future_to_promise;
 
@@ -90,6 +90,7 @@ pub fn sample_hrrr_column(bytes: &[u8], lat: f32, lon: f32) -> Result<Vec<f64>, 
 enum ProviderImpl {
     Gefs(GefsProvider),
     Hrrr(HrrrProvider),
+    Rtma(RtmaProvider),
 }
 
 /// The run a [`ProviderHandle`] last discovered, tagged by which concrete
@@ -101,6 +102,7 @@ enum ProviderImpl {
 #[derive(Clone, Copy)]
 enum RunImpl {
     Gefs(provider_gefs::keys::RunReference),
+    /// Also RTMA's: same hourly `RunReference`, from the same crate.
     Hrrr(provider_hrrr::keys::RunReference),
 }
 
@@ -112,7 +114,7 @@ struct ProviderState {
     last_grid: Option<ForecastGrid>,
 }
 
-/// A selected forecast provider (`"gefs"` or `"hrrr"`), exposed to
+/// A selected forecast provider (`"gefs"`, `"hrrr"` or `"rtma"`), exposed to
 /// JS/wasm. See this module's doc comment for the full API shape.
 #[wasm_bindgen]
 pub struct ProviderHandle {
@@ -121,7 +123,7 @@ pub struct ProviderHandle {
 
 #[wasm_bindgen]
 impl ProviderHandle {
-    /// Construct a handle for `provider_id` (`"gefs"` or `"hrrr"`),
+    /// Construct a handle for `provider_id` (`"gefs"`, `"hrrr"` or `"rtma"`),
     /// against each provider's current public NOAA S3 bucket
     /// (`GefsProvider::default_bucket`/`HrrrProvider::default_bucket`).
     /// Returns `Err` for an unrecognized id or if building the underlying
@@ -135,9 +137,12 @@ impl ProviderHandle {
             "hrrr" => ProviderImpl::Hrrr(
                 HrrrProvider::default_bucket().map_err(|e| JsValue::from_str(&e.to_string()))?,
             ),
+            "rtma" => ProviderImpl::Rtma(
+                RtmaProvider::default_bucket().map_err(|e| JsValue::from_str(&e.to_string()))?,
+            ),
             other => {
                 return Err(JsValue::from_str(&format!(
-                    "unknown provider id {other:?}; expected \"gefs\" or \"hrrr\""
+                    "unknown provider id {other:?}; expected \"gefs\", \"hrrr\" or \"rtma\""
                 )))
             }
         };
@@ -159,6 +164,7 @@ impl ProviderHandle {
         let metadata = match &self.state.borrow().provider {
             ProviderImpl::Gefs(p) => p.metadata(),
             ProviderImpl::Hrrr(p) => p.metadata(),
+            ProviderImpl::Rtma(p) => p.metadata(),
         };
         model_metadata_json(metadata)
     }
@@ -193,6 +199,16 @@ impl ProviderHandle {
                         .map_err(|e| JsValue::from_str(&e.to_string()))?;
                     let model_run = p.run_metadata(&run);
                     let json = run_metadata_json("hrrr", &model_run);
+                    state.borrow_mut().last_run = Some(RunImpl::Hrrr(run));
+                    json
+                }
+                ProviderImpl::Rtma(p) => {
+                    let run = p
+                        .discover_latest_run(lookback_days)
+                        .await
+                        .map_err(|e| JsValue::from_str(&e.to_string()))?;
+                    let model_run = p.run_metadata(&run);
+                    let json = run_metadata_json("rtma", &model_run);
                     state.borrow_mut().last_run = Some(RunImpl::Hrrr(run));
                     json
                 }
@@ -294,6 +310,10 @@ impl ProviderHandle {
                     .await
                     .map_err(|e| JsValue::from_str(&e.to_string()))?,
                 (ProviderImpl::Hrrr(p), RunImpl::Hrrr(run)) => p
+                    .fetch_field(&run, &request)
+                    .await
+                    .map_err(|e| JsValue::from_str(&e.to_string()))?,
+                (ProviderImpl::Rtma(p), RunImpl::Hrrr(run)) => p
                     .fetch_field(&run, &request)
                     .await
                     .map_err(|e| JsValue::from_str(&e.to_string()))?,

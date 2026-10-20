@@ -19,6 +19,7 @@ import { alertNearSite, pointInAlertGeometry } from "../alerts/geometryHitTest";
 import { coveringAlerts } from "../location/useMyLocation";
 import { parseColorTableJson } from "../colorTables/colorTableJson";
 import { fetchOpenMeteoSounding, surfaceParcel } from "../forecast/sounding";
+import { leadHourOptions, variableAvailable, variableOnMap } from "../forecast/useForecastProvider";
 import { legLengthAndBearing } from "../ui/CrossSectionPanel";
 import { archiveKeyFor, newestVolumeNumber, nextVolumeNumber, parseChunkName, previousVolumeNumber } from "../nexrad/chunks";
 
@@ -671,5 +672,24 @@ describe("fetchOpenMeteoSounding", () => {
   it("reports Open-Meteo's own error text", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status: 429, json: async () => ({ error: true, reason: "Too many concurrent requests" }) })));
     await expect(fetchOpenMeteoSounding(35.4, -97.5, 0, new AbortController().signal)).rejects.toThrow("Too many concurrent requests");
+  });
+});
+
+describe("forecast variables per model", () => {
+  it("offers RTMA only the surface fields it publishes, at one analysis hour", () => {
+    expect(variableAvailable("temperature_2m", "rtma")).toBe(true);
+    expect(variableAvailable("wind_speed_10m", "rtma")).toBe(true);
+    expect(variableAvailable("composite_reflectivity", "rtma")).toBe(false);
+    expect(variableAvailable("mslp", "rtma")).toBe(false);
+    expect(leadHourOptions("rtma")).toEqual([0]);
+  });
+
+  it("keeps GEFS fields as they were and its coarse grid off the map", () => {
+    expect(variableAvailable("mslp", "gefs")).toBe(true);
+    expect(variableAvailable("wind_speed_10m", "gefs")).toBe(false);
+    expect(variableAvailable("sbcape", "gefs")).toBe(false);
+    expect(variableOnMap("temperature_2m", "gefs")).toBe(false);
+    expect(variableOnMap("temperature_2m", "hrrr")).toBe(true);
+    expect(variableOnMap("mslp", "hrrr")).toBe(false);
   });
 });

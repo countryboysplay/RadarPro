@@ -151,6 +151,12 @@ deliberately narrow (spherical only, matching HRRR's real earth shape;
 `provider-hrrr::decode` returns a structured error for any other earth
 shape rather than silently assuming spherical).
 
+Update 2026-10-20 (Phase 5.3): RTMA's 2.5 km NDFD grid is the same template
+3.30 but earth shape 1 (spherical, radius given in the file: 6,371,200 m).
+The decoder now takes the radius from the file for any spherical shape and
+refuses radii outside 6.3-6.4 million m (`grib` 0.18.5 multiplies shape 1's
+radius by 10^scale where GRIB2 divides; RTMA's scale is 0).
+
 **Portability**: if a future provider needs a Lambert grid over a
 non-spherical (ellipsoidal) earth shape, `LccProjection` would need
 extending (Snyder's formulas have a documented ellipsoidal case) or a

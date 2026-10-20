@@ -43,7 +43,7 @@ import type { AlertJson, HeldAlert } from "./alerts/types";
 import { alertNearSite } from "./alerts/geometryHitTest";
 import { SEVERITY_COLORS } from "./alerts/types";
 import { coveringAlerts, playAlertTone, useAlertIdsAtPoint, useMyLocation } from "./location/useMyLocation";
-import { FORECAST_VARIABLES, leadHourOptions, useForecastProvider, type ForecastPhase } from "./forecast/useForecastProvider";
+import { FORECAST_VARIABLES, leadHourOptions, useForecastProvider, variableOnMap, type ForecastPhase } from "./forecast/useForecastProvider";
 import { ForecastKey, ForecastPanel } from "./forecast/ForecastPanel";
 import type { ForecastProviderId } from "./forecast/types";
 import { useRainbowOverlay } from "./rainbow/useRainbowOverlay";
@@ -1156,6 +1156,9 @@ export default function App() {
       ),
     });
   }
+  // The forecast hour on screen; otherwise the nearest hour to now.
+  const soundingValidMs =
+    inForecast && forecast.run ? Date.parse(forecast.run.initTime) + forecast.leadHours * 3_600_000 : Math.round(Date.now() / 3_600_000) * 3_600_000;
   if (soundingPoint) {
     rightPanelSections.push({
       key: "sounding",
@@ -1164,9 +1167,9 @@ export default function App() {
       children: (
         <SoundingView
           point={soundingPoint}
-          // The forecast hour on screen; otherwise the nearest hour to now.
-          validMs={inForecast && forecast.run ? Date.parse(forecast.run.initTime) + forecast.leadHours * 3_600_000 : Math.round(Date.now() / 3_600_000) * 3_600_000}
-          hrrrRunInitMs={forecast.providerId === "hrrr" && forecast.run ? Date.parse(forecast.run.initTime) : null}
+          validMs={soundingValidMs}
+          // With another model loaded, assume the HRRR run from 2 h before: by then its early hours are always out.
+          hrrrRunInitMs={forecast.providerId === "hrrr" && forecast.run ? Date.parse(forecast.run.initTime) : Math.floor(soundingValidMs / 3_600_000) * 3_600_000 - 2 * 3_600_000}
         />
       ),
     });
@@ -1256,9 +1259,10 @@ export default function App() {
   ];
   const feedError = status === "error" || history.pollEvent.type === "error" || decodeError !== null;
   const forecastSummary = [modelForecastSummary, pointForecastsSummary].join(" · ");
-  // Forecast radar and the severe-weather fields replace the radar on the map; other model fields stay in the panel.
+  // Forecast radar, the severe-weather and surface fields replace the radar on the map; other model fields stay in the panel.
   const forecastField = FORECAST_VARIABLES.find((v) => v.id === forecast.variable);
-  const forecastOnMap = timeRegion === "forecast" && !!forecastField && "onMap" in forecastField && forecast.phase === "ready";
+  const forecastOnMap = timeRegion === "forecast" && variableOnMap(forecast.variable, forecast.providerId) && forecast.phase === "ready";
+  const isAnalysis = forecast.providerId === "rtma";
   const forecastValidMs = forecast.run ? Date.parse(forecast.run.initTime) + forecast.leadHours * 3_600_000 : null;
   // Product and tilt come from the decoded volume, which needs the GPU pipeline.
   const segmentEmpty =
@@ -1829,14 +1833,15 @@ export default function App() {
           selectedStormId={momentCode === "SRV" && !manualStormMotion ? (selectedStorm?.id ?? null) : null}
           forecastCanvasRef={forecastCanvasRef}
           forecastOnMap={forecastOnMap}
+          forecastOpacity={forecastField && "opaque" in forecastField ? 0.7 : 1}
           forecastKey={`${forecast.providerId}|${forecast.variable}|${forecast.leadHours}|${forecast.phase}`}
         />
         {forecastOnMap && forecastValidMs !== null && (
           <div className="map-forecast-badge" role="status">
             <strong>{forecast.variable === "composite_reflectivity" ? "Forecast radar" : forecastField?.label}</strong>{" "}
-            {forecast.variable === "composite_reflectivity" ? "HRRR simulated reflectivity" : "HRRR"} · valid{" "}
-            {new Date(forecastValidMs).toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit", hour12: true })} (+
-            {forecast.leadHours}h) · model, not observed
+            {forecast.variable === "composite_reflectivity" ? "HRRR simulated reflectivity" : isAnalysis ? "RTMA surface analysis" : forecast.providerId?.toUpperCase()} · valid{" "}
+            {new Date(forecastValidMs).toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit", hour12: true })}
+            {isAnalysis ? " · analysis, not observed" : ` (+${forecast.leadHours}h) · model, not observed`}
             {loopLoading && <span className="map-forecast-loading">loading hours {forecast.cachedLeads.length}/{forecastLeads.length}…</span>}
             {forecast.grid && forecast.variable !== "composite_reflectivity" && <ForecastKey grid={forecast.grid} />}
             <button type="button" onClick={showRadar}>

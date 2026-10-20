@@ -13,7 +13,7 @@ preserved end to end rather than smoothed away for looks.
 
 ## Status
 
-Working desktop (Windows, Tauri) and web workstation, through stage S11, roadmap Phases 0-4 and Phases 5.1-5.2:
+Working desktop (Windows, Tauri) and web workstation, through stage S11, roadmap Phases 0-4 and Phases 5.1-5.3:
 
 - **Live NEXRAD Level II** for ~160 WSR-88D sites, from the real-time
   chunk feed (the newest scan fills in tilt by tilt within seconds; falls
@@ -39,6 +39,11 @@ Working desktop (Windows, Tauri) and web workstation, through stage S11, roadmap
 - **Forecast radar**: HRRR simulated composite reflectivity, hourly to
   +18 h, shown on the map past NOW on the timeline and playable as a loop;
   hours not yet published are greyed out.
+- **RTMA surface analysis** (hourly, 2.5 km): temperature and dewpoint
+  (°F), wind speed and gust (kt) on the map, picked as a third model in the
+  Forecast drawer and refreshed as each new hour publishes; labelled
+  "analysis, not observed". HRRR temperature, dewpoint and wind speed draw
+  on the map the same way.
 - **Model forecasts** (GEFS ensemble, HRRR): temperature, dewpoint,
   humidity, wind components, gusts, sea-level pressure, cloud cover (in the
   Forecast panel).
