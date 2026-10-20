@@ -92,3 +92,19 @@ export async function fetchActiveAlerts(signal?: AbortSignal): Promise<string> {
   });
   return response.text();
 }
+
+/**
+ * CAP message ids of the active alerts covering a point, as NWS itself
+ * decides it -- including zone-only alerts (most watches), which carry no
+ * polygon to test locally. The point is rounded to 0.01 deg (about 1 km):
+ * finer than any zone, coarser than a street address.
+ */
+export async function fetchAlertIdsAtPoint(lat: number, lon: number, signal?: AbortSignal): Promise<Set<string>> {
+  const url = `${NWS_ALERTS_ACTIVE_URL}?point=${lat.toFixed(2)},${lon.toFixed(2)}`;
+  const response = await fetchWithRetry(url, {
+    signal,
+    headers: { "User-Agent": NWS_USER_AGENT, Accept: "application/geo+json" },
+  });
+  const body = (await response.json()) as { features?: { properties?: { id?: unknown } }[] };
+  return new Set((body.features ?? []).flatMap((f) => (typeof f.properties?.id === "string" ? [f.properties.id] : [])));
+}

@@ -217,3 +217,50 @@ export async function fetchStormProduct(product: StormProduct, icao: string, sig
   const response = await fetchWithRetry(`/tgftp/SL.us008001/DF.of/DC.radar/DS.${product}/SI.${site}/sn.last`, { signal });
   return new Uint8Array(await response.arrayBuffer());
 }
+
+/** Unidata's public Level 3 archive on AWS (CORS-open). Carries NST and NMD, not NTV or NHI. */
+const LEVEL3_ARCHIVE_URL = "https://unidata-nexrad-level3.s3.amazonaws.com";
+/** Hourly key listings and product bytes, kept for the session so loop playback reuses them. */
+const archiveListings = new Map<string, Promise<string[]>>();
+const archiveProducts = new Map<string, Promise<Uint8Array>>();
+
+function listArchiveHour(prefix: string, signal?: AbortSignal): Promise<string[]> {
+  let listing = archiveListings.get(prefix);
+  if (!listing) {
+    // An hour holds at most ~15 scans per product, well under one 1000-key page.
+    listing = fetchWithRetry(`${LEVEL3_ARCHIVE_URL}/?list-type=2&prefix=${prefix}`, { signal })
+      .then((r) => r.text())
+      .then((xml) => [...xml.matchAll(/<Key>([^<]+)<\/Key>/g)].map((m) => m[1]));
+    listing.catch(() => archiveListings.delete(prefix));
+    archiveListings.set(prefix, listing);
+  }
+  return listing;
+}
+
+/**
+ * The archived `product` ("NST" or "NMD") for `icao` issued at or just before
+ * `timeMs`, or null when there is none in the hour before. Keys look like
+ * `VWX_NST_2025_03_15_10_01_50` (site without its first letter, UTC time).
+ */
+export async function fetchArchivedStormProduct(product: "NST" | "NMD", icao: string, timeMs: number, signal?: AbortSignal): Promise<Uint8Array | null> {
+  const hourPrefix = (ms: number) => {
+    const d = new Date(ms).toISOString(); // 2025-03-15T10:01:50.000Z
+    return `${icao.slice(1).toUpperCase()}_${product}_${d.slice(0, 4)}_${d.slice(5, 7)}_${d.slice(8, 10)}_${d.slice(11, 13)}`;
+  };
+  const keyTime = (key: string) => {
+    const [y, mo, d, h, mi, s] = key.split("_").slice(2).map(Number);
+    return Date.UTC(y, mo - 1, d, h, mi, s);
+  };
+  // Keys carry the volume scan time, the same clock as the Level 2 scan; allow a minute of skew.
+  const until = timeMs + 60_000;
+  const keys = [...(await listArchiveHour(hourPrefix(until - 3_600_000), signal)), ...(await listArchiveHour(hourPrefix(until), signal))];
+  const key = keys.filter((k) => keyTime(k) <= until).sort().pop();
+  if (!key) return null;
+  let bytes = archiveProducts.get(key);
+  if (!bytes) {
+    bytes = fetchWithRetry(`${LEVEL3_ARCHIVE_URL}/${key}`, { signal }).then(async (r) => new Uint8Array(await r.arrayBuffer()));
+    bytes.catch(() => archiveProducts.delete(key));
+    archiveProducts.set(key, bytes);
+  }
+  return bytes;
+}

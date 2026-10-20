@@ -41,7 +41,7 @@ import { useAlertPoller } from "./alerts/useAlertPoller";
 import type { AlertJson } from "./alerts/types";
 import { alertNearSite } from "./alerts/geometryHitTest";
 import { SEVERITY_COLORS } from "./alerts/types";
-import { coveringAlerts, playAlertTone, useMyLocation } from "./location/useMyLocation";
+import { coveringAlerts, playAlertTone, useAlertIdsAtPoint, useMyLocation } from "./location/useMyLocation";
 import { ForecastPanel } from "./forecast/ForecastPanel";
 import { leadHourOptions, useForecastProvider, type ForecastPhase } from "./forecast/useForecastProvider";
 import type { ForecastProviderId } from "./forecast/types";
@@ -60,9 +60,9 @@ import { SidebarSection } from "./ui/SidebarSection";
 import { SidebarCategory } from "./ui/SidebarCategory";
 import { UnifiedTimeline } from "./timeline/UnifiedTimeline";
 import { Icon } from "./ui/Icon";
-import { useStormTracks } from "./storms/useStormTracks";
+import { useNearbyStormTracks, useStormTracks } from "./storms/useStormTracks";
 import type { StormCell } from "./storms/nst";
-import { nearbyHazards } from "./storms/nearbyHazards";
+import { stormAlerts } from "./storms/nearbyHazards";
 
 /** Fixed reference radii (km) for the range rings drawn around the
  * selected site -- a documented, reasonable default (not derived from any
@@ -219,7 +219,7 @@ function summarizeMyLocation(on: boolean, { location, error }: ReturnType<typeof
 }
 
 /** One-line summary for "Storm tracks". */
-function summarizeStormTracks(on: boolean, { tracks, error }: ReturnType<typeof useStormTracks>): string {
+function summarizeStormTracks(on: boolean, { tracks, error, archived }: ReturnType<typeof useStormTracks>): string {
   if (!on) return "off";
   if (error) return error;
   if (!tracks) return "loading…";
@@ -230,7 +230,7 @@ function summarizeStormTracks(on: boolean, { tracks, error }: ReturnType<typeof 
   if (tracks.tvs.length > 0) parts.unshift(`${tracks.tvs.length} TVS`);
   const maxHail = Math.max(0, ...tracks.cells.map((c) => c.hail?.sizeIn ?? 0));
   if (maxHail >= 1) parts.splice(parts.length - 1, 0, `hail to ${maxHail.toFixed(2)}″`);
-  return `${parts.join(" · ")} · ${time}Z`;
+  return `${parts.join(" · ")} · ${time}Z${archived ? " archived, no TVS/hail" : ""}`;
 }
 
 /** One-line summary for "Settings". */
@@ -612,9 +612,11 @@ export default function App() {
     setIcao(nearest.icao);
   }, [myLocation.location, siteHydrated]);
   const [centerOnMeRequest, setCenterOnMeRequest] = useState(0);
+  // NWS's own answer for zone-only alerts (watches), which have no polygon to test.
+  const alertIdsHere = useAlertIdsAtPoint(myLocation.location);
   const coveringMe = useMemo(
-    () => (myLocation.location ? coveringAlerts(myLocation.location, alerts.activeAlerts, new Set()).covering : []),
-    [myLocation.location, alerts.activeAlerts],
+    () => (myLocation.location ? coveringAlerts(myLocation.location, alerts.activeAlerts, new Set(), alertIdsHere).covering : []),
+    [myLocation.location, alerts.activeAlerts, alertIdsHere],
   );
   const notifiedKeysRef = useRef<Set<string>>(new Set());
   useEffect(() => {
@@ -624,8 +626,10 @@ export default function App() {
       return;
     }
     if (!myLocation.location) return;
-    const { covering, fresh } = coveringAlerts(myLocation.location, alerts.activeAlerts, notifiedKeysRef.current);
+    const { covering, fresh: newlyCovering } = coveringAlerts(myLocation.location, alerts.activeAlerts, notifiedKeysRef.current, alertIdsHere);
     notifiedKeysRef.current = new Set(covering.map(({ key }) => key));
+    // Zone-only alerts include rip-current and fire-danger statements; of those, only watches and warnings notify.
+    const fresh = newlyCovering.filter(({ alert }) => alert.geometry || /\b(Watch|Warning)$/.test(alert.event));
     if (fresh.length === 0) return;
     if (notifySound) playAlertTone();
     for (const { key, alert } of fresh) {
@@ -637,7 +641,7 @@ export default function App() {
         () => setSelectedAlertKey(key),
       );
     }
-  }, [myLocation.location, alerts.activeAlerts, notifyCovering, notifySound]);
+  }, [myLocation.location, alerts.activeAlerts, alertIdsHere, notifyCovering, notifySound]);
 
   // Reveal the Warnings section whenever an alert becomes selected, so a
   // map click on a polygon always shows its detail.
@@ -675,25 +679,29 @@ export default function App() {
   const [momentCode, setMomentCode] = useState<string | null>(null);
   // NWS storm cells, on by default; SRV needs them even when hidden.
   const [showStormTracks, setShowStormTracks] = useState(true);
-  const stormTracks = useStormTracks(icao, showStormTracks || momentCode === "SRV");
-  // Same notification and sound as a covering warning when a TVS, mesocyclone
-  // or severe hail comes within ~15 mi of you; each hazard once while it stays near.
-  // shortcut: only the selected radar's storms; check nearby radars too if chasers
-  // often watch a site other than their own.
-  const notifiedHazardsRef = useRef<Set<string>>(new Set());
+  // In archive playback, the storms archived for the scan on screen, not today's.
+  const archiveFrameMs = history.archiveStartMillis !== null ? (history.entries[history.currentIndex]?.startTimeMillis ?? null) : null;
+  const stormTracksWanted = (showStormTracks || momentCode === "SRV") && (history.archiveStartMillis === null || archiveFrameMs !== null);
+  const stormTracks = useStormTracks(icao, stormTracksWanted, archiveFrameMs);
+  // Same notification and sound as a covering warning when a storm with a TVS,
+  // mesocyclone or severe hail is within ~15 mi of you, or its forecast track
+  // brings it there within 30 min. Uses the radars nearest you, whatever site
+  // is on screen. Once per storm, again only if it gets worse.
+  const nearbyStorms = useNearbyStormTracks(myLocation.location, notifyCovering);
+  const notifiedStormsRef = useRef<Map<string, number>>(new Map());
   useEffect(() => {
     if (!notifyCovering) {
-      notifiedHazardsRef.current = new Set();
+      notifiedStormsRef.current = new Map();
       return;
     }
-    if (!myLocation.location || !stormTracks.tracks) return;
-    const hazards = nearbyHazards(myLocation.location, stormTracks.tracks);
-    const fresh = hazards.filter(({ key }) => !notifiedHazardsRef.current.has(key));
-    notifiedHazardsRef.current = new Set(hazards.map(({ key }) => key));
+    if (!myLocation.location) return;
+    const threats = stormAlerts(myLocation.location, nearbyStorms);
+    const fresh = threats.filter(({ key, rank }) => rank > (notifiedStormsRef.current.get(key) ?? 0));
+    notifiedStormsRef.current = new Map(threats.map(({ key, rank }) => [key, Math.max(rank, notifiedStormsRef.current.get(key) ?? 0)]));
     if (fresh.length === 0) return;
     if (notifySound) playAlertTone();
-    for (const hazard of fresh) showNotification(hazard.title, hazard.body, hazard.key, hazard.urgent, () => {});
-  }, [myLocation.location, stormTracks.tracks, notifyCovering, notifySound]);
+    for (const threat of fresh) showNotification(threat.title, threat.body, threat.key, threat.urgent, () => {});
+  }, [myLocation.location, nearbyStorms, notifyCovering, notifySound]);
   // SRV follows the on-screen storm nearest the map center (pan to a storm to
   // pick it), else the NWS average, until the user types their own values.
   const selectedStorm = useMemo(() => {
@@ -1365,7 +1373,7 @@ export default function App() {
                 setNotifyCovering(on);
               }}
             />
-            <span>Notify me when a warning covers my location, or a TVS, mesocyclone or severe hail is within 15 mi</span>
+            <span>Notify me when a warning or watch covers my location, or a storm with a TVS, mesocyclone or severe hail is within 15 mi or heading my way</span>
           </label>
           <label className="check-field">
             <input type="checkbox" checked={notifySound} disabled={!notifyCovering} onChange={(e) => setNotifySound(e.target.checked)} />

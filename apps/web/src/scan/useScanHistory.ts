@@ -374,11 +374,14 @@ export function useScanHistory(icao: string, maxEntries: number = MAX_HISTORY_SC
       try {
         const d = new Date(startMillis);
         setArchiveStatus("listing archived scans…");
-        const day = await discoverDay(icao, utcDay(d), controller.signal);
-        // shortcut: same UTC day only, a window crossing midnight stops at 23:59Z.
         // Pre-2017 volumes are ~45 MB uncompressed each; cap RAM regardless of the live cache size.
         const limit = Math.min(maxEntriesRef.current, ARCHIVE_MAX_SCANS);
-        const picked = day.filter((v) => v.startTimeMillis >= startMillis).slice(0, limit);
+        let listed = (await discoverDay(icao, utcDay(d), controller.signal)).filter((v) => v.startTimeMillis >= startMillis);
+        // A window starting late in the UTC day (evening in the US) carries on past 00Z.
+        if (listed.length < limit) {
+          listed = [...listed, ...(await discoverDay(icao, utcDay(new Date(startMillis + 86_400_000)), controller.signal))];
+        }
+        const picked = listed.slice(0, limit);
         if (picked.length === 0) {
           setArchiveStatus(`no ${icao} scans found after that time`);
           return;

@@ -4,6 +4,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { HeldAlert } from "../alerts/types";
 import { pointInAlertGeometry } from "../alerts/geometryHitTest";
+import { fetchAlertIdsAtPoint } from "../alerts/nwsApi";
+import { ALERT_POLL_INTERVAL_MS } from "../alerts/useAlertPoller";
 import { legLengthAndBearing } from "../ui/CrossSectionPanel";
 
 export interface MyLocation {
@@ -54,14 +56,46 @@ export function useMyLocation(enabled: boolean): { location: MyLocation | null; 
   return { location, error };
 }
 
-/** Active alerts whose polygon contains `point`, and which of those weren't
- * covering it last time (`prevKeys`), i.e. the ones to notify about. */
+/**
+ * Ids of the active alerts NWS says cover `point` (see `fetchAlertIdsAtPoint`),
+ * re-polled with the nationwide feed and whenever the point moves ~1 km.
+ * Empty while `point` is null. Keeps the last answer through a failed poll.
+ */
+export function useAlertIdsAtPoint(point: { lat: number; lon: number } | null): ReadonlySet<string> {
+  const [ids, setIds] = useState<ReadonlySet<string>>(new Set());
+  const at = point ? `${point.lat.toFixed(2)},${point.lon.toFixed(2)}` : null;
+  useEffect(() => {
+    setIds(new Set());
+    if (!at) return;
+    const [lat, lon] = at.split(",").map(Number);
+    const controller = new AbortController();
+    const poll = () =>
+      fetchAlertIdsAtPoint(lat, lon, controller.signal).then(
+        (next) => !controller.signal.aborted && setIds(next),
+        (err: unknown) => !controller.signal.aborted && console.warn("[alerts] point query failed:", err),
+      );
+    poll();
+    const timer = setInterval(poll, ALERT_POLL_INTERVAL_MS);
+    return () => {
+      controller.abort();
+      clearInterval(timer);
+    };
+  }, [at]);
+  return ids;
+}
+
+/** Active alerts covering `point` -- its polygon contains it, or NWS lists it
+ * for that point (`idsAtPoint`: zone-only alerts such as watches) -- and which
+ * of those weren't covering it last time (`prevKeys`), i.e. the ones to notify about. */
 export function coveringAlerts(
   point: { lat: number; lon: number },
   active: readonly HeldAlert[],
   prevKeys: ReadonlySet<string>,
+  idsAtPoint: ReadonlySet<string> = new Set(),
 ): { covering: HeldAlert[]; fresh: HeldAlert[] } {
-  const covering = active.filter(({ alert }) => alert.geometry && pointInAlertGeometry([point.lon, point.lat], alert.geometry));
+  const covering = active.filter(
+    ({ alert }) => idsAtPoint.has(alert.id) || (alert.geometry && pointInAlertGeometry([point.lon, point.lat], alert.geometry)),
+  );
   return { covering, fresh: covering.filter(({ key }) => !prevKeys.has(key)) };
 }
 

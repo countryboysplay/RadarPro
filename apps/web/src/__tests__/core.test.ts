@@ -2,7 +2,8 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { parseHail, parseMeso, parseNst, parseTvs } from "../storms/nst";
-import { nearbyHazards } from "../storms/nearbyHazards";
+import { closestApproach, stormAlerts } from "../storms/nearbyHazards";
+import type { StormCell, StormTracks } from "../storms/nst";
 import { parseObjectKey } from "../nexrad/keys";
 import { clampHistoryLimit, historyReducer, initialState } from "../scan/useScanHistory";
 import { alertNearSite, pointInAlertGeometry } from "../alerts/geometryHitTest";
@@ -89,6 +90,12 @@ describe("coveringAlerts", () => {
     expect(first.fresh.map((a) => a.key)).toEqual(["in"]);
     expect(coveringAlerts({ lat: 5, lon: 5 }, active, new Set(["in"])).fresh).toEqual([]);
     expect(coveringAlerts({ lat: 50, lon: 5 }, active, new Set()).covering).toEqual([]);
+  });
+  it("counts zone-only alerts NWS lists for the point (watches)", () => {
+    const watch = { key: "watch", alert: { id: "urn:oid:watch.1", geometry: null } } as never;
+    const ids = new Set(["urn:oid:watch.1"]);
+    expect(coveringAlerts({ lat: 50, lon: 5 }, [...active, watch], new Set(), ids).covering.map((a) => a.key)).toEqual(["watch"]);
+    expect(coveringAlerts({ lat: 50, lon: 5 }, [...active, watch], new Set()).covering).toEqual([]);
   });
 });
 
@@ -263,11 +270,55 @@ describe("TVS and hail (KVWX, Owensboro KY hail event, 2025-03-15 10:01Z)", () =
     for (const cell of tracks.cells) cell.hail = hail.get(cell.id) ?? null;
 
     const owensboro = { lat: 37.774, lon: -87.113 };
-    const keys = nearbyHazards(owensboro, tracks).map((h) => h.key);
-    expect(keys).toContain("tvs:L8");
-    expect(keys).toContain("meso:677");
-    expect(keys).toContain("hail:L8");
-    expect(keys).not.toContain("meso:284"); // 096 deg, well north-east of town
-    expect(nearbyHazards({ lat: 35.0, lon: -97.0 }, tracks)).toEqual([]);
+    const alerts = stormAlerts(owensboro, [{ icao: "KVWX", tracks }]);
+    // L8 carries the TVS, its 2.75" hail and (within 10 km) meso 677: one alert, ranked as a TVS.
+    const l8 = alerts.find((a) => a.key === "KVWX:L8")!;
+    expect(l8.rank).toBe(4);
+    expect(l8.urgent).toBe(true);
+    expect(l8.body).toMatch(/TVS/);
+    expect(l8.body).toMatch(/2\.75″ hail/);
+    expect(alerts[0].key).toBe("KVWX:L8"); // worst first
+    expect(alerts.some((a) => a.body.includes("284"))).toBe(false); // 096 deg, well north-east of town
+    expect(stormAlerts({ lat: 35.0, lon: -97.0 }, [{ icao: "KVWX", tracks }])).toEqual([]);
+  });
+});
+
+describe("stormAlerts heading", () => {
+  const here = { lat: 35, lon: -97 };
+  // ~0.11 deg of longitude is 10 km at 35N.
+  const lonKm = 1 / (111.32 * Math.cos((35 * Math.PI) / 180));
+  const cell = (id: string, startKm: number, stepKm: number): StormCell => {
+    const at: [number, number] = [here.lon + startKm * lonKm, here.lat];
+    const forecast = [0, 1, 2, 3, 4].map((i) => [here.lon + (startKm + i * stepKm) * lonKm, here.lat] as [number, number]);
+    return { id, at, past: [], forecast, motion: null, hail: { severeChance: 90, chance: 100, sizeIn: 1.5 } };
+  };
+  const tracks = (...cells: StormCell[]): StormTracks => ({ scanTimeMs: 0, cells, avgMotion: null, tvs: [], mesos: [] });
+
+  it("finds the closest point along the track and when", () => {
+    const c = cell("A1", -30, 15); // 30 km west, moving east 15 km per 15 min
+    const a = closestApproach(here, c.forecast);
+    expect(a.km).toBeLessThan(0.5);
+    expect(a.min).toBeCloseTo(30, 0);
+    // Only 30 minutes ahead count: one that takes 40 minutes is still 10 km out at 30.
+    expect(closestApproach(here, cell("A2", -40, 15).forecast).km).toBeCloseTo(10, 0);
+  });
+
+  it("alerts on a storm heading your way, with an arrival time", () => {
+    const [alert] = stormAlerts(here, [{ icao: "KTLX", tracks: tracks(cell("A1", -40, 20)) }]);
+    expect(alert.title).toBe("1.50″ hail storm heading your way");
+    expect(alert.body).toMatch(/arrives in ~\d+ min, passing over you/);
+  });
+
+  it("ignores a storm moving away, even one that is fairly close", () => {
+    expect(stormAlerts(here, [{ icao: "KTLX", tracks: tracks(cell("B2", 30, 20)) }])).toEqual([]);
+  });
+
+  it("reports a storm two radars both see once, from the nearer radar", () => {
+    const alerts = stormAlerts(here, [
+      { icao: "KTLX", tracks: tracks(cell("C3", -10, 15)) },
+      { icao: "KFDR", tracks: tracks(cell("Q8", -12, 15)) },
+    ]);
+    expect(alerts.map((a) => a.key)).toEqual(["KTLX:C3"]);
+    expect(alerts[0].title).toMatch(/near you$/);
   });
 });
