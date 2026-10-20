@@ -4,7 +4,9 @@ import type { MrmsGridMetadata, MrmsProductId, MrmsSnapshotMetadata } from "../m
 const PRODUCTS: { id: MrmsProductId; label: string }[] = [
   { id: "reflectivity", label: "Reflectivity" },
   { id: "precip_rate", label: "Precip Rate" },
+  { id: "precip_type", label: "Precip Type (rain/snow/hail)" },
   { id: "qpe_1h", label: "1-hr Rainfall (mm)" },
+  { id: "qpe_3h", label: "3-hr Rainfall (mm)" },
   { id: "hail_size_60min", label: "Max Hail Size, 60 min (mm)" },
   { id: "echo_top_18", label: "Echo Tops, 18 dBZ (km)" },
   { id: "vil", label: "VIL (kg/m²)" },
@@ -126,6 +128,13 @@ export function MrmsPanel({
             <button type="button" className="mrms-refresh-button" onClick={onRefresh} disabled={busy}>
               Refresh snapshot
             </button>
+          )}
+
+          {productId === "precip_type" && (
+            // Mirrors the PrecipFlag palette in `crates/mrms/src/palette.rs`.
+            <div className="settings-field-note">
+              Green rain · dark green cold rain · yellow convective rain · magenta rain with hail · blue snow
+            </div>
           )}
 
           <dl className="mrms-meta">

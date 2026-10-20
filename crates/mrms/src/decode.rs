@@ -121,7 +121,7 @@ fn classify_raw_value(product: MrmsProduct, raw: f32) -> MrmsCellValue {
                 MrmsCellValue::Value(raw)
             }
         }
-        MrmsProduct::Qpe01h => {
+        MrmsProduct::Qpe01h | MrmsProduct::Qpe03h | MrmsProduct::PrecipFlag => {
             if (raw - DERIVED_NO_COVERAGE_SENTINEL).abs() < SENTINEL_TOLERANCE {
                 MrmsCellValue::NoCoverage
             } else {

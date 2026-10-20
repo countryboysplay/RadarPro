@@ -289,6 +289,8 @@ fn product_id_str(product: MrmsProduct) -> &'static str {
         MrmsProduct::EchoTop18 => "echo_top_18",
         MrmsProduct::Vil => "vil",
         MrmsProduct::Qpe01h => "qpe_1h",
+        MrmsProduct::Qpe03h => "qpe_3h",
+        MrmsProduct::PrecipFlag => "precip_type",
         MrmsProduct::LightningCg5min => "lightning_5min",
     }
 }

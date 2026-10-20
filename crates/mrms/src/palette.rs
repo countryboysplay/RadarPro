@@ -121,7 +121,7 @@ pub fn palette_for(product: crate::keys::MrmsProduct) -> MrmsPalette {
             (70.0, [220, 0, 0, 255]),
             (90.0, [200, 0, 220, 255]),
         ]),
-        crate::keys::MrmsProduct::Qpe01h => ramp_palette(&[
+        crate::keys::MrmsProduct::Qpe01h | crate::keys::MrmsProduct::Qpe03h => ramp_palette(&[
             (0.0, [0, 0, 0, 0]), // no rain: transparent
             (0.25, [120, 200, 255, 220]),
             (2.5, [40, 130, 240, 255]),
@@ -130,6 +130,35 @@ pub fn palette_for(product: crate::keys::MrmsProduct) -> MrmsPalette {
             (50.0, [230, 120, 0, 255]),
             (75.0, [220, 0, 0, 255]),
             (100.0, [200, 0, 220, 255]),
+        ]),
+        // Category codes, so flat bands of +-0.5 around each code (the LUT
+        // interpolates between stops). Rain greens, snow blue, hail magenta.
+        crate::keys::MrmsProduct::PrecipFlag => ramp_palette(&[
+            (0.5, [0, 0, 0, 0]), // none: transparent
+            (0.5, [60, 170, 70, 200]),
+            (1.5, [60, 170, 70, 200]), // 1 warm stratiform rain
+            (1.5, [0, 0, 0, 0]),
+            (2.5, [0, 0, 0, 0]),
+            (2.5, [80, 150, 255, 220]),
+            (3.5, [80, 150, 255, 220]), // 3 snow
+            (3.5, [0, 0, 0, 0]),
+            (5.5, [0, 0, 0, 0]),
+            (5.5, [240, 200, 30, 230]),
+            (6.5, [240, 200, 30, 230]), // 6 convective rain
+            (6.5, [220, 60, 220, 240]),
+            (7.5, [220, 60, 220, 240]), // 7 rain with hail
+            (7.5, [0, 0, 0, 0]),
+            (9.5, [0, 0, 0, 0]),
+            (9.5, [40, 120, 60, 200]),
+            (10.5, [40, 120, 60, 200]), // 10 cold stratiform rain
+            (10.5, [0, 0, 0, 0]),
+            (90.5, [0, 0, 0, 0]),
+            (90.5, [60, 170, 70, 200]),
+            (91.5, [60, 170, 70, 200]), // 91 tropical stratiform rain
+            (91.5, [0, 0, 0, 0]),
+            (95.5, [0, 0, 0, 0]),
+            (95.5, [240, 200, 30, 230]),
+            (96.5, [240, 200, 30, 230]), // 96 tropical convective rain
         ]),
         crate::keys::MrmsProduct::LightningCg5min => ramp_palette(&[
             (0.0, [0, 0, 0, 0]),       // no flashes: transparent
@@ -216,5 +245,28 @@ mod tests {
         let palette = precip_rate_palette();
         let distinct: std::collections::HashSet<[u8; 4]> = palette.lut.iter().copied().collect();
         assert!(distinct.len() > 1);
+    }
+
+    #[test]
+    fn precip_type_codes_each_land_on_their_own_color() {
+        let palette = palette_for(crate::keys::MrmsProduct::PrecipFlag);
+        // Both texels around each code, as the GPU's linear sampler reads them.
+        let texels = |code: f32| {
+            let u =
+                (code - palette.min) / (palette.max - palette.min) * (palette.lut.len() - 1) as f32;
+            [
+                palette.lut[u.floor() as usize],
+                palette.lut[u.ceil() as usize],
+            ]
+        };
+        let [none, _] = texels(0.0);
+        assert_eq!(none[3], 0);
+        for code in [1.0, 3.0, 6.0, 7.0, 10.0, 91.0, 96.0] {
+            let [a, b] = texels(code);
+            assert_eq!(a, b, "code {code} straddles a band edge");
+            assert!(a[3] > 0, "code {code} is transparent");
+        }
+        assert_ne!(texels(3.0)[0], texels(1.0)[0]); // snow vs rain
+        assert_ne!(texels(7.0)[0], texels(6.0)[0]); // hail vs convective
     }
 }

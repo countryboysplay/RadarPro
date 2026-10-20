@@ -59,9 +59,18 @@ pub enum MrmsProduct {
     EchoTop18,
     /// `CONUS/VIL_00.50/` -- vertically integrated liquid, kg/m^2.
     Vil,
-    /// `CONUS/MultiSensor_QPE_01H_Pass2_00.00/` -- 1-hour multi-sensor
-    /// precipitation accumulation, mm.
+    /// `CONUS/RadarOnly_QPE_01H_00.00/` -- 1-hour radar-only precipitation
+    /// accumulation, mm. Radar-only, not multi-sensor: Pass 2 runs about an
+    /// hour behind, this one minutes.
     Qpe01h,
+    /// `CONUS/RadarOnly_QPE_03H_00.00/` -- 3-hour radar-only precipitation
+    /// accumulation, mm.
+    Qpe03h,
+    /// `CONUS/PrecipFlag_00.00/` -- surface precipitation type, a category
+    /// code (0 none, 1 warm stratiform rain, 3 snow, 6 convective rain,
+    /// 7 rain with hail, 10 cold stratiform rain, 91/96 tropical
+    /// stratiform/convective rain).
+    PrecipFlag,
     /// `CONUS/NLDN_CG_005min_AvgDensity_00.00/` -- NLDN cloud-to-ground
     /// lightning flash density over the past 5 minutes. Unit inferred from
     /// live data: one flash in a 0.01 deg cell reads 1/cell-area (~0.87-0.98).
@@ -69,13 +78,15 @@ pub enum MrmsProduct {
 }
 
 impl MrmsProduct {
-    pub const ALL: [MrmsProduct; 7] = [
+    pub const ALL: [MrmsProduct; 9] = [
         MrmsProduct::ReflectivityQcComposite,
         MrmsProduct::PrecipRate,
         MrmsProduct::MeshMax60min,
         MrmsProduct::EchoTop18,
         MrmsProduct::Vil,
         MrmsProduct::Qpe01h,
+        MrmsProduct::Qpe03h,
+        MrmsProduct::PrecipFlag,
         MrmsProduct::LightningCg5min,
     ];
 
@@ -89,7 +100,9 @@ impl MrmsProduct {
             MrmsProduct::MeshMax60min => "MESH_Max_60min_00.50",
             MrmsProduct::EchoTop18 => "EchoTop_18_00.50",
             MrmsProduct::Vil => "VIL_00.50",
-            MrmsProduct::Qpe01h => "MultiSensor_QPE_01H_Pass2_00.00",
+            MrmsProduct::Qpe01h => "RadarOnly_QPE_01H_00.00",
+            MrmsProduct::Qpe03h => "RadarOnly_QPE_03H_00.00",
+            MrmsProduct::PrecipFlag => "PrecipFlag_00.00",
             MrmsProduct::LightningCg5min => "NLDN_CG_005min_AvgDensity_00.00",
         }
     }
@@ -103,7 +116,8 @@ impl MrmsProduct {
             MrmsProduct::MeshMax60min => "mm",
             MrmsProduct::EchoTop18 => "km",
             MrmsProduct::Vil => "kg/m^2",
-            MrmsProduct::Qpe01h => "mm",
+            MrmsProduct::Qpe01h | MrmsProduct::Qpe03h => "mm",
+            MrmsProduct::PrecipFlag => "category",
             MrmsProduct::LightningCg5min => "flashes/km^2",
         }
     }
@@ -116,7 +130,9 @@ impl MrmsProduct {
             MrmsProduct::MeshMax60min => "MRMS max hail size (60 min)",
             MrmsProduct::EchoTop18 => "MRMS echo tops (18 dBZ)",
             MrmsProduct::Vil => "MRMS vertically integrated liquid",
-            MrmsProduct::Qpe01h => "MRMS 1-hour rainfall (multi-sensor)",
+            MrmsProduct::Qpe01h => "MRMS 1-hour rainfall (radar only)",
+            MrmsProduct::Qpe03h => "MRMS 3-hour rainfall (radar only)",
+            MrmsProduct::PrecipFlag => "MRMS precipitation type",
             MrmsProduct::LightningCg5min => "MRMS NLDN lightning density (5 min)",
         }
     }
