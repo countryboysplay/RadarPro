@@ -20,6 +20,13 @@ const PATHS = {
     </>
   ),
   forecast: <path d="M3 15l4-5 3 3 4-6 3 4M3 17.5h14" />,
+  settings: (
+    <>
+      <path d="M3 6h14M3 14h14" />
+      <circle cx="7" cy="6" r="2" fill="var(--g2)" />
+      <circle cx="13" cy="14" r="2" fill="var(--g2)" />
+    </>
+  ),
 } as const;
 
 export type IconName = keyof typeof PATHS;

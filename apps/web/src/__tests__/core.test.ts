@@ -10,7 +10,7 @@ import { parsePlacefile } from "../placefiles/placefile";
 import { fetchMds, fetchWatches } from "../spc/spc";
 import { lsrLayer } from "../spc/lsr";
 import { fetchWpc } from "../spc/wpc";
-import { glmKeyAt, glmLayer, nearestFlashKm } from "../lightning/glm";
+import { glmKeyAt, glmLayer, mergeFlashes, nearestFlashKm } from "../lightning/glm";
 import { alertsGeoJson, fetchArchivedAlerts } from "../alerts/archived";
 import { formatTags } from "../alerts/types";
 import { clampHistoryLimit, historyReducer, initialState } from "../scan/useScanHistory";
@@ -504,6 +504,9 @@ describe("archived warnings and SPS", () => {
     expect(formatTags(alerts[0].alert.tags)).toBe("Tornado radar indicated · Hail 1.75 in");
     // SPS hail "0.00" means none.
     expect(formatTags(alerts[1].alert.tags)).toBe("Wind 50 mph");
+    // Live SPSs often say "Up to".
+    expect(formatTags([["maxHailSize", "Up to .75"], ["maxWindGust", "Up to 50 MPH"]])).toBe("Hail up to .75 in · Wind up to 50 mph");
+    expect(formatTags([["maxHailSize", "0.00"], ["maxWindGust", "0 MPH"]])).toBe("");
     expect(alertsGeoJson(alerts).features[0]).toMatchObject({ id: "OUN.TO.W.12.2024", properties: { severity: "Extreme" }, geometry: { type: "MultiPolygon" } });
   });
 });
@@ -526,22 +529,17 @@ describe("WPC rainfall layers", () => {
     ]);
   });
 
-  it("stacks rain contours smallest first, with the amount on the outline only", async () => {
+  it("labels each rain band with its own range, the top one open-ended", async () => {
     serve([
       { geometry: { type: "Polygon", coordinates: square }, properties: { qpf: 1.5, valid_time: "v" } },
       { geometry: { type: "Polygon", coordinates: square }, properties: { qpf: 0.01, valid_time: "v" } },
     ]);
     const layer = await fetchWpc("qpf72", new AbortController().signal);
-    expect(layer.file.items.map((i) => [i.kind, i.hover])).toEqual([
-      ["polygon", ""],
-      ["line", "WPC rain forecast Days 1-3: 0.01 in or more\nv"],
-      ["polygon", ""],
-      ["line", "WPC rain forecast Days 1-3: 1.5 in or more\nv"],
-    ]);
-    expect(layer.file.items[3].color).toBe("#8968cd");
-    // The 0.01 in fill has the 1.5 in contour cut out; the top band keeps its own ring only.
     const fills = layer.file.items.filter((i) => i.kind === "polygon");
-    expect(fills.map((i) => (i.kind === "polygon" ? i.contours.length : 0))).toEqual([2, 1]);
+    expect(fills.map((i) => i.hover)).toEqual(["WPC rain forecast Days 1-3: 1.5 in or more\nv", "WPC rain forecast Days 1-3: 0.01 to 1.5 in\nv"]);
+    // Bands don't overlap, so each fill is drawn from its own rings only.
+    expect(fills.map((i) => (i.kind === "polygon" ? i.contours.length : 0))).toEqual([1, 1]);
+    expect(layer.file.items.find((i) => i.kind === "line")?.color).toBe("#8968cd");
   });
 });
 
@@ -550,10 +548,10 @@ describe("GOES lightning", () => {
 
   it("builds the bucket key of a file start, sorting before that file's real key", () => {
     const at = Date.UTC(2026, 9, 20, 17, 15, 0);
-    expect(glmKeyAt(at)).toBe("GLM-L2-LCFA/2026/293/17/OR_GLM-L2-LCFA_G19_s2026293171500");
+    expect(glmKeyAt(at, "G19")).toBe("GLM-L2-LCFA/2026/293/17/OR_GLM-L2-LCFA_G19_s2026293171500");
     const real = "GLM-L2-LCFA/2026/293/17/OR_GLM-L2-LCFA_G19_s20262931715000_e20262931715200_c20262931715218.nc";
-    expect(glmKeyAt(at) < real && real < glmKeyAt(at + 20_000)).toBe(true);
-    expect(glmKeyAt(Date.UTC(2026, 0, 1, 0, 0, 5))).toBe("GLM-L2-LCFA/2026/001/00/OR_GLM-L2-LCFA_G19_s2026001000005");
+    expect(glmKeyAt(at, "G19") < real && real < glmKeyAt(at + 20_000, "G19")).toBe(true);
+    expect(glmKeyAt(Date.UTC(2026, 0, 1, 0, 0, 5), "G18")).toBe("GLM-L2-LCFA/2026/001/00/OR_GLM-L2-LCFA_G18_s2026001000005");
   });
 
   it("colours flashes by age, drops ones past 15 min, newest on top", () => {
@@ -564,6 +562,14 @@ describe("GOES lightning", () => {
     const flashes = Float64Array.from([-97, 35, now - 12 * min, -97, 35, now - 20 * min, -97, 35, now - 30_000, -97, 35, now - 3 * min, -97, 35, now - 7 * min]);
     const items = glmLayer(flashes, now).file.items;
     expect(items.map((i) => (i.kind === "icon" ? i.index : 0))).toEqual([4, 3, 2, 1]);
+  });
+
+  it("takes each satellite's flashes from its own side when both are on", () => {
+    const east = Float64Array.from([-120, 40, 1, -97, 35, 2]);
+    const west = Float64Array.from([-120, 40, 3, -97, 35, 4]);
+    expect([...mergeFlashes(east, west)!]).toEqual([-97, 35, 2, -120, 40, 3]);
+    expect(mergeFlashes(null, west)).toBe(west);
+    expect(mergeFlashes(null, null)).toBeNull();
   });
 
   it("finds the nearest recent flash only", () => {

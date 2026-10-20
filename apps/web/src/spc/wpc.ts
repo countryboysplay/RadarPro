@@ -2,7 +2,6 @@
 // QPF rain forecast, from NOAA's map services (ArcGIS, CORS-open, GeoJSON).
 // Each becomes a `PlacefileLayer`, like the SPC outlook.
 
-import type { PlaceItem } from "../placefiles/placefile";
 import type { PlacefileLayer } from "../placefiles/usePlacefiles";
 import { area, getJson, layer, rgba, rings, type Feature, type WpcKind } from "./spc";
 
@@ -56,18 +55,15 @@ export async function fetchWpc(kind: WpcKind, signal: AbortSignal): Promise<Plac
     return layer(url, "WPC excessive rainfall", items);
   }
   const data = await getJson<{ features: Feature<QpfProps>[] }>(url, signal);
-  // Each contour covers everything at or above its amount. The next band's rings are
-  // cut out of each fill (even-odd), so fills don't stack into an opaque blot. The hover
-  // goes on the outlines, so it reads like a contour map rather than listing every band.
-  const base = { anchor: null, threshold: 999 };
-  const bands = [...data.features].sort((a, b) => a.properties.qpf - b.properties.qpf).map((f) => ({ p: f.properties, contours: rings(f.geometry) }));
-  const items = bands.flatMap(({ p, contours }, i): PlaceItem[] => {
+  // Each band covers only its own range (from its amount up to the next band's;
+  // checked against live data), with a hole where the next band is, so the
+  // fills don't overlap and the hover names one band.
+  const amounts = [...new Set(data.features.map((f) => f.properties.qpf))].sort((a, b) => a - b);
+  const items = data.features.flatMap(({ geometry, properties: p }) => {
+    const next = amounts[amounts.indexOf(p.qpf) + 1];
+    const range = next === undefined ? `${p.qpf} in or more` : `${p.qpf} to ${next} in`;
     const color = qpfColor(p.qpf);
-    const hover = `WPC rain forecast ${day}: ${p.qpf} in or more\n${p.valid_time}`;
-    return [
-      { ...base, kind: "polygon", contours: [...contours, ...(bands[i + 1]?.contours ?? [])], color: rgba(color, 0.3), hover: "" },
-      ...contours.map((points): PlaceItem => ({ ...base, kind: "line", points, width: 1, color, hover })),
-    ];
+    return area(rings(geometry), rgba(color, 0.3), color, 1, `WPC rain forecast ${day}: ${range}\n${p.valid_time}`);
   });
   return layer(url, "WPC rain forecast", items);
 }

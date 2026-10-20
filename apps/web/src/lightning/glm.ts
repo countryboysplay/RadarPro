@@ -1,5 +1,5 @@
-// GOES-East lightning (GLM) flashes from the last 15 minutes, live: polls
-// NOAA's public bucket every 20 s, downloads each new 20-second file, decodes
+// GOES-East and GOES-West lightning (GLM) flashes from the last 15 minutes,
+// live: polls each satellite's public NOAA bucket every 20 s, downloads each new 20-second file, decodes
 // it with `crates/glm` (wasm) and draws flashes as a placefile layer coloured
 // by age, so drawing and hover reuse `placefiles/draw.ts`.
 
@@ -11,13 +11,20 @@ import { BOLT } from "../mrms/useMrmsOverlay";
 import { legLengthAndBearing } from "../ui/CrossSectionPanel";
 import { decodeGlmFlashes, ensureGlmWasmModuleLoaded } from "./wasmModule";
 
-const BUCKET = "https://noaa-goes19.s3.amazonaws.com";
 export const GLM_WINDOW_MS = 15 * 60_000;
 /** GLM publishes a file every 20 s. */
 const POLL_MS = 20_000;
 const REQUEST_TIMEOUT_MS = 20_000;
-/** North America and nearby waters; most of GOES-East's flashes are over South America. */
-const BOX = { west: -135, east: -55, south: 15, north: 60 };
+export type GoesSatellite = "G19" | "G18";
+/** GOES-East (G19) and GOES-West (G18). Boxes: North America and nearby waters (most of
+ * GOES-East's flashes are over South America); the West's reaches out to Hawaii. */
+const SATELLITES: Record<GoesSatellite, { bucket: string; box: { west: number; east: number; south: number; north: number } }> = {
+  G19: { bucket: "https://noaa-goes19.s3.amazonaws.com", box: { west: -135, east: -55, south: 15, north: 60 } },
+  G18: { bucket: "https://noaa-goes18.s3.amazonaws.com", box: { west: -170, east: -90, south: 15, north: 60 } },
+};
+/** Halfway between the satellites (75.2 W, 137.2 W). Each sees its own side better: on a test
+ * night West caught 487 flashes over the western US to East's 330. */
+const SPLIT_LON = -106;
 
 /** Flat `[lon, lat, timeMs, ...]`, as `decodeGlmFlashes` returns. */
 export type Flashes = Float64Array;
@@ -25,21 +32,24 @@ export type Flashes = Float64Array;
 const pad = (n: number, width = 2) => String(n).padStart(width, "0");
 
 /** The bucket key a file starting at `ms` would have, up to the seconds (for S3's `start-after`). */
-export function glmKeyAt(ms: number): string {
+export function glmKeyAt(ms: number, satellite: GoesSatellite): string {
   const d = new Date(ms);
   const year = d.getUTCFullYear();
   const doy = pad(Math.floor((ms - Date.UTC(year, 0, 1)) / 86_400_000) + 1, 3);
   const hour = pad(d.getUTCHours());
-  return `GLM-L2-LCFA/${year}/${doy}/${hour}/OR_GLM-L2-LCFA_G19_s${year}${doy}${hour}${pad(d.getUTCMinutes())}${pad(d.getUTCSeconds())}`;
+  return `GLM-L2-LCFA/${year}/${doy}/${hour}/OR_GLM-L2-LCFA_${satellite}_s${year}${doy}${hour}${pad(d.getUTCMinutes())}${pad(d.getUTCSeconds())}`;
 }
 
-function inBox(all: Float64Array): Float64Array {
-  const kept: number[] = [];
-  for (let i = 0; i < all.length; i += 3) {
-    const [lon, lat] = [all[i], all[i + 1]];
-    if (lon >= BOX.west && lon <= BOX.east && lat >= BOX.south && lat <= BOX.north) kept.push(lon, lat, all[i + 2]);
-  }
-  return Float64Array.from(kept);
+/** Appends to `kept` the flashes of `all` that pass `test`. */
+function keep(all: Float64Array, test: (lon: number, lat: number) => boolean, kept: number[] = []): number[] {
+  for (let i = 0; i < all.length; i += 3) if (test(all[i], all[i + 1])) kept.push(all[i], all[i + 1], all[i + 2]);
+  return kept;
+}
+
+/** Both satellites' flashes, each from its own side of `SPLIT_LON` so no flash is drawn twice. */
+export function mergeFlashes(east: Flashes | null, west: Flashes | null): Flashes | null {
+  if (!east || !west) return east ?? west;
+  return Float64Array.from(keep(west, (lon) => lon < SPLIT_LON, keep(east, (lon) => lon >= SPLIT_LON)));
 }
 
 async function ok(response: Response): Promise<Response> {
@@ -47,8 +57,8 @@ async function ok(response: Response): Promise<Response> {
   return response;
 }
 
-/** Flashes in the last `GLM_WINDOW_MS` over North America, refreshed every 20 s while `enabled`. */
-export function useGlmFlashes(enabled: boolean) {
+/** One satellite's flashes in the last `GLM_WINDOW_MS` over North America, refreshed every 20 s while `enabled`. */
+export function useGlmFlashes(satellite: GoesSatellite, enabled: boolean) {
   const [state, setState] = useState<{ flashes: Flashes | null; updatedMs: number; error: string | null }>({ flashes: null, updatedMs: 0, error: null });
   useEffect(() => {
     if (!enabled) {
@@ -57,6 +67,7 @@ export function useGlmFlashes(enabled: boolean) {
     }
     const controller = new AbortController();
     const { signal } = controller;
+    const { bucket, box } = SATELLITES[satellite];
     const files = new Map<string, Float64Array>();
     let lastKey: string | null = null;
     let busy = false;
@@ -68,15 +79,16 @@ export function useGlmFlashes(enabled: boolean) {
       try {
         await ensureGlmWasmModuleLoaded();
         const now = Date.now();
-        const oldest = glmKeyAt(now - GLM_WINDOW_MS);
+        const oldest = glmKeyAt(now - GLM_WINDOW_MS, satellite);
         // Only keys after the newest one already seen: a few per poll, after the first.
         const after = lastKey && lastKey > oldest ? lastKey : oldest;
-        const listing = await get(`${BUCKET}/?list-type=2&prefix=GLM-L2-LCFA/&start-after=${encodeURIComponent(after)}`);
+        const listing = await get(`${bucket}/?list-type=2&prefix=GLM-L2-LCFA/&start-after=${encodeURIComponent(after)}`);
         const keys = parseListObjectsV2(await listing.text()).keys;
         const results = await Promise.allSettled(
           keys.map(async (key) => {
-            const bytes = await get(`${BUCKET}/${key}`).then((r) => r.arrayBuffer());
-            files.set(key, inBox(decodeGlmFlashes(new Uint8Array(bytes))));
+            const bytes = await get(`${bucket}/${key}`).then((r) => r.arrayBuffer());
+            const all = decodeGlmFlashes(new Uint8Array(bytes));
+            files.set(key, Float64Array.from(keep(all, (lon, lat) => lon >= box.west && lon <= box.east && lat >= box.south && lat <= box.north)));
           }),
         );
         if (signal.aborted) return;
@@ -104,7 +116,7 @@ export function useGlmFlashes(enabled: boolean) {
       controller.abort();
       clearInterval(timer);
     };
-  }, [enabled]);
+  }, [satellite, enabled]);
   return state;
 }
 
@@ -141,7 +153,8 @@ function iconSheet(): ImageBitmap {
   return sheet;
 }
 
-const time = (ms: number) => new Date(ms).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit", second: "2-digit" });
+// One reused formatter: `toLocaleTimeString` per flash took 1.7 s for 20,000 flashes, this 26 ms.
+const time = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit", second: "2-digit" }).format;
 
 /** Flashes from the last 15 min as icons, oldest first so the newest draw on top. */
 export function glmLayer(flashes: Flashes, nowMs: number): PlacefileLayer {

@@ -126,7 +126,7 @@ body,
 /* ---------- Generic controls inside chrome ---------- */
 
 /* Frame ticks are buttons drawn as marks, so they opt out of button chrome. */
-:where(.rail, .forecast-drawer, .right-panel, .time-strip) button:where(:not(.unified-timeline-tick)) {
+:where(.rail, .forecast-drawer, .right-panel, .settings-window, .time-strip) button:where(:not(.unified-timeline-tick)) {
   font: 600 14px/1 var(--font);
   letter-spacing: 0.01em;
   color: var(--g8);
@@ -142,19 +142,19 @@ body,
     color 120ms ease-out;
 }
 
-:where(.rail, .forecast-drawer, .right-panel, .time-strip) button:where(:not(.unified-timeline-tick)):hover:not(:disabled) {
+:where(.rail, .forecast-drawer, .right-panel, .settings-window, .time-strip) button:where(:not(.unified-timeline-tick)):hover:not(:disabled) {
   background: var(--g4);
   border-color: var(--g6);
 }
 
-:where(.rail, .forecast-drawer, .right-panel, .time-strip) button:where(:not(.unified-timeline-tick)):disabled {
+:where(.rail, .forecast-drawer, .right-panel, .settings-window, .time-strip) button:where(:not(.unified-timeline-tick)):disabled {
   color: var(--g6);
   background: transparent;
   border-color: var(--g4);
   cursor: default;
 }
 
-:where(.rail, .forecast-drawer, .right-panel) :is(select, input[type="text"], input[type="password"], input[type="number"], input[type="datetime-local"], input[type="date"], textarea) {
+:where(.rail, .forecast-drawer, .right-panel, .settings-window) :is(select, input[type="text"], input[type="password"], input[type="number"], input[type="datetime-local"], input[type="date"], textarea) {
   font: 500 14px/1.2 var(--font);
   color: var(--g8);
   background: var(--g1);
@@ -166,36 +166,36 @@ body,
   max-width: 100%;
 }
 
-:where(.rail, .forecast-drawer, .right-panel) textarea {
+:where(.rail, .forecast-drawer, .right-panel, .settings-window) textarea {
   padding: 8px;
   width: 100%;
   font-size: 13px;
   line-height: 1.4;
 }
 
-:where(.rail, .forecast-drawer, .right-panel) :is(select, input, textarea):focus-visible {
+:where(.rail, .forecast-drawer, .right-panel, .settings-window) :is(select, input, textarea):focus-visible {
   border-color: var(--accent);
   outline-offset: 0;
 }
 
-:where(.rail, .forecast-drawer, .right-panel) ::placeholder {
+:where(.rail, .forecast-drawer, .right-panel, .settings-window) ::placeholder {
   color: var(--g6);
 }
 
-:where(.rail, .forecast-drawer, .right-panel) label {
+:where(.rail, .forecast-drawer, .right-panel, .settings-window) label {
   color: var(--g7);
 }
 
-:where(.rail, .forecast-drawer, .right-panel) input[type="range"] {
+:where(.rail, .forecast-drawer, .right-panel, .settings-window) input[type="range"] {
   accent-color: var(--accent);
 }
 
-:where(.rail, .forecast-drawer, .right-panel) a {
+:where(.rail, .forecast-drawer, .right-panel, .settings-window) a {
   color: var(--accent-strong);
   text-underline-offset: 3px;
 }
 
-:where(.rail, .forecast-drawer, .right-panel) :is(p, dl) {
+:where(.rail, .forecast-drawer, .right-panel, .settings-window) :is(p, dl) {
   margin: 0;
 }
 
@@ -620,7 +620,7 @@ body,
   border-top: 1px solid var(--g4);
 }
 
-:where(.rail, .forecast-drawer) .sidebar-section-header {
+:where(.rail, .forecast-drawer, .settings-window) .sidebar-section-header {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -633,7 +633,7 @@ body,
   text-align: left;
 }
 
-:where(.rail, .forecast-drawer) .sidebar-section-header:hover:not(:disabled) {
+:where(.rail, .forecast-drawer, .settings-window) .sidebar-section-header:hover:not(:disabled) {
   background: transparent;
 }
 
@@ -991,6 +991,98 @@ body,
   border: 1px solid var(--g4);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
+}
+
+/* Top-left over the map, so the radar to its right shows each change as it is made. */
+.settings-window {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 12;
+  display: grid;
+  grid-template-columns: 172px minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  width: min(680px, calc(100% - 24px));
+  max-height: calc(100% - 24px);
+  background: var(--g2);
+  border: 1px solid var(--g4);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.settings-window-head {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 44px;
+  padding: 0 8px 0 16px;
+  border-bottom: 1px solid var(--g4);
+}
+
+.settings-window-head .rail-heading {
+  margin: 0;
+}
+
+.settings-window .settings-window-close {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  min-height: 28px;
+  padding: 0;
+  background: transparent;
+  border-color: transparent;
+}
+
+.settings-window-nav {
+  display: grid;
+  align-content: start;
+  gap: 2px;
+  padding: 8px;
+  border-right: 1px solid var(--g4);
+  overflow-y: auto;
+}
+
+.settings-window .settings-window-nav button {
+  justify-content: flex-start;
+  text-align: left;
+  min-height: 34px;
+  padding: 0 10px;
+  background: transparent;
+  border-color: transparent;
+}
+
+.settings-window .settings-window-nav button[aria-current="true"] {
+  background: var(--g3);
+  border-color: var(--g5);
+}
+
+.settings-window-body {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  padding: 14px 16px 18px;
+  overflow-y: auto;
+}
+
+.rail .settings-open {
+  display: grid;
+  place-items: center;
+  align-self: center;
+  order: 1;
+  flex: none;
+  width: 32px;
+  min-height: 30px;
+  padding: 0;
+}
+
+/* Status sits right, next to the settings button. */
+.rail-head .feed-status {
+  margin-left: auto;
+}
+
+.rail .settings-open[aria-pressed="true"] {
+  border-color: var(--accent);
 }
 
 .right-panel-section + .right-panel-section {

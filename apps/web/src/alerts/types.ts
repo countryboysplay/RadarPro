@@ -134,8 +134,9 @@ const TAG_TEXT: Record<string, (v: string) => string | null> = {
   tornadoDamageThreat: (v) => `${v.charAt(0)}${lower(v.slice(1))} tornado damage`,
   thunderstormDamageThreat: (v) => `${v.charAt(0)}${lower(v.slice(1))} damage`,
   flashFloodDamageThreat: (v) => `${v.charAt(0)}${lower(v.slice(1))} flood damage`,
-  maxHailSize: (v) => (Number(v) > 0 ? `Hail ${v} in` : null),
-  maxWindGust: (v) => (parseFloat(v) > 0 ? `Wind ${lower(v)}` : null),
+  // NWS sends "1.75", "0.00" (none), or on SPSs "Up to .75" / "Up to 50 MPH".
+  maxHailSize: (v) => (Number(v) === 0 ? null : `Hail ${lower(v)} in`),
+  maxWindGust: (v) => (parseFloat(v) === 0 ? null : `Wind ${lower(v)}`),
 };
 
 /** "Tornado radar indicated · Hail 1.75 in · Wind 60 mph", or "" with no tags. */

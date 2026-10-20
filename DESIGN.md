@@ -146,7 +146,7 @@ components:
 
 The radar is terrain: fixed, never restyled, read the way an orienteer reads a printed map. Everything around it is the map's legend, set at night: paper-white ink on near-black green-greys, ranked tables with hairline rules, one condensed sans at sizes you can read in a moving vehicle. Whatever the chaser places on the terrain (the cross-section leg, the chosen site, the probe's control) is printed in one course ink. It sits above the echoes on a dark casing, the way an orienteering course is overprinted on a map.
 
-The workstation is dense but calm. A 320px rail on the left holds the hot path (site, product, tilt, course) open at all times. Depth lives in collapsed categories below it: Warnings, Layers, Archive, Color table, Settings. A single 64px time strip runs along the bottom: transport, one time axis with observed scans up to NOW, then forecast hours hatched in amber beyond it. The map gets everything else. Only two colours carry meaning in the chrome. Steel blue marks what is selected and the one primary action. Amber marks model time. Everything else is a neutral from one stepped ramp.
+The workstation is dense but calm. A 320px rail on the left holds the hot path (site, product, tilt, course) open at all times. Depth lives in collapsed categories below it: Warnings, SPC, My location, Layers, Archive. Set-once options (storms and lightning, location alerts, placefiles, color tables, data) live in a Settings window opened from the rail head. A single 64px time strip runs along the bottom: transport, one time axis with observed scans up to NOW, then forecast hours hatched in amber beyond it. The map gets everything else. Only two colours carry meaning in the chrome. Steel blue marks what is selected and the one primary action. Amber marks model time. Everything else is a neutral from one stepped ramp.
 
 The world rejects the category default of a grey toolbar of buttons floating over the map. It also rejects chrome that covers the radar, controls hidden behind menus, and any presentation that lets a forecast pass for an observation.
 
@@ -218,7 +218,7 @@ A nine-step green-grey night ramp carries the chrome. Steel blue, course purple 
 
 ## Layout
 
-The layout is a fixed full-viewport grid. A **320px rail** spans the full height on the left. The **map** fills the remaining width. A **64px time strip** runs under the map only, so the rail keeps its full height. The rail scrolls on its own, and its head (wordmark plus feed status) is sticky.
+The layout is a fixed full-viewport grid. A **320px rail** spans the full height on the left. The **map** fills the remaining width. A **64px time strip** runs under the map only, so the rail keeps its full height. The rail scrolls on its own, and its head (wordmark, feed status, settings button) is sticky. The Settings window floats over the map's top-left corner, 680px wide, with section tabs on its left, and closes with × or Esc. It does not dim the map, so each change shows on the radar while it is open.
 
 - **Rail rhythm:** 16px side padding. Hot-path blocks have 18px above and 16px below, each closed by a 1px Rule. Headings sit 8px above their controls. Collapsible categories have 44px headers and 12px gaps between children; nested sections have 38px headers.
 - **Segments:** product is a 4-column grid and tilt is 5 columns, both with 4px gaps. Every option is visible at once, so nothing hides in a menu.
@@ -247,7 +247,7 @@ The chrome is flat. Depth comes from tonal steps on the night ramp (Ground, then
 
 The form language is near-square. Controls, inputs, panels and the time track share one small radius (3px). Severity chips use 2px. Time ticks and the legend bar use 1px. Status and severity dots are full circles. Dividers are 1px rules in Rule (#262e2a), and floats over the map add a Panel border.
 
-The only pictograms are one SVG set on a 20-unit grid with a 1.75 stroke and round caps and joins. It contains transport (prev, play, pause, next, latest), chevrons, close, star, a forecast trace, and the three course symbols: **start triangle**, **control circle** and **finish double circle**. The rail and the map draw the course symbols with the same geometry. On the map they are 3px course ink over a 7px casing: a 13px triangle and a finish circle of 11px and 6.5px radii. The leg stops short of each symbol instead of running through it.
+The only pictograms are one SVG set on a 20-unit grid with a 1.75 stroke and round caps and joins. It contains transport (prev, play, pause, next, latest), chevrons, close, star, a forecast trace, a settings slider pair, and the three course symbols: **start triangle**, **control circle** and **finish double circle**. The rail and the map draw the course symbols with the same geometry. On the map they are 3px course ink over a 7px casing: a 13px triangle and a finish circle of 11px and 6.5px radii. The leg stops short of each symbol instead of running through it.
 
 ## Components
 

@@ -58,11 +58,12 @@ import { MrmsPanel } from "./ui/MrmsPanel";
 import { SettingsPanel } from "./ui/SettingsPanel";
 import { SidebarSection } from "./ui/SidebarSection";
 import { SidebarCategory } from "./ui/SidebarCategory";
+import { SettingsWindow, type SettingsSection } from "./ui/SettingsWindow";
 import { PlacefilesPanel } from "./ui/PlacefilesPanel";
 import { usePlacefiles, type PlacefileLayer } from "./placefiles/usePlacefiles";
 import { MdText, SpcPanel } from "./ui/SpcPanel";
 import { usePolled, useSpc } from "./spc/useSpc";
-import { glmLayer, nearestFlashKm, useGlmFlashes } from "./lightning/glm";
+import { glmLayer, mergeFlashes, nearestFlashKm, useGlmFlashes } from "./lightning/glm";
 import { alertsGeoJson, fetchArchivedAlerts } from "./alerts/archived";
 import { OUTLOOK_NAMES, type OutlookKind } from "./spc/spc";
 import { LSR_WINDOW_HOURS } from "./spc/lsr";
@@ -719,8 +720,16 @@ export default function App() {
   // Reports draw over placefiles: spotters often sit right on the reports they file.
   // GOES lightning, drawn on live radar only (today's flashes would mislead on an archived
   // scan), but still polled in archive mode so the "lightning near you" alert keeps working.
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const closeSettings = useCallback(() => setSettingsOpen(false), []);
   const [showLightning, setShowLightning] = useRememberedFlag("radarpro.showLightning", true);
-  const glm = useGlmFlashes(showLightning);
+  const [showLightningWest, setShowLightningWest] = useRememberedFlag("radarpro.showLightningWest", true);
+  const glmEast = useGlmFlashes("G19", showLightning);
+  const glmWest = useGlmFlashes("G18", showLightningWest);
+  const glm = useMemo(
+    () => ({ flashes: mergeFlashes(glmEast.flashes, glmWest.flashes), updatedMs: Math.max(glmEast.updatedMs, glmWest.updatedMs) }),
+    [glmEast.flashes, glmEast.updatedMs, glmWest.flashes, glmWest.updatedMs],
+  );
   const lightningLayer = useMemo(() => (glm.flashes && !inArchive ? glmLayer(glm.flashes, glm.updatedMs) : null), [glm.flashes, glm.updatedMs, inArchive]);
   const overlayPlacefiles = useMemo(
     () => [...placefiles.layers, lightningLayer, spc.reports].filter((l): l is PlacefileLayer => !!l),
@@ -1234,11 +1243,141 @@ export default function App() {
   const tiltLabel = (deg: number, i: number) =>
     tilts.filter((t) => t.deg.toFixed(1) === deg.toFixed(1)).length > 1 ? `${deg.toFixed(1)}·${i + 1}` : deg.toFixed(1);
 
+  // Set-once options live in the Settings window; the rail keeps what a chase touches.
+  const settingsSections: SettingsSection[] = [
+    {
+      id: "overlays",
+      title: "Storms & lightning",
+      content: (
+        <>
+          <label className="check-field">
+            <input type="checkbox" checked={showStormTracks} onChange={(e) => setShowStormTracks(e.target.checked)} />
+            <span>Show NWS storm cells, tracks, TVS, mesocyclones and severe hail ({summarizeStormTracks(showStormTracks, stormTracks)})</span>
+          </label>
+          <label className="check-field">
+            <input type="checkbox" checked={showReports} onChange={(e) => setShowReports(e.target.checked)} />
+            <span>
+              Show NWS storm reports (tornado, funnel, hail, wind, flash flood) from the last {LSR_WINDOW_HOURS} hours{showReports ? ` (${spc.reportCount})` : ""}
+            </span>
+          </label>
+          {showReports && spc.reportsError && <div className="settings-field-status settings-field-status-none">Storm reports failed: {spc.reportsError}</div>}
+          <label className="check-field">
+            <input type="checkbox" checked={showLightning} onChange={(e) => setShowLightning(e.target.checked)} />
+            <span>
+              Show GOES-East lightning (central and eastern US) from the last 15 minutes (white bolts newest, then yellow, orange, red)
+            </span>
+          </label>
+          <label className="check-field">
+            <input type="checkbox" checked={showLightningWest} onChange={(e) => setShowLightningWest(e.target.checked)} />
+            <span>Show GOES-West lightning (western US, Pacific)</span>
+          </label>
+          {glm.flashes && (
+            <div className="settings-field-note">
+              {lightningLayer ? `${lightningLayer.file.items.length} bolts on the map` : "Lightning shows on live radar only"}
+            </div>
+          )}
+          {showLightning && glmEast.error && <div className="settings-field-status settings-field-status-none">GOES-East lightning: {glmEast.error}</div>}
+          {showLightningWest && glmWest.error && <div className="settings-field-status settings-field-status-none">GOES-West lightning: {glmWest.error}</div>}
+        </>
+      ),
+    },
+    {
+      id: "location",
+      title: "My location",
+      content: (
+        <>
+          <label className="check-field">
+            <input type="checkbox" checked={showMyLocation} onChange={(e) => setShowMyLocation(e.target.checked)} />
+            <span>Show my location on the map</span>
+          </label>
+          <label className="check-field">
+            <input
+              type="checkbox"
+              checked={notifyCovering}
+              disabled={!showMyLocation}
+              onChange={async (e) => {
+                const on = e.target.checked;
+                // Ask first, so alerts already covering you are notified, not just sounded.
+                if (on && !isDesktop() && "Notification" in window && Notification.permission === "default") {
+                  await Notification.requestPermission();
+                }
+                setNotifyCovering(on);
+              }}
+            />
+            <span>Notify me when a warning or watch covers my location, or a storm with a TVS, mesocyclone or severe hail is within 15 mi or heading my way</span>
+          </label>
+          <label className="check-field">
+            <input type="checkbox" checked={notifySound} disabled={!notifyCovering} onChange={(e) => setNotifySound(e.target.checked)} />
+            <span>Play a sound with the notification</span>
+          </label>
+          {notifyCovering && (
+            <button
+              type="button"
+              onClick={() => {
+                if (notifySound) playAlertTone();
+                showNotification("RadarPro test notification", "Warnings that cover your location will look like this.", "radarpro-test", false, () => {});
+              }}
+            >
+              Send a test notification
+            </button>
+          )}
+          {notifyCovering && !isDesktop() && (!("Notification" in window) || Notification.permission === "denied") && (
+            <div className="settings-field-note">Desktop notifications are blocked; only the sound will play.</div>
+          )}
+        </>
+      ),
+    },
+    {
+      id: "placefiles",
+      title: `Placefiles (${placefiles.layers.length} on)`,
+      content: <PlacefilesPanel entries={placefiles.entries} onChange={placefiles.setEntries} status={placefiles.status} />,
+    },
+    {
+      id: "colors",
+      title: "Color tables",
+      content: momentCode ? (
+        <ColorTableEditor
+          momentCode={momentCode}
+          activeColorTableJson={activeTableJson}
+          onApply={handleApplyColorTable}
+          onResetToBuiltinDefault={handleResetColorTable}
+        />
+      ) : (
+        <p className="settings-field-note">Waiting for a scan: the table edited is the one for the product on screen.</p>
+      ),
+    },
+    {
+      id: "app",
+      title: "Data & app",
+      content: (
+        <SettingsPanel
+          scanPollEvent={history.pollEvent}
+          alertStatus={alerts.status}
+          alertError={alerts.error}
+          alertLastPolledAt={alerts.lastPolledAt}
+          cacheLimit={cacheLimit}
+          cacheEntriesCount={history.entries.length}
+          onCacheLimitChange={setCacheLimit}
+        />
+      ),
+    },
+  ];
+
   return (
     <div className="workstation">
       <aside className="rail" aria-label="Radar controls">
         <header className="rail-head">
           <span className="wordmark">RadarPro</span>
+          <button
+            type="button"
+            className="settings-open"
+            aria-pressed={settingsOpen}
+            onClick={() => setSettingsOpen((o) => !o)}
+            title={`Settings: storms & lightning, my location, placefiles, color tables, data (${settingsSummary})`}
+          >
+            <Icon name="settings" size={18} />
+            <span className="visually-hidden">Settings</span>
+          </button>
           <span
             className={`feed-status${feedError ? " feed-status-error" : ""}`}
             title={
@@ -1424,28 +1563,6 @@ export default function App() {
           />
         </SidebarCategory>
 
-        <SidebarCategory title="Storm tracks" summary={summarizeStormTracks(showStormTracks, stormTracks)}>
-          <label className="check-field">
-            <input type="checkbox" checked={showStormTracks} onChange={(e) => setShowStormTracks(e.target.checked)} />
-            <span>Show NWS storm cells, tracks, TVS, mesocyclones and severe hail</span>
-          </label>
-          <label className="check-field">
-            <input type="checkbox" checked={showReports} onChange={(e) => setShowReports(e.target.checked)} />
-            <span>
-              Show NWS storm reports (tornado, funnel, hail, wind, flash flood) from the last {LSR_WINDOW_HOURS} hours{showReports ? ` (${spc.reportCount})` : ""}
-            </span>
-          </label>
-          {showReports && spc.reportsError && <div className="settings-field-status settings-field-status-none">Storm reports failed: {spc.reportsError}</div>}
-          <label className="check-field">
-            <input type="checkbox" checked={showLightning} onChange={(e) => setShowLightning(e.target.checked)} />
-            <span>
-              Show GOES lightning from the last 15 minutes (white bolts newest, then yellow, orange, red){showLightning && glm.flashes ? ` (${lightningLayer?.file.items.length ?? 0})` : ""}
-              {showLightning && inArchive ? "; live radar only" : ""}
-            </span>
-          </label>
-          {showLightning && glm.error && <div className="settings-field-status settings-field-status-none">Lightning: {glm.error}</div>}
-        </SidebarCategory>
-
         <SidebarCategory
           title="SPC"
           summary={[spcOutlook !== "off" && OUTLOOK_NAMES[spcOutlook], showWatches && `${spc.watchCount} watches`, showMds && `${spc.mds.length} MDs`].filter(Boolean).join(" · ") || "off"}
@@ -1466,52 +1583,10 @@ export default function App() {
           />
         </SidebarCategory>
 
-        <SidebarCategory title="Placefiles" summary={`${placefiles.layers.length} on`}>
-          <PlacefilesPanel entries={placefiles.entries} onChange={placefiles.setEntries} status={placefiles.status} />
-        </SidebarCategory>
-
         <SidebarCategory title="My location" summary={summarizeMyLocation(showMyLocation, myLocation, coveringMe.length)}>
-          <label className="check-field">
-            <input type="checkbox" checked={showMyLocation} onChange={(e) => setShowMyLocation(e.target.checked)} />
-            <span>Show my location on the map</span>
-          </label>
           <button type="button" disabled={!myLocation.location} onClick={() => setCenterOnMeRequest((n) => n + 1)}>
             Center on me
           </button>
-          <label className="check-field">
-            <input
-              type="checkbox"
-              checked={notifyCovering}
-              disabled={!showMyLocation}
-              onChange={async (e) => {
-                const on = e.target.checked;
-                // Ask first, so alerts already covering you are notified, not just sounded.
-                if (on && !isDesktop() && "Notification" in window && Notification.permission === "default") {
-                  await Notification.requestPermission();
-                }
-                setNotifyCovering(on);
-              }}
-            />
-            <span>Notify me when a warning or watch covers my location, or a storm with a TVS, mesocyclone or severe hail is within 15 mi or heading my way</span>
-          </label>
-          <label className="check-field">
-            <input type="checkbox" checked={notifySound} disabled={!notifyCovering} onChange={(e) => setNotifySound(e.target.checked)} />
-            <span>Play a sound with the notification</span>
-          </label>
-          {notifyCovering && (
-            <button
-              type="button"
-              onClick={() => {
-                if (notifySound) playAlertTone();
-                showNotification("RadarPro test notification", "Warnings that cover your location will look like this.", "radarpro-test", false, () => {});
-              }}
-            >
-              Send a test notification
-            </button>
-          )}
-          {notifyCovering && !isDesktop() && (!("Notification" in window) || Notification.permission === "denied") && (
-            <div className="settings-field-note">Desktop notifications are blocked; only the sound will play.</div>
-          )}
           {coveringMe.length > 0 && (
             <ul className="alerts-list">
               {coveringMe.map(({ key, alert }) => (
@@ -1679,31 +1754,10 @@ export default function App() {
           />
         </SidebarCategory>
 
-        {momentCode && (
-          <SidebarCategory title="Color table" summary={momentCode}>
-            <ColorTableEditor
-              momentCode={momentCode}
-              activeColorTableJson={activeTableJson}
-              onApply={handleApplyColorTable}
-              onResetToBuiltinDefault={handleResetColorTable}
-            />
-          </SidebarCategory>
-        )}
-
-        <SidebarCategory title="Settings" summary={settingsSummary}>
-          <SettingsPanel
-            scanPollEvent={history.pollEvent}
-            alertStatus={alerts.status}
-            alertError={alerts.error}
-            alertLastPolledAt={alerts.lastPolledAt}
-            cacheLimit={cacheLimit}
-            cacheEntriesCount={history.entries.length}
-            onCacheLimitChange={setCacheLimit}
-          />
-        </SidebarCategory>
       </aside>
 
       <main className="map-region">
+        {settingsOpen && <SettingsWindow sections={settingsSections} onClose={closeSettings} />}
         <MapView
           site={site}
           canvasRef={canvasRef}
