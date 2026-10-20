@@ -67,8 +67,8 @@ export function SpcPanel(props: SpcPanelProps) {
   );
 }
 
-/** The full text of one MD, for the right panel. */
-export function MdText({ productId }: { productId: string }) {
+/** The full text of one MD (or archived warning), for the right panel. */
+export function MdText({ productId, source = "NWS Storm Prediction Center" }: { productId: string; source?: string }) {
   const [text, setText] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
@@ -85,7 +85,7 @@ export function MdText({ productId }: { productId: string }) {
   return (
     <>
       <p className="alert-detail-text">{text.trim()}</p>
-      <div className="alert-detail-attribution">Source: NWS Storm Prediction Center, via Iowa Environmental Mesonet.</div>
+      <div className="alert-detail-attribution">Source: {source}, via Iowa Environmental Mesonet.</div>
     </>
   );
 }

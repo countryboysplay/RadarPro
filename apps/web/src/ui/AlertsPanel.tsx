@@ -12,6 +12,7 @@ export interface AlertsPanelProps {
   heldCount: number;
   /** Shown instead of "no active alerts" when the list is a filtered subset. */
   emptyText?: string;
+  source?: string;
 }
 
 function describeStatus(status: AlertPollStatus, error: string | null, lastPolledAt: number | null): string {
@@ -38,6 +39,7 @@ export function AlertsPanel({
   lastPolledAt,
   heldCount,
   emptyText = "no active alerts",
+  source = "National Weather Service (api.weather.gov)",
 }: AlertsPanelProps) {
   return (
     <div className="alerts-panel">
@@ -75,7 +77,7 @@ export function AlertsPanel({
       )}
 
       <div className="alerts-panel-footer">
-        {heldCount} held · Source: National Weather Service (api.weather.gov)
+        {heldCount} held · Source: {source}
       </div>
     </div>
   );

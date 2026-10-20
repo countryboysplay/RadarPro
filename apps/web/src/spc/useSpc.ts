@@ -9,7 +9,7 @@ const PRODUCT_POLL_MS = 2 * 60_000;
 const OUTLOOK_POLL_MS = 10 * 60_000;
 
 /** Polls `load` while `enabled`, keeping the last good result when a refresh fails. */
-function usePolled<T>(load: ((signal: AbortSignal) => Promise<T>) | null, key: string, pollMs: number | null) {
+export function usePolled<T>(load: ((signal: AbortSignal) => Promise<T>) | null, key: string, pollMs: number | null) {
   const [value, setValue] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {

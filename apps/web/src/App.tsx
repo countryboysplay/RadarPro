@@ -38,7 +38,7 @@ import { ColorTableEditor } from "./ui/ColorTableEditor";
 import { AlertsPanel } from "./ui/AlertsPanel";
 import { AlertDetail } from "./ui/AlertDetail";
 import { useAlertPoller } from "./alerts/useAlertPoller";
-import type { AlertJson } from "./alerts/types";
+import type { AlertJson, HeldAlert } from "./alerts/types";
 import { alertNearSite } from "./alerts/geometryHitTest";
 import { SEVERITY_COLORS } from "./alerts/types";
 import { coveringAlerts, playAlertTone, useAlertIdsAtPoint, useMyLocation } from "./location/useMyLocation";
@@ -61,7 +61,8 @@ import { SidebarCategory } from "./ui/SidebarCategory";
 import { PlacefilesPanel } from "./ui/PlacefilesPanel";
 import { usePlacefiles } from "./placefiles/usePlacefiles";
 import { MdText, SpcPanel } from "./ui/SpcPanel";
-import { useSpc } from "./spc/useSpc";
+import { usePolled, useSpc } from "./spc/useSpc";
+import { alertsGeoJson, fetchArchivedAlerts } from "./alerts/archived";
 import { OUTLOOK_NAMES, type OutlookKind } from "./spc/spc";
 import { LSR_WINDOW_HOURS } from "./spc/lsr";
 import { UnifiedTimeline } from "./timeline/UnifiedTimeline";
@@ -246,6 +247,8 @@ function summarizeStormTracks(on: boolean, { tracks, error, archived }: ReturnTy
 function summarizeSettings(cacheEntriesCount: number, cacheLimit: number): string {
   return `cache ${cacheEntriesCount}/${cacheLimit} scans`;
 }
+
+const NO_ALERTS: HeldAlert[] = [];
 
 export default function App() {
   const [icao, setIcao] = useState(DEFAULT_SITE_ICAO);
@@ -564,7 +567,18 @@ export default function App() {
   );
 
   const alerts = useAlertPoller();
+  // In archive playback, the scan on screen.
+  const archiveFrameMs = history.archiveStartMillis !== null ? (history.entries[history.currentIndex]?.startTimeMillis ?? null) : null;
+  // The warnings and SPS in effect then replace the live list and map; live alerts still drive notifications.
+  const inArchive = history.archiveStartMillis !== null;
+  const archiveAlertsAt = archiveFrameMs === null ? null : Math.floor(archiveFrameMs / 60_000) * 60_000;
+  const archived = usePolled(archiveAlertsAt === null ? null : (s) => fetchArchivedAlerts(archiveAlertsAt, s), archiveAlertsAt === null ? "" : `a${archiveAlertsAt}`, null);
+  // Empty, not today's alerts, while an archive load has no scan yet.
+  const shownAlerts = !inArchive ? alerts.activeAlerts : (archived.value ?? NO_ALERTS);
+  const shownAlertsGeo = useMemo(() => (!inArchive ? alerts.geojson : alertsGeoJson(shownAlerts)), [inArchive, alerts.geojson, shownAlerts]);
   const [selectedAlertKey, setSelectedAlertKey] = useState<string | null>(null);
+  // An archived warning left open in live mode would read as a live one that just expired.
+  useEffect(() => setSelectedAlertKey(null), [inArchive]);
 
   // `alertsSectionOpen` is controlled so selecting an alert -- from a map
   // click or the list itself -- can force the Warnings section open.
@@ -585,10 +599,10 @@ export default function App() {
   // This never changes *whether*/*when* an alert is considered active --
   // that remains entirely `alerts.activeAlerts`, read fresh every render.
   const lastKnownAlertsRef = useRef<Map<string, AlertJson>>(new Map());
-  for (const { key, alert } of alerts.activeAlerts) {
+  for (const { key, alert } of shownAlerts) {
     lastKnownAlertsRef.current.set(key, alert);
   }
-  const selectedActiveEntry = alerts.activeAlerts.find((a) => a.key === selectedAlertKey) ?? null;
+  const selectedActiveEntry = shownAlerts.find((a) => a.key === selectedAlertKey) ?? null;
   const selectedAlert = selectedActiveEntry?.alert ?? (selectedAlertKey ? lastKnownAlertsRef.current.get(selectedAlertKey) ?? null : null);
   const handleAlertClick = useCallback((key: string | null) => {
     setSelectedAlertKey(key);
@@ -689,7 +703,6 @@ export default function App() {
   // NWS storm cells, on by default; SRV needs them even when hidden.
   const [showStormTracks, setShowStormTracks] = useState(true);
   // In archive playback, the storms archived for the scan on screen, not today's.
-  const archiveFrameMs = history.archiveStartMillis !== null ? (history.entries[history.currentIndex]?.startTimeMillis ?? null) : null;
   const stormTracksWanted = (showStormTracks || momentCode === "SRV") && (history.archiveStartMillis === null || archiveFrameMs !== null);
   const stormTracks = useStormTracks(icao, stormTracksWanted, archiveFrameMs);
   const placefiles = usePlacefiles();
@@ -1111,6 +1124,10 @@ export default function App() {
         <AlertDetail alert={selectedAlert} isActive={selectedActiveEntry !== null} onClose={() => setSelectedAlertKey(null)} />
       ),
     });
+    // Archived alerts carry no text of their own; show the NWS product as issued.
+    if (inArchive && selectedAlert.id) {
+      rightPanelSections.push({ key: "alert-text", title: "Warning text", children: <MdText productId={selectedAlert.id} source="National Weather Service" /> });
+    }
   }
   const selectedMdInfo = spc.mds.find((md) => md.productId === selectedMd);
   if (selectedMd) {
@@ -1159,11 +1176,11 @@ export default function App() {
   );
   const modelForecastSummary = summarizeModelForecast(forecast.providerId, forecast.phase);
   const mapLayersSummary = summarizeMapLayers(activeMapLayer);
-  const nearAlerts = alerts.activeAlerts.filter(({ alert }) => alertNearSite(alert.geometry, site));
+  const nearAlerts = shownAlerts.filter(({ alert }) => alertNearSite(alert.geometry, site));
   // Warnings near this radar first (each group stays severity-sorted), so a
   // local Tornado Warning never sits below hundreds of alerts elsewhere.
-  const alertList = nearAlertsOnly ? nearAlerts : [...nearAlerts, ...alerts.activeAlerts.filter((a) => !nearAlerts.includes(a))];
-  const alertsSummary = summarizeAlerts(nearAlerts.length, alerts.activeAlerts.length, site.icao);
+  const alertList = nearAlertsOnly ? nearAlerts : [...nearAlerts, ...shownAlerts.filter((a) => !nearAlerts.includes(a))];
+  const alertsSummary = summarizeAlerts(nearAlerts.length, shownAlerts.length, site.icao);
   const settingsSummary = summarizeSettings(history.entries.length, cacheLimit);
 
   const activeTableParsedUnits = useMemo(() => {
@@ -1376,14 +1393,15 @@ export default function App() {
             <span>Only polygon warnings within 460 km (hides zone-only watches)</span>
           </label>
           <AlertsPanel
-            status={alerts.status}
-            error={alerts.error}
+            status={!inArchive ? alerts.status : archived.error ? "error" : archived.value ? "ok" : "loading"}
+            error={!inArchive ? alerts.error : archived.error}
             alerts={alertList}
             emptyText={nearAlertsOnly ? "no polygon warnings within 460 km; zone-only watches are not placed" : undefined}
             selectedKey={selectedAlertKey}
             onSelect={handleAlertClick}
-            lastPolledAt={alerts.lastPolledAt}
-            heldCount={alerts.heldCount}
+            lastPolledAt={!inArchive ? alerts.lastPolledAt : null}
+            heldCount={!inArchive ? alerts.heldCount : shownAlerts.length}
+            source={!inArchive ? undefined : `NWS archive (Iowa Environmental Mesonet)${archiveAlertsAt === null ? "" : `, in effect ${new Date(archiveAlertsAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}`}`}
           />
         </SidebarCategory>
 
@@ -1667,7 +1685,7 @@ export default function App() {
           rangeRings={rangeRingsGeo}
           onCursorMove={handleCursorMove}
           onCursorLeave={handleCursorLeave}
-          alerts={alerts.geojson}
+          alerts={shownAlertsGeo}
           selectedAlertKey={selectedAlertKey}
           onAlertClick={handleAlertClick}
           pointPickActive={rainbowPointPickTarget !== null || xsPicking}

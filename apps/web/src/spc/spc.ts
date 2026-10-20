@@ -65,7 +65,7 @@ function layer(url: string, title: string, items: PlaceItem[]): PlacefileLayer {
   return { url, file: { title, refreshSeconds: 0, iconFiles: new Map(), fonts: new Map(), items }, sheets: new Map() };
 }
 
-/** Archived answers (`valid=`, or an `ets=` end time) never change; kept for the session so loops reuse them. */
+/** Archived answers (`valid=`/`ts=`, or an `ets=` end time) never change; kept for the session so loops reuse them. */
 // shortcut: reports filed late for a replay of the last hour or two stay missing until restart; fine for older events.
 const archived = new Map<string, Promise<unknown>>();
 
@@ -73,7 +73,7 @@ export async function getJson<T>(url: string, signal: AbortSignal): Promise<T> {
   const cached = archived.get(url);
   if (cached) return cached as Promise<T>;
   // Archived answers are shared through the cache, so they run to the end rather than die with one caller.
-  const isArchived = /[?&](valid|ets)=/.test(url);
+  const isArchived = /[?&](valid|ets|ts)=/.test(url);
   const request = fetch(url, isArchived ? undefined : { signal }).then((response) => {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return response.json() as Promise<T>;

@@ -9,6 +9,7 @@ import { parseObjectKey } from "../nexrad/keys";
 import { parsePlacefile } from "../placefiles/placefile";
 import { fetchMds, fetchWatches } from "../spc/spc";
 import { lsrLayer } from "../spc/lsr";
+import { alertsGeoJson, fetchArchivedAlerts } from "../alerts/archived";
 import { clampHistoryLimit, historyReducer, initialState } from "../scan/useScanHistory";
 import { alertNearSite, pointInAlertGeometry } from "../alerts/geometryHitTest";
 import { coveringAlerts } from "../location/useMyLocation";
@@ -461,5 +462,43 @@ describe("lsrLayer", () => {
     expect(layer.file.items.map((i) => (i.kind === "icon" ? i.index : 0))).toEqual([1, 3]);
     expect(layer.file.items[1].hover).toMatch(/^Hail 1.75 in · .+\n2 N Moore, Cleveland Co., OK\nSource: Trained Spotter\nGolf ball hail.$/);
     expect(layer.file.items[0].hover).toMatch(/^Tornado · /);
+  });
+});
+
+describe("archived warnings and SPS", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("asks IEM for the scan's minute and lists a tornado warning first, with its tags", async () => {
+    const square = [[[-98, 35], [-97, 35], [-97, 36], [-98, 36], [-98, 35]]];
+    const sbw = (phenomena: string, significance: string, ps: string, tags: object = {}) => ({
+      geometry: { type: "MultiPolygon", coordinates: [square] },
+      properties: { phenomena, significance, ps, wfo: "OUN", eventid: 12, year: 2024, product_id: `P-${phenomena}`, issue: "2024-05-06T22:50:00Z", polygon_begin: "2024-05-06T22:55:00Z", polygon_end: "2024-05-06T23:30:00Z", tornadotag: null, hailtag: null, windtag: null, damagetag: null, ...tags },
+    });
+    const fetch = vi.fn<(url: string) => Promise<Response>>(async (url) =>
+      new Response(
+        JSON.stringify({
+          features: url.includes("sbw")
+            ? [sbw("FL", "Y", "Flood Advisory"), sbw("TO", "W", "Tornado Warning", { tornadotag: "RADAR INDICATED", hailtag: 1.75 })]
+            : [{ id: "SPS1", geometry: { type: "Polygon", coordinates: square }, properties: { issue: "2024-05-06T22:32:00Z", expire: "2024-05-06T23:15:00Z", max_hail_size: "0.00", max_wind_gust: "50", wfo: "OUN" } }],
+        }),
+      ),
+    );
+    vi.stubGlobal("fetch", fetch);
+    const alerts = await fetchArchivedAlerts(Date.UTC(2024, 4, 6, 23), new AbortController().signal);
+    expect(fetch.mock.calls.map((c) => String(c[0]))).toEqual([
+      "https://mesonet.agron.iastate.edu/geojson/sbw.geojson?ts=2024-05-06T23:00Z",
+      "https://mesonet.agron.iastate.edu/geojson/sps.geojson?valid=2024-05-06T23:00Z",
+    ]);
+    expect(alerts.map(({ alert }) => [alert.event, alert.severity])).toEqual([
+      ["Tornado Warning", "Extreme"],
+      ["Special Weather Statement", "Moderate"],
+      ["Flood Advisory", "Minor"],
+    ]);
+    expect(alerts[0].key).toBe("OUN.TO.W.12.2024");
+    expect(alerts[0].alert.id).toBe("P-TO");
+    expect(alerts[0].alert.expires).toBe(Date.UTC(2024, 4, 6, 23, 30));
+    expect(alerts[0].alert.headline).toMatch(/^Tornado radar indicated · Hail 1.75 in · until /);
+    expect(alerts[1].alert.headline).toMatch(/^Wind 50 mph · until /);
+    expect(alertsGeoJson(alerts).features[0]).toMatchObject({ id: "OUN.TO.W.12.2024", properties: { severity: "Extreme" }, geometry: { type: "MultiPolygon" } });
   });
 });
