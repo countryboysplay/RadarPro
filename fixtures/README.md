@@ -76,3 +76,11 @@ with a 2.75" hail estimate and a TVS at 131°/47 nm, A0 2.25", L5 1.25", and
 mesocyclones 284, 677 and 350. The TVS/hail/mesocyclone tests check against
 those text tables. (The Unidata Level 3 bucket
 has no NHI/NTV after 2021; NOAA's Google Cloud archive has them.)
+
+## glm/
+
+`OR_GLM-L2-LCFA_G19_s20262931715000_e20262931715200_c20262931715218.nc`: one
+unmodified GOES-19 (GOES-East) GLM Level 2 LCFA file, 2026-10-20
+17:15:00-17:15:20 UTC, 291 flashes (~250 KB), from the public NOAA bucket
+(`https://noaa-goes19.s3.amazonaws.com/GLM-L2-LCFA/2026/293/17/`). Public
+domain NOAA data. Used by `crates/glm`'s decode test.

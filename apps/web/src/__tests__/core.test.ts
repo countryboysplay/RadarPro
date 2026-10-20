@@ -10,6 +10,7 @@ import { parsePlacefile } from "../placefiles/placefile";
 import { fetchMds, fetchWatches } from "../spc/spc";
 import { lsrLayer } from "../spc/lsr";
 import { fetchWpc } from "../spc/wpc";
+import { glmKeyAt, glmLayer, nearestFlashKm } from "../lightning/glm";
 import { alertsGeoJson, fetchArchivedAlerts } from "../alerts/archived";
 import { formatTags } from "../alerts/types";
 import { clampHistoryLimit, historyReducer, initialState } from "../scan/useScanHistory";
@@ -541,5 +542,37 @@ describe("WPC rainfall layers", () => {
     // The 0.01 in fill has the 1.5 in contour cut out; the top band keeps its own ring only.
     const fills = layer.file.items.filter((i) => i.kind === "polygon");
     expect(fills.map((i) => (i.kind === "polygon" ? i.contours.length : 0))).toEqual([2, 1]);
+  });
+});
+
+describe("GOES lightning", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("builds the bucket key of a file start, sorting before that file's real key", () => {
+    const at = Date.UTC(2026, 9, 20, 17, 15, 0);
+    expect(glmKeyAt(at)).toBe("GLM-L2-LCFA/2026/293/17/OR_GLM-L2-LCFA_G19_s2026293171500");
+    const real = "GLM-L2-LCFA/2026/293/17/OR_GLM-L2-LCFA_G19_s20262931715000_e20262931715200_c20262931715218.nc";
+    expect(glmKeyAt(at) < real && real < glmKeyAt(at + 20_000)).toBe(true);
+    expect(glmKeyAt(Date.UTC(2026, 0, 1, 0, 0, 5))).toBe("GLM-L2-LCFA/2026/001/00/OR_GLM-L2-LCFA_G19_s2026001000005");
+  });
+
+  it("colours flashes by age, drops ones past 15 min, newest on top", () => {
+    const ctx = new Proxy({}, { get: () => () => {}, set: () => true });
+    vi.stubGlobal("OffscreenCanvas", class { getContext = () => ctx; transferToImageBitmap = () => ({}) });
+    const now = Date.UTC(2026, 9, 20, 17, 15);
+    const min = 60_000;
+    const flashes = Float64Array.from([-97, 35, now - 12 * min, -97, 35, now - 20 * min, -97, 35, now - 30_000, -97, 35, now - 3 * min, -97, 35, now - 7 * min]);
+    const items = glmLayer(flashes, now).file.items;
+    expect(items.map((i) => (i.kind === "icon" ? i.index : 0))).toEqual([4, 3, 2, 1]);
+  });
+
+  it("finds the nearest recent flash only", () => {
+    const now = Date.UTC(2026, 9, 20, 17, 15);
+    // 0.1 deg of latitude is about 11 km; the closer flash is too old to count.
+    const flashes = Float64Array.from([-97, 35.1, now - 60_000, -97, 35.01, now - 10 * 60_000]);
+    const km = nearestFlashKm(flashes, { lat: 35, lon: -97 }, now - 5 * 60_000);
+    expect(km).toBeGreaterThan(10.5);
+    expect(km).toBeLessThan(11.5);
+    expect(nearestFlashKm(flashes, { lat: 35, lon: -97 }, now)).toBeNull();
   });
 });

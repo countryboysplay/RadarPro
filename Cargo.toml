@@ -13,6 +13,7 @@ members = [
     "crates/provider-hrrr",
     "crates/mrms",
     "crates/mrms-web",
+    "crates/glm",
     "crates/forecast-web",
     "apps/radar-cli",
 ]

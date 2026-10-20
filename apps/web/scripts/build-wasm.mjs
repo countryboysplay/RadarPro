@@ -101,7 +101,8 @@ buildWasmCrate("radar-web", "radar_web");
 buildWasmCrate("weather-alerts", "weather_alerts");
 buildWasmCrate("forecast-web", "forecast_web");
 buildWasmCrate("mrms-web", "mrms_web");
+buildWasmCrate("glm", "glm");
 
 console.log(
-  `[build-wasm] wrote wasm-bindgen output for radar-web, weather-alerts, forecast-web, and mrms-web to ${outDir}`,
+  `[build-wasm] wrote wasm-bindgen output for radar-web, weather-alerts, forecast-web, mrms-web, and glm to ${outDir}`,
 );

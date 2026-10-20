@@ -69,8 +69,8 @@ function strikeColor(value: number): string {
   return "#e6dc00";
 }
 
-/** Lightning-bolt outline, unit half-height, centered on the strike. */
-const BOLT: readonly [number, number][] = [
+/** Lightning-bolt outline, unit half-height, centered on the strike (also GOES lightning, `lightning/glm.ts`). */
+export const BOLT: readonly [number, number][] = [
   [0.35, -1], [-0.6, 0.15], [-0.05, 0.15], [-0.35, 1], [0.65, -0.25], [0.1, -0.25],
 ];
 

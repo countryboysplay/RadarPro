@@ -59,9 +59,10 @@ import { SettingsPanel } from "./ui/SettingsPanel";
 import { SidebarSection } from "./ui/SidebarSection";
 import { SidebarCategory } from "./ui/SidebarCategory";
 import { PlacefilesPanel } from "./ui/PlacefilesPanel";
-import { usePlacefiles } from "./placefiles/usePlacefiles";
+import { usePlacefiles, type PlacefileLayer } from "./placefiles/usePlacefiles";
 import { MdText, SpcPanel } from "./ui/SpcPanel";
 import { usePolled, useSpc } from "./spc/useSpc";
+import { glmLayer, nearestFlashKm, useGlmFlashes } from "./lightning/glm";
 import { alertsGeoJson, fetchArchivedAlerts } from "./alerts/archived";
 import { OUTLOOK_NAMES, type OutlookKind } from "./spc/spc";
 import { LSR_WINDOW_HOURS } from "./spc/lsr";
@@ -716,13 +717,31 @@ export default function App() {
   const [showReports, setShowReports] = useRememberedFlag("radarpro.showReports", true);
   const spc = useSpc(spcOutlook, showWatches, showMds, showReports, archiveFrameMs);
   // Reports draw over placefiles: spotters often sit right on the reports they file.
-  const overlayPlacefiles = useMemo(() => (spc.reports ? [...placefiles.layers, spc.reports] : placefiles.layers), [spc.reports, placefiles.layers]);
+  // GOES lightning, drawn on live radar only (today's flashes would mislead on an archived
+  // scan), but still polled in archive mode so the "lightning near you" alert keeps working.
+  const [showLightning, setShowLightning] = useRememberedFlag("radarpro.showLightning", true);
+  const glm = useGlmFlashes(showLightning);
+  const lightningLayer = useMemo(() => (glm.flashes && !inArchive ? glmLayer(glm.flashes, glm.updatedMs) : null), [glm.flashes, glm.updatedMs, inArchive]);
+  const overlayPlacefiles = useMemo(
+    () => [...placefiles.layers, lightningLayer, spc.reports].filter((l): l is PlacefileLayer => !!l),
+    [spc.reports, placefiles.layers, lightningLayer],
+  );
   const [selectedMd, setSelectedMd] = useState<string | null>(null);
   const [placeHover, setPlaceHover] = useState<string | null>(null);
   // Same notification and sound as a covering warning when a storm with a TVS,
   // mesocyclone or severe hail is within ~15 mi of you, or its forecast track
   // brings it there within 30 min. Uses the radars nearest you, whatever site
   // is on screen. Once per storm, again only if it gets worse.
+  // Lightning within 10 mi (the "if you can hear thunder" distance) in the last 5 min; at most every 15 min.
+  const lightningNotifiedMsRef = useRef(0);
+  useEffect(() => {
+    if (!notifyCovering || !myLocation.location || !glm.flashes) return;
+    const km = nearestFlashKm(glm.flashes, myLocation.location, glm.updatedMs - 5 * 60_000);
+    if (km === null || km > 16 || glm.updatedMs - lightningNotifiedMsRef.current < 15 * 60_000) return;
+    lightningNotifiedMsRef.current = glm.updatedMs;
+    if (notifySound) playAlertTone();
+    showNotification(`Lightning ${Math.max(1, Math.round(km / 1.609))} mi from you`, "GOES lightning mapper, last 5 minutes", "lightning", false, () => {});
+  }, [glm.flashes, glm.updatedMs, myLocation.location, notifyCovering, notifySound]);
   const nearbyStorms = useNearbyStormTracks(myLocation.location, notifyCovering);
   const notifiedStormsRef = useRef<Map<string, number>>(new Map());
   useEffect(() => {
@@ -1417,6 +1436,14 @@ export default function App() {
             </span>
           </label>
           {showReports && spc.reportsError && <div className="settings-field-status settings-field-status-none">Storm reports failed: {spc.reportsError}</div>}
+          <label className="check-field">
+            <input type="checkbox" checked={showLightning} onChange={(e) => setShowLightning(e.target.checked)} />
+            <span>
+              Show GOES lightning from the last 15 minutes (white bolts newest, then yellow, orange, red){showLightning && glm.flashes ? ` (${lightningLayer?.file.items.length ?? 0})` : ""}
+              {showLightning && inArchive ? "; live radar only" : ""}
+            </span>
+          </label>
+          {showLightning && glm.error && <div className="settings-field-status settings-field-status-none">Lightning: {glm.error}</div>}
         </SidebarCategory>
 
         <SidebarCategory
