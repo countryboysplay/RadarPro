@@ -1,12 +1,13 @@
 // @ts-expect-error -- the app tsconfig has no Node types; vitest runs under Node.
 import { readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { parseHail, parseMeso, parseNst, parseTvs } from "../storms/nst";
 import { closestApproach, stormAlerts } from "../storms/nearbyHazards";
 import { placeLabel } from "../storms/labelPlacement";
 import type { StormCell, StormTracks } from "../storms/nst";
 import { parseObjectKey } from "../nexrad/keys";
 import { parsePlacefile } from "../placefiles/placefile";
+import { fetchMds, fetchWatches } from "../spc/spc";
 import { clampHistoryLimit, historyReducer, initialState } from "../scan/useScanHistory";
 import { alertNearSite, pointInAlertGeometry } from "../alerts/geometryHitTest";
 import { coveringAlerts } from "../location/useMyLocation";
@@ -399,5 +400,41 @@ describe("parsePlacefile", () => {
     expect(pf.items[0]).toMatchObject({ points: [[-97, 35], [-98, 36]], width: 2, color: "rgba(255, 0, 0, 1)", threshold: 50, hover: "Track", anchor: null });
     expect(pf.items[1]).toMatchObject({ contours: [[[-90, 30], [-90, 31], [-91, 31], [-90, 30]]], color: "rgba(0, 255, 0, 0.5019607843137255)" });
     expect(pf.items[2]).toMatchObject({ kind: "text", at: [-100, 40], text: "Some Town" });
+  });
+});
+
+describe("SPC watches and MDs", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  const square = [[[-98, 35], [-97, 35], [-97, 36], [-98, 36], [-98, 35]]];
+  const serve = (body: unknown) => {
+    const fetch = vi.fn<(url: string) => Promise<Response>>(async () => new Response(JSON.stringify(body)));
+    vi.stubGlobal("fetch", fetch);
+    return fetch;
+  };
+
+  it("turns an archived watch into a hoverable area and outline", async () => {
+    const fetch = serve({
+      features: [{ geometry: { type: "MultiPolygon", coordinates: [square] }, properties: { type: "TOR", num: "187", utc_expired: "2024-05-07T00:03:00Z" } }],
+    });
+    const layer = await fetchWatches(Date.UTC(2024, 4, 6, 23), new AbortController().signal);
+    expect(String(fetch.mock.calls[0][0])).toContain("valid=2024-05-06T23:00:00Z");
+    expect(layer.file.items.map((i) => i.kind)).toEqual(["polygon", "line"]);
+    expect(layer.file.items[0].hover).toMatch(/^Tornado Watch 187\nuntil /);
+  });
+
+  it("reads MD number, concern and watch chance, with or without a chance", async () => {
+    serve({
+      features: [
+        { geometry: { type: "Polygon", coordinates: square }, properties: { num: "0657", product_id: "P1", concerning: "SEVERE POTENTIAL...WATCH POSSIBLE", watch_confidence: "40.0", expire: "2024-05-06T23:30:00Z" } },
+        { geometry: { type: "Polygon", coordinates: square }, properties: { num: "658", product_id: "P2", concerning: "TORNADO WATCH 187...190", watch_confidence: null, expire: "2024-05-07T00:00:00Z" } },
+      ],
+    });
+    const { mds, layer } = await fetchMds(null, new AbortController().signal);
+    expect(mds.map(({ num, concerning, watchChance }) => [num, concerning, watchChance])).toEqual([
+      ["657", "Severe potential...watch possible", 40],
+      ["658", "Tornado watch 187...190", null],
+    ]);
+    expect(layer.file.items[0].hover).toContain("Watch chance 40%");
+    expect(layer.file.items[2].hover).not.toContain("Watch chance");
   });
 });

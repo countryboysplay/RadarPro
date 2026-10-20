@@ -1,6 +1,7 @@
 import type { MapLibreMap } from "maplibre-gl";
 import type { LonLat, PlaceItem } from "./placefile";
 import type { PlacefileLayer } from "./usePlacefiles";
+import { pointInPolygonRings } from "../alerts/geometryHitTest";
 
 const KM_PER_MILE = 1.609344;
 /** Hover reach (px) around an icon's hotspot, a text's centre or a line. */
@@ -97,13 +98,21 @@ function distToSegment2(p: { x: number; y: number }, a: { x: number; y: number }
   return (p.x - a.x - t * dx) ** 2 + (p.y - a.y - t * dy) ** 2;
 }
 
-/** Hover text of the topmost visible item at screen point `px`, or null. */
+/** Hover text at screen point `px`: the topmost icon, text or line there, else
+ * every area it is inside (topmost first, e.g. an MD, its watch, the outlook). */
 export function placeHoverAt(map: MapLibreMap, layers: PlacefileLayer[], px: { x: number; y: number }): string | null {
   const r2 = HOVER_RADIUS_PX * HOVER_RADIUS_PX;
   const items = visible(map, layers);
+  const at = map.unproject([px.x, px.y]);
+  const areas: string[] = [];
   for (let i = items.length - 1; i >= 0; i--) {
     const { item } = items[i];
-    if (!item.hover || item.kind === "polygon") continue;
+    if (!item.hover) continue;
+    if (item.kind === "polygon") {
+      // Geographic areas only; GR polygons inside an Object have no hover text anyway.
+      if (!item.anchor && !areas.includes(item.hover) && pointInPolygonRings([at.lng, at.lat], item.contours)) areas.push(item.hover);
+      continue;
+    }
     if (item.kind === "line") {
       const pts = item.points.map((pt) => screen(map, item, pt));
       if (pts.some((a, j) => j > 0 && distToSegment2(px, pts[j - 1], a) <= r2)) return item.hover;
@@ -112,5 +121,5 @@ export function placeHoverAt(map: MapLibreMap, layers: PlacefileLayer[], px: { x
     const p = screen(map, item, item.at);
     if ((p.x - px.x) ** 2 + (p.y - px.y) ** 2 <= r2) return item.hover;
   }
-  return null;
+  return areas.length > 0 ? areas.join("\n\n") : null;
 }

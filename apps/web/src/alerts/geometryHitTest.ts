@@ -38,7 +38,7 @@ function pointInRing(point: LonLat, ring: readonly LonLat[]): boolean {
  * handles holes: a point inside the exterior and inside exactly one hole
  * flips twice (net: outside), matching GeoJSON's own ring-winding-agnostic
  * definition. */
-function pointInPolygonRings(point: LonLat, rings: readonly (readonly LonLat[])[]): boolean {
+export function pointInPolygonRings(point: LonLat, rings: readonly (readonly LonLat[])[]): boolean {
   let inside = false;
   for (const ring of rings) {
     if (pointInRing(point, ring)) inside = !inside;

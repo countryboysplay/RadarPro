@@ -190,11 +190,14 @@ function drawAlerts(
   canvas: HTMLCanvasElement,
   alerts: AlertFeatureCollection | null,
   selectedKey: string | null,
+  below: PlacefileLayer[],
 ) {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
   const { width, height } = canvas;
   ctx.clearRect(0, 0, width, height);
+  // SPC outlook, watches and MDs sit under warnings.
+  drawPlacefiles(map, canvas, below);
   if (!alerts) return;
 
   function strokeRing(ring: [number, number][]) {
@@ -725,6 +728,8 @@ export interface MapViewProps {
   selectedStormId?: string | null;
   /** Placefiles switched on, drawn over warnings and under storm tracks. */
   placefiles?: PlacefileLayer[];
+  /** SPC outlook, watches and MDs, drawn under warnings. */
+  spcLayers?: PlacefileLayer[];
   /** Hover text of the placefile item under the cursor, or null. */
   onPlaceHover?: (text: string | null) => void;
   /** The cross-section leg, drawn on the map in course ink. */
@@ -788,6 +793,7 @@ export function MapView({
   stormTracks = null,
   selectedStormId = null,
   placefiles = NO_PLACEFILES,
+  spcLayers = NO_PLACEFILES,
   onPlaceHover,
   forecastCanvasRef,
   forecastOnMap = false,
@@ -822,6 +828,8 @@ export function MapView({
   selectedStormIdRef.current = selectedStormId;
   const placefilesRef = useRef(placefiles);
   placefilesRef.current = placefiles;
+  const spcLayersRef = useRef(spcLayers);
+  spcLayersRef.current = spcLayers;
   const onPlaceHoverRef = useRef(onPlaceHover);
   onPlaceHoverRef.current = onPlaceHover;
   const appliedRainbowUrlRef = useRef<string | null>(null);
@@ -976,7 +984,7 @@ export function MapView({
           alertsCanvas.style.width = mapCanvas.style.width;
           alertsCanvas.style.height = mapCanvas.style.height;
         }
-        drawAlerts(map, alertsCanvas, alertsRef.current, selectedAlertKeyRef.current);
+        drawAlerts(map, alertsCanvas, alertsRef.current, selectedAlertKeyRef.current, spcLayersRef.current);
         drawPlacefiles(map, alertsCanvas, placefilesRef.current);
         drawStormTracks(map, alertsCanvas, stormTracksRef.current, selectedStormIdRef.current);
         drawMyLocation(map, alertsCanvas, myLocationRef.current);
@@ -1077,11 +1085,11 @@ export function MapView({
     const map = mapRef.current;
     const alertsCanvas = alertsCanvasRef.current;
     if (!map || !alertsCanvas) return;
-    drawAlerts(map, alertsCanvas, alerts, selectedAlertKey);
+    drawAlerts(map, alertsCanvas, alerts, selectedAlertKey, spcLayers);
     drawPlacefiles(map, alertsCanvas, placefiles);
     drawStormTracks(map, alertsCanvas, stormTracks, selectedStormId);
     drawMyLocation(map, alertsCanvas, myLocation);
-  }, [alerts, selectedAlertKey, myLocation, stormTracks, selectedStormId, placefiles]);
+  }, [alerts, selectedAlertKey, myLocation, stormTracks, selectedStormId, placefiles, spcLayers]);
 
   // Bring a newly selected warning into view (a list click may pick one far
   // off screen); left alone when it is already fully visible.
@@ -1163,7 +1171,7 @@ export function MapView({
         return;
       }
       // Hover text only; placefile items aren't clickable, so no pointer cursor.
-      onPlaceHoverRef.current?.(placeHoverAt(map!, placefilesRef.current, e.point));
+      onPlaceHoverRef.current?.(placeHoverAt(map!, [...spcLayersRef.current, ...placefilesRef.current], e.point));
       const hit =
         stormAtPoint(map!, stormTracksRef.current, e.point) ||
         alertAtPoint(e.lngLat) ||

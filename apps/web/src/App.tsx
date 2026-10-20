@@ -60,6 +60,9 @@ import { SidebarSection } from "./ui/SidebarSection";
 import { SidebarCategory } from "./ui/SidebarCategory";
 import { PlacefilesPanel } from "./ui/PlacefilesPanel";
 import { usePlacefiles } from "./placefiles/usePlacefiles";
+import { MdText, SpcPanel } from "./ui/SpcPanel";
+import { useSpc } from "./spc/useSpc";
+import { OUTLOOK_NAMES, type OutlookKind } from "./spc/spc";
 import { UnifiedTimeline } from "./timeline/UnifiedTimeline";
 import { Icon } from "./ui/Icon";
 import { useNearbyStormTracks, useStormTracks } from "./storms/useStormTracks";
@@ -689,6 +692,15 @@ export default function App() {
   const stormTracksWanted = (showStormTracks || momentCode === "SRV") && (history.archiveStartMillis === null || archiveFrameMs !== null);
   const stormTracks = useStormTracks(icao, stormTracksWanted, archiveFrameMs);
   const placefiles = usePlacefiles();
+  const [spcOutlook, setSpcOutlook] = useState<OutlookKind>(() => {
+    const stored = localStorage.getItem("radarpro.spcOutlook");
+    return stored && stored in OUTLOOK_NAMES ? (stored as OutlookKind) : "off";
+  });
+  useEffect(() => localStorage.setItem("radarpro.spcOutlook", spcOutlook), [spcOutlook]);
+  const [showWatches, setShowWatches] = useRememberedFlag("radarpro.showWatches", true);
+  const [showMds, setShowMds] = useRememberedFlag("radarpro.showMds", true);
+  const spc = useSpc(spcOutlook, showWatches, showMds, archiveFrameMs);
+  const [selectedMd, setSelectedMd] = useState<string | null>(null);
   const [placeHover, setPlaceHover] = useState<string | null>(null);
   // Same notification and sound as a covering warning when a storm with a TVS,
   // mesocyclone or severe hail is within ~15 mi of you, or its forecast track
@@ -1096,6 +1108,15 @@ export default function App() {
       ),
     });
   }
+  const selectedMdInfo = spc.mds.find((md) => md.productId === selectedMd);
+  if (selectedMd) {
+    rightPanelSections.push({
+      key: "spc-md",
+      title: selectedMdInfo ? `Mesoscale Discussion ${selectedMdInfo.num}` : "Mesoscale Discussion",
+      onDismiss: () => setSelectedMd(null),
+      children: <MdText productId={selectedMd} />,
+    });
+  }
   if (nowcastHasContent(rainbowNowcast) && !nowcastDismissed) {
     rightPanelSections.push({
       key: "rainbow-nowcast",
@@ -1369,6 +1390,26 @@ export default function App() {
           </label>
         </SidebarCategory>
 
+        <SidebarCategory
+          title="SPC"
+          summary={[spcOutlook !== "off" && `${OUTLOOK_NAMES[spcOutlook]} outlook`, showWatches && `${spc.watchCount} watches`, showMds && `${spc.mds.length} MDs`].filter(Boolean).join(" · ") || "off"}
+        >
+          <SpcPanel
+            outlook={spcOutlook}
+            onOutlookChange={setSpcOutlook}
+            showWatches={showWatches}
+            onShowWatchesChange={setShowWatches}
+            showMds={showMds}
+            onShowMdsChange={setShowMds}
+            mds={spc.mds}
+            watchCount={spc.watchCount}
+            selectedMd={selectedMd}
+            onSelectMd={setSelectedMd}
+            error={spc.error}
+            outlookHiddenInArchive={spc.outlookHiddenInArchive}
+          />
+        </SidebarCategory>
+
         <SidebarCategory title="Placefiles" summary={`${placefiles.layers.length} on`}>
           <PlacefilesPanel entries={placefiles.entries} onChange={placefiles.setEntries} status={placefiles.status} />
         </SidebarCategory>
@@ -1632,6 +1673,7 @@ export default function App() {
           centerOnMeRequest={centerOnMeRequest}
           stormTracks={showStormTracks || momentCode === "SRV" ? stormTracks.tracks : null}
           placefiles={placefiles.layers}
+          spcLayers={spc.layers}
           onPlaceHover={setPlaceHover}
           selectedStormId={momentCode === "SRV" && !manualStormMotion ? (selectedStorm?.id ?? null) : null}
           forecastCanvasRef={forecastCanvasRef}
