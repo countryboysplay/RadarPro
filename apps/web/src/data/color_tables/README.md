@@ -3,7 +3,7 @@
 Byte-for-byte copies of `crates/radar-render/color_tables/*.json` (this
 project's seven shipped default color tables -- one per moment: REF, VEL,
 SW, ZDR, CC, PHI, plus the derived SRV -- Storm-Relative Velocity, S11
-Phase 2b, which shares VEL's palette/domain in its own file so each
+Phase 2b, which keeps its own file (it shares VEL's domain, not its palette) so each
 `MomentKind`'s `default_color_table` stays an exact one-table-per-kind
 match). See `crates/radar-render/COLOR_TABLE_FORMAT.md` for the format
 itself.

@@ -194,8 +194,9 @@ mod tests {
     #[test]
     fn reflectivity_palette_matches_the_shared_ref_ramp_domain() {
         let palette = reflectivity_palette();
-        assert_eq!(palette.min, radar_render::palette::DEFAULT_REF_MIN_DBZ);
-        assert_eq!(palette.max, radar_render::palette::DEFAULT_REF_MAX_DBZ);
+        let table = default_color_table(MomentKind::Reflectivity);
+        assert_eq!(palette.min, table.domain.min);
+        assert_eq!(palette.max, table.domain.max);
         assert_eq!(palette.lut.len(), PALETTE_TEXEL_COUNT);
     }
 

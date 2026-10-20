@@ -364,7 +364,7 @@ pub fn default_color_table(kind: MomentKind) -> ColorTable {
             include_str!("../color_tables/correlation_coefficient.json")
         }
         MomentKind::DifferentialPhase => include_str!("../color_tables/differential_phase.json"),
-        // A copy of `velocity.json` under a distinct id/name -- SRV is a
+        // VEL's domain with a RadarScope-style navy-white-dark red ramp -- SRV is a
         // first-class, independently-selectable `MomentKind` (see that
         // variant's doc comment), not "VEL" itself, so it must keep its own
         // `"moments": ["SRV"]` table rather than being folded into VEL's
@@ -512,18 +512,19 @@ mod tests {
     }
 
     #[test]
-    fn default_reflectivity_table_matches_the_original_placeholder_ramp() {
-        // The REF default must be a faithful port of the S03 placeholder
-        // ramp (`palette::default_ref_palette_stops`), not a fresh
-        // reinterpretation -- same domain, same stop count/values/colors,
-        // so switching S04/S05's REF rendering from the old hardcoded path
-        // to this table changes nothing visually.
-        use crate::palette::{default_ref_palette_stops, DEFAULT_REF_MAX_DBZ, DEFAULT_REF_MIN_DBZ};
-
+    fn default_reflectivity_table_follows_the_radarscope_bands() {
+        // RadarScope's REF scale: hard colour breaks every 10 dBZ from 40,
+        // with weak echo (insects, clutter) hidden below 5 dBZ.
         let table = default_color_table(MomentKind::Reflectivity);
-        assert_eq!(table.domain.min, DEFAULT_REF_MIN_DBZ);
-        assert_eq!(table.domain.max, DEFAULT_REF_MAX_DBZ);
-        assert_eq!(table.stops, default_ref_palette_stops());
+        let at = |dbz: f32| sample_value(&table, dbz);
+        assert_eq!(at(0.0)[3], 0, "below 5 dBZ is transparent");
+        assert!(at(10.0)[3] < 255, "weak echo is see-through");
+        let [r, g, b, a] = at(25.0);
+        assert!(g > r && g > b && a == 255, "25 dBZ is green: {r},{g},{b},{a}");
+        let [r, g, b, _] = at(52.0);
+        assert!(r > 200 && g < 80 && b < 40, "50s are red: {r},{g},{b}");
+        let [r, g, b, _] = at(72.0);
+        assert!(b > r && b > 150 && g < 60, "70s are purple: {r},{g},{b}");
     }
 
     #[test]

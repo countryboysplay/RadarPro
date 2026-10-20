@@ -152,29 +152,56 @@ example this document promises):
   "moments": ["REF"],
   "units": "dBZ",
   "mode": "gradient",
-  "domain": { "min": -10.0, "max": 75.0 },
+  "domain": { "min": -32.0, "max": 95.0 },
   "cyclic": false,
   "stops": [
-    { "value": -10.0, "color": [0, 0, 0, 0] },
+    { "value": -32.0, "color": [0, 0, 0, 0] },
     { "value": 5.0, "color": [0, 0, 0, 0] },
-    { "value": 5.01, "color": [64, 170, 64, 255] },
-    { "value": 25.0, "color": [0, 220, 0, 255] },
-    { "value": 40.0, "color": [230, 220, 0, 255] },
-    { "value": 55.0, "color": [230, 90, 0, 255] },
-    { "value": 75.0, "color": [200, 0, 0, 255] }
+    { "value": 5.01, "color": [94, 110, 137, 40] },
+    { "value": 10.0, "color": [55, 81, 132, 80] },
+    { "value": 15.0, "color": [75, 123, 155, 120] },
+    { "value": 19.5, "color": [87, 159, 164, 181] },
+    { "value": 20.5, "color": [52, 177, 94, 194] },
+    { "value": 23.0, "color": [31, 150, 51, 255] },
+    { "value": 27.5, "color": [13, 101, 9, 255] },
+    { "value": 30.0, "color": [148, 186, 3, 255] },
+    { "value": 32.5, "color": [250, 250, 0, 255] },
+    { "value": 35.0, "color": [232, 226, 0, 255] },
+    { "value": 39.9, "color": [200, 183, 0, 255] },
+    { "value": 40.0, "color": [234, 157, 0, 255] },
+    { "value": 45.0, "color": [212, 116, 6, 255] },
+    { "value": 49.9, "color": [181, 92, 11, 255] },
+    { "value": 50.0, "color": [228, 51, 11, 255] },
+    { "value": 55.0, "color": [186, 37, 22, 255] },
+    { "value": 59.9, "color": [136, 39, 30, 255] },
+    { "value": 60.0, "color": [166, 96, 106, 255] },
+    { "value": 65.0, "color": [197, 88, 145, 255] },
+    { "value": 69.9, "color": [194, 33, 117, 255] },
+    { "value": 70.0, "color": [154, 36, 224, 255] },
+    { "value": 75.0, "color": [106, 24, 180, 255] },
+    { "value": 79.9, "color": [66, 16, 144, 255] },
+    { "value": 80.0, "color": [132, 253, 255, 255] },
+    { "value": 85.0, "color": [98, 181, 196, 255] },
+    { "value": 89.9, "color": [71, 125, 148, 255] },
+    { "value": 90.0, "color": [161, 101, 73, 255] },
+    { "value": 95.0, "color": [115, 10, 1, 255] }
   ],
   "missing_color": [0, 0, 0, 0],
   "range_folded_color": [255, 0, 255, 255]
 }
 ```
 
-Reading: below -10 dBZ or above 75 dBZ clamps to the nearest end color.
-From -10 to 5 dBZ the table is fully transparent (a "no signal" floor,
-deliberately the same appearance as `missing_color`). Just above 5 dBZ it
-becomes a faint green, then interpolates smoothly through green → yellow →
-orange → red as reflectivity increases toward 75 dBZ, fully opaque
-throughout the visible band. A range-folded gate always renders opaque
-magenta, a color this particular ramp never otherwise produces.
+Reading: the colours follow RadarScope's reflectivity scale. Below 5 dBZ
+the table is fully transparent (a "no signal" floor that also hides insect
+and ground-clutter returns, deliberately the same appearance as
+`missing_color`). From 5 to 23 dBZ weak echo fades in, see-through, from
+blue-grey to green. Above that it is fully opaque, with a hard colour break
+every 10 dBZ from 40: yellow below 40, then orange, red (50), pink (60),
+purple (70), cyan (80) and brown (90), each band darkening toward its top.
+The paired stops 0.1 dBZ apart (39.9/40.0, ...) are what make those breaks
+hard in an otherwise `gradient` table. Values above 95 dBZ clamp to the last
+colour. A range-folded gate always renders opaque magenta, a colour this
+ramp never otherwise produces.
 
 Five more worked examples (one per remaining moment:
 `velocity.json`, `spectrum_width.json`, `differential_reflectivity.json`,
