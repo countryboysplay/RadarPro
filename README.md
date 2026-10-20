@@ -64,7 +64,7 @@ model precipitation and geopotential height, MRMS rotation tracks (grid too
 large for the browser as-is), and code signing / auto-update activation for
 the desktop build.
 
-Stage planning lives in `Agent Context/` (kept out of git).
+Stage planning and session handoff notes live in `Agent Context/` (`PLAN.md`, `HANDOFF.md`).
 
 ## Repository layout
 
@@ -83,7 +83,7 @@ crates/
   weather-alerts/    NWS alert parsing and lifecycle store
   forecast-core/     Gridded forecast abstraction and renderer
   provider-gefs/     GEFS provider
-  provider-hrrr/     HRRR provider
+  provider-hrrr/     HRRR and RTMA providers, point-column sampling
   forecast-web/      Browser glue for forecasts
   mrms/              MRMS mosaic products
   mrms-web/          Browser glue for MRMS
