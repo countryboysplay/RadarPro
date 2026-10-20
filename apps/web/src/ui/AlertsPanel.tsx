@@ -1,6 +1,6 @@
 import type { AlertPollStatus } from "../alerts/useAlertPoller";
 import type { HeldAlert } from "../alerts/types";
-import { SEVERITY_COLORS } from "../alerts/types";
+import { SEVERITY_COLORS, formatTags } from "../alerts/types";
 
 export interface AlertsPanelProps {
   status: AlertPollStatus;
@@ -68,6 +68,7 @@ export function AlertsPanel({
                 />
                 <span className="alert-row-text">
                   <span className="alert-row-event">{alert.event}</span>
+                  {alert.tags.length > 0 && <span className="alert-row-tags">{formatTags(alert.tags)}</span>}
                   {alert.headline && <span className="alert-row-headline">{alert.headline}</span>}
                 </span>
               </button>

@@ -76,6 +76,8 @@ struct AlertPropertiesJson<'a> {
     instruction: Option<&'a str>,
     #[serde(rename = "affectedAreas")]
     affected_areas: &'a [String],
+    /// `[key, value]` pairs, e.g. `["maxHailSize", "1.75"]`.
+    tags: &'a [(String, String)],
 }
 
 impl<'a> From<&'a Alert> for AlertPropertiesJson<'a> {
@@ -96,6 +98,7 @@ impl<'a> From<&'a Alert> for AlertPropertiesJson<'a> {
             description: alert.description.as_deref(),
             instruction: alert.instruction.as_deref(),
             affected_areas: &alert.affected_areas,
+            tags: &alert.tags,
         }
     }
 }

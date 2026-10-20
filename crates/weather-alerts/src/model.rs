@@ -262,6 +262,11 @@ pub struct Alert {
     /// why this is not split on `,`.
     pub affected_areas: Vec<String>,
 
+    /// Hazard tags from CAP `parameters` (see [`crate::parse::TAG_KEYS`]),
+    /// as `(key, first value)` in that fixed order, e.g.
+    /// `("maxHailSize", "1.75")`. Empty for most non-convective alerts.
+    pub tags: Vec<(String, String)>,
+
     /// This alert's shape, or `None` for a `null` GeoJSON geometry (an
     /// alert issued by zone/UGC code with no drawn polygon -- common, not
     /// an error; see [`AlertGeometry`]'s docs).

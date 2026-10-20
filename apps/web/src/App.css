@@ -790,6 +790,13 @@ body,
   font-weight: 600;
 }
 
+/* NWS hazard tags: what a chaser reads first. */
+.alert-row-tags,
+.alert-detail-tags {
+  font: 600 12px/1.35 var(--font);
+  color: var(--g8);
+}
+
 .alert-detail-fields,
 .mrms-meta,
 .forecast-meta {

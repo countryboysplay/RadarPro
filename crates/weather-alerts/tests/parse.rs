@@ -316,6 +316,35 @@ fn area_desc_splits_on_semicolon_not_comma() {
     );
 }
 
+#[test]
+fn hazard_tags_keep_known_parameters_in_display_order() {
+    let mut feature = base_feature("urn:oid:test.tags");
+    feature["properties"]["parameters"] = json!({
+        "maxWindGust": ["60 MPH"],
+        "maxHailSize": ["1.75"],
+        "tornadoDetection": ["RADAR INDICATED"],
+        "VTEC": ["/O.NEW.KOUN.TO.W.0001.000000T0000Z-260912T2330Z/"],
+        "tornadoDamageThreat": [42],
+    });
+
+    let body = feature_collection(vec![feature]);
+    let parsed = parse_feature_collection(&body).expect("valid FeatureCollection");
+
+    let tags: Vec<(&str, &str)> = parsed.alerts[0]
+        .tags
+        .iter()
+        .map(|(k, v)| (k.as_str(), v.as_str()))
+        .collect();
+    assert_eq!(
+        tags,
+        vec![
+            ("tornadoDetection", "RADAR INDICATED"),
+            ("maxHailSize", "1.75"),
+            ("maxWindGust", "60 MPH")
+        ]
+    );
+}
+
 // -- top-level malformed input ------------------------------------------------
 
 #[test]

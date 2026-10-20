@@ -238,6 +238,8 @@ fn parse_feature(feature: &Value) -> Result<Option<Alert>, FeatureParseError> {
         .filter(|s| !s.is_empty())
         .collect();
 
+    let tags = parse_tags(properties);
+
     let geometry = parse_geometry(feature.get("geometry").unwrap_or(&Value::Null))?;
 
     Ok(Some(Alert {
@@ -258,8 +260,35 @@ fn parse_feature(feature: &Value) -> Result<Option<Alert>, FeatureParseError> {
         description,
         instruction,
         affected_areas,
+        tags,
         geometry,
     }))
+}
+
+/// The CAP `parameters` a chaser reads off a warning (NWS impact-based
+/// warning tags), in display order.
+pub const TAG_KEYS: [&str; 7] = [
+    "tornadoDetection",
+    "waterspoutDetection",
+    "tornadoDamageThreat",
+    "thunderstormDamageThreat",
+    "flashFloodDamageThreat",
+    "maxHailSize",
+    "maxWindGust",
+];
+
+/// Lenient on purpose: a malformed tag drops that tag, never the warning.
+fn parse_tags(properties: &Value) -> Vec<(String, String)> {
+    let Some(parameters) = properties.get("parameters") else {
+        return Vec::new();
+    };
+    TAG_KEYS
+        .iter()
+        .filter_map(|&key| {
+            let value = parameters.get(key)?.get(0)?.as_str()?.trim();
+            (!value.is_empty()).then(|| (key.to_string(), value.to_string()))
+        })
+        .collect()
 }
 
 fn parse_severity(raw: &str) -> Result<Severity, FeatureParseError> {

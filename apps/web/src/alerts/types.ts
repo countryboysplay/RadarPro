@@ -41,6 +41,10 @@ export interface AlertProperties {
   description: string | null;
   instruction: string | null;
   affectedAreas: string[];
+  /** NWS hazard tags from CAP `parameters`, `[key, value]` in display
+   * order, e.g. `["maxHailSize", "1.75"]` (see `TAG_KEYS` in
+   * `crates/weather-alerts/src/parse.rs`). */
+  tags: [string, string][];
 }
 
 /** One GeoJSON feature from `AlertStoreHandle.activeAlertsGeoJson` --
@@ -121,4 +125,23 @@ export function formatAlertTime(epochMillis: number): string {
     timeStyle: "short",
     hour12: true,
   });
+}
+
+const lower = (s: string) => s.toLowerCase();
+const TAG_TEXT: Record<string, (v: string) => string | null> = {
+  tornadoDetection: (v) => `Tornado ${lower(v)}`,
+  waterspoutDetection: (v) => `Waterspout ${lower(v)}`,
+  tornadoDamageThreat: (v) => `${v.charAt(0)}${lower(v.slice(1))} tornado damage`,
+  thunderstormDamageThreat: (v) => `${v.charAt(0)}${lower(v.slice(1))} damage`,
+  flashFloodDamageThreat: (v) => `${v.charAt(0)}${lower(v.slice(1))} flood damage`,
+  maxHailSize: (v) => (Number(v) > 0 ? `Hail ${v} in` : null),
+  maxWindGust: (v) => (parseFloat(v) > 0 ? `Wind ${lower(v)}` : null),
+};
+
+/** "Tornado radar indicated · Hail 1.75 in · Wind 60 mph", or "" with no tags. */
+export function formatTags(tags: [string, string][]): string {
+  return tags
+    .map(([key, value]) => TAG_TEXT[key]?.(value))
+    .filter(Boolean)
+    .join(" · ");
 }

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { AlertJson } from "../alerts/types";
-import { SEVERITY_COLORS, formatAlertTime } from "../alerts/types";
+import { SEVERITY_COLORS, formatAlertTime, formatTags } from "../alerts/types";
 
 export interface AlertDetailProps {
   alert: AlertJson;
@@ -60,6 +60,7 @@ export function AlertDetail({ alert, isActive, onClose }: AlertDetailProps) {
         </div>
       )}
 
+      {alert.tags.length > 0 && <div className="alert-detail-tags">{formatTags(alert.tags)}</div>}
       {alert.headline && <div className="alert-detail-headline">{alert.headline}</div>}
 
       <dl className="alert-detail-fields">

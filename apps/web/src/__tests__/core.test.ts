@@ -10,6 +10,7 @@ import { parsePlacefile } from "../placefiles/placefile";
 import { fetchMds, fetchWatches } from "../spc/spc";
 import { lsrLayer } from "../spc/lsr";
 import { alertsGeoJson, fetchArchivedAlerts } from "../alerts/archived";
+import { formatTags } from "../alerts/types";
 import { clampHistoryLimit, historyReducer, initialState } from "../scan/useScanHistory";
 import { alertNearSite, pointInAlertGeometry } from "../alerts/geometryHitTest";
 import { coveringAlerts } from "../location/useMyLocation";
@@ -497,8 +498,10 @@ describe("archived warnings and SPS", () => {
     expect(alerts[0].key).toBe("OUN.TO.W.12.2024");
     expect(alerts[0].alert.id).toBe("P-TO");
     expect(alerts[0].alert.expires).toBe(Date.UTC(2024, 4, 6, 23, 30));
-    expect(alerts[0].alert.headline).toMatch(/^Tornado radar indicated · Hail 1.75 in · until /);
-    expect(alerts[1].alert.headline).toMatch(/^Wind 50 mph · until /);
+    expect(alerts[0].alert.headline).toMatch(/^until /);
+    expect(formatTags(alerts[0].alert.tags)).toBe("Tornado radar indicated · Hail 1.75 in");
+    // SPS hail "0.00" means none.
+    expect(formatTags(alerts[1].alert.tags)).toBe("Wind 50 mph");
     expect(alertsGeoJson(alerts).features[0]).toMatchObject({ id: "OUN.TO.W.12.2024", properties: { severity: "Extreme" }, geometry: { type: "MultiPolygon" } });
   });
 });

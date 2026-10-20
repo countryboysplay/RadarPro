@@ -49,8 +49,7 @@ function severityOf(phenomena: string, significance: string): AlertSeverity {
 
 const time = (ms: number) => new Date(ms).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 
-function held(key: string, id: string, event: string, severity: AlertSeverity, wfo: string, issued: number, effective: number, expires: number, tags: string[], geometry: AlertGeometry | null): HeldAlert {
-  const headline = [...tags, `until ${time(expires)}`].join(" · ");
+function held(key: string, id: string, event: string, severity: AlertSeverity, wfo: string, issued: number, effective: number, expires: number, tags: [string, string][], geometry: AlertGeometry | null): HeldAlert {
   return {
     key,
     alert: {
@@ -67,29 +66,37 @@ function held(key: string, id: string, event: string, severity: AlertSeverity, w
       effective,
       expires,
       ends: null,
-      headline,
+      headline: `until ${time(expires)}`,
       // Filled in from the product text when the alert is opened.
       description: null,
       instruction: null,
       affectedAreas: [],
+      tags,
     },
   };
 }
 
+const tagPairs = (pairs: [string, string | null | undefined][]) => pairs.filter((pair): pair is [string, string] => !!pair[1]);
+
 export function archivedAlerts(sbw: Feature<SbwProps>[], sps: Feature<SpsProps>[]): HeldAlert[] {
   const alerts = [
     ...sbw.map(({ geometry, properties: p }) => {
-      const tags = [
-        p.tornadotag && `Tornado ${p.tornadotag.toLowerCase()}`,
-        p.damagetag && `${p.damagetag.toLowerCase()} damage`,
-        p.hailtag && `Hail ${p.hailtag} in`,
-        p.windtag && `Wind ${p.windtag} mph`,
-      ].filter((t): t is string => !!t);
+      // IEM's tag columns, under the CAP `parameters` names live alerts use.
+      const damageKey = p.phenomena === "TO" ? "tornadoDamageThreat" : p.phenomena === "FF" ? "flashFloodDamageThreat" : "thunderstormDamageThreat";
+      const tags = tagPairs([
+        ["tornadoDetection", p.tornadotag],
+        [damageKey, p.damagetag],
+        ["maxHailSize", p.hailtag?.toFixed(2)],
+        ["maxWindGust", p.windtag ? `${p.windtag} MPH` : null],
+      ]);
       const key = `${p.wfo}.${p.phenomena}.${p.significance}.${p.eventid}.${p.year}`;
       return held(key, p.product_id, p.ps, severityOf(p.phenomena, p.significance), p.wfo, Date.parse(p.issue), Date.parse(p.polygon_begin), Date.parse(p.polygon_end), tags, geometry);
     }),
     ...sps.map(({ id, geometry, properties: p }) => {
-      const tags = [p.max_hail_size && Number(p.max_hail_size) > 0 && `Hail ${p.max_hail_size} in`, p.max_wind_gust && `Wind ${p.max_wind_gust} mph`].filter((t): t is string => !!t);
+      const tags = tagPairs([
+        ["maxHailSize", p.max_hail_size],
+        ["maxWindGust", p.max_wind_gust ? `${p.max_wind_gust} MPH` : null],
+      ]);
       const issued = Date.parse(p.issue);
       return held(`SPS.${id}`, id ?? "", "Special Weather Statement", "Moderate", p.wfo, issued, issued, Date.parse(p.expire), tags, geometry);
     }),

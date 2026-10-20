@@ -43,6 +43,7 @@ fn make_alert(
         description: Some("A hazardous weather event was observed.".to_string()),
         instruction: Some("Take shelter.".to_string()),
         affected_areas: vec!["Cleveland, OK".to_string()],
+        tags: Vec::new(),
         geometry: None,
     }
 }
