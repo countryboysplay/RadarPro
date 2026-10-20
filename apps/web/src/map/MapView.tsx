@@ -276,6 +276,7 @@ function drawMyLocation(map: MapLibreMap, canvas: HTMLCanvasElement, loc: MyLoca
 }
 
 const PAPER_INK = "#ecebe4";
+const INK_MUTED = "#a3a89f";
 const ACCENT = "#739bd0";
 const DANGER_RED = "#ef6a5a";
 const FORECAST_AMBER = "#f0b84a";
@@ -292,35 +293,49 @@ function drawStormTracks(map: MapLibreMap, canvas: HTMLCanvasElement, tracks: St
   ctx.save();
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
-  const line = (points: [number, number][], color: string) => {
+  // Casing goes under the whole track (line, time bars, arrowhead) in one pass, then ink on top:
+  // casing drawn per mark would cut the line into segments. The past track is a bare line;
+  // the forecast gets a cross-bar at each 15-minute step and an arrowhead.
+  const line = (points: [number, number][], color: string, width: number, arrow: boolean) => {
     if (points.length < 2) return;
-    ctx.beginPath();
-    points.forEach((pt, i) => {
-      const p = map.project(pt);
-      if (i === 0) ctx.moveTo(p.x, p.y);
-      else ctx.lineTo(p.x, p.y);
-    });
-    ctx.strokeStyle = COURSE_CASING;
-    ctx.lineWidth = 5;
-    ctx.stroke();
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 2;
-    ctx.stroke();
-    // Position ticks, skipping the shared current point.
-    for (const pt of points.slice(1)) {
-      const p = map.project(pt);
+    const px = points.map((pt) => map.project(pt));
+    const end = px[px.length - 1];
+    const prev = px[px.length - 2];
+    const angle = Math.atan2(end.y - prev.y, end.x - prev.x);
+    const head = width * 3.5;
+    const shape = (pad: number) => {
       ctx.beginPath();
-      ctx.arc(p.x, p.y, 3, 0, 2 * Math.PI);
-      ctx.fillStyle = color;
-      ctx.fill();
-      ctx.lineWidth = 1.5;
-      ctx.strokeStyle = COURSE_CASING;
+      px.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
+      // The arrowhead covers the last stretch; a round cap at the tip would blunt it.
+      if (arrow) ctx.lineTo(end.x - Math.cos(angle) * head * 0.7, end.y - Math.sin(angle) * head * 0.7);
+      ctx.lineWidth = width + pad;
       ctx.stroke();
-    }
+      if (!arrow) return;
+      ctx.beginPath();
+      px.slice(1, -1).forEach((p, i) => {
+        const a = Math.atan2(p.y - px[i].y, p.x - px[i].x) + Math.PI / 2;
+        const half = width * 2 + pad / 2;
+        ctx.moveTo(p.x - Math.cos(a) * half, p.y - Math.sin(a) * half);
+        ctx.lineTo(p.x + Math.cos(a) * half, p.y + Math.sin(a) * half);
+      });
+      ctx.lineWidth = 2 + pad;
+      ctx.stroke();
+      const h = head + pad;
+      ctx.beginPath();
+      ctx.moveTo(end.x + Math.cos(angle) * (pad / 2), end.y + Math.sin(angle) * (pad / 2));
+      ctx.lineTo(end.x - Math.cos(angle - 0.45) * h, end.y - Math.sin(angle - 0.45) * h);
+      ctx.lineTo(end.x - Math.cos(angle + 0.45) * h, end.y - Math.sin(angle + 0.45) * h);
+      ctx.closePath();
+      ctx.fill();
+    };
+    ctx.strokeStyle = ctx.fillStyle = COURSE_CASING;
+    shape(4);
+    ctx.strokeStyle = ctx.fillStyle = color;
+    shape(0);
   };
   for (const cell of tracks.cells) {
-    line(cell.past, PAPER_INK);
-    line(cell.forecast, FORECAST_AMBER);
+    line(cell.past, PAPER_INK, 2.5, false);
+    line(cell.forecast, FORECAST_AMBER, 3.5, true);
   }
   ctx.font = "700 13px 'Roboto Condensed Variable', 'Roboto Condensed', 'Arial Narrow', sans-serif";
   ctx.textBaseline = "middle";
@@ -337,23 +352,57 @@ function drawStormTracks(map: MapLibreMap, canvas: HTMLCanvasElement, tracks: St
       ctx.strokeStyle = ACCENT;
       ctx.stroke();
     }
+    // NWS has no forecast for a cell it has only just found: a hollow ring and "NEW", so a
+    // missing arrow reads as "not tracked yet", not as a gap in the data.
+    const isNew = cell.forecast.length < 2;
     ctx.beginPath();
-    ctx.arc(p.x, p.y, 5, 0, 2 * Math.PI);
-    ctx.fillStyle = PAPER_INK;
-    ctx.fill();
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = COURSE_CASING;
-    ctx.stroke();
-    ctx.lineWidth = 4;
-    ctx.strokeText(cell.id, p.x + 9, p.y - 9);
-    ctx.fillText(cell.id, p.x + 9, p.y - 9);
+    ctx.arc(p.x, p.y, 7, 0, 2 * Math.PI);
+    if (isNew) {
+      ctx.lineWidth = 5;
+      ctx.strokeStyle = COURSE_CASING;
+      ctx.stroke();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = PAPER_INK;
+      ctx.stroke();
+    } else {
+      // Bullseye: unlike anything on the tracks, so the storm's position stands out.
+      ctx.fillStyle = PAPER_INK;
+      ctx.fill();
+      ctx.lineWidth = 2.5;
+      ctx.strokeStyle = COURSE_CASING;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 2.5, 0, 2 * Math.PI);
+      ctx.fillStyle = COURSE_CASING;
+      ctx.fill();
+    }
+    const hail = cell.hail && cell.hail.sizeIn >= 1 ? `${cell.hail.sizeIn.toFixed(2)}″` : null;
+    const parts: [string, string][] = [[cell.id, PAPER_INK]];
+    if (isNew) parts.push(["NEW", INK_MUTED]);
     // Severe hail (1"+ by NWS's estimate) as its size, in danger red after the ID.
-    if (cell.hail && cell.hail.sizeIn >= 1) {
-      const size = `${cell.hail.sizeIn.toFixed(2)}″`;
-      const x = p.x + 13 + ctx.measureText(cell.id).width;
-      ctx.fillStyle = DANGER_RED;
-      ctx.strokeText(size, x, p.y - 9);
-      ctx.fillText(size, x, p.y - 9);
+    if (hail) parts.push([hail, DANGER_RED]);
+    const gap = 4;
+    const width = parts.reduce((sum, [text]) => sum + ctx.measureText(text).width + gap, -gap);
+    // Label on the upper side of the forecast track, clear of the line and arrow;
+    // upper right when there is no track.
+    let nx = Math.SQRT1_2;
+    let ny = -Math.SQRT1_2;
+    if (!isNew) {
+      const next = map.project(cell.forecast[1]);
+      const len = Math.hypot(next.x - p.x, next.y - p.y) || 1;
+      nx = -(next.y - p.y) / len;
+      ny = (next.x - p.x) / len;
+      if (ny > 0) [nx, ny] = [-nx, -ny];
+    }
+    let x = p.x + nx * 14 - (nx < 0 ? width : 0);
+    const y = p.y + ny * 14;
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = COURSE_CASING;
+    for (const [text, color] of parts) {
+      ctx.fillStyle = color;
+      ctx.strokeText(text, x, y);
+      ctx.fillText(text, x, y);
+      x += ctx.measureText(text).width + gap;
     }
   }
   // Mesocyclones: a danger-red circle at the circulation's own size (never
