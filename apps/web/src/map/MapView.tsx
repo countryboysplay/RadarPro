@@ -11,6 +11,7 @@ import { pointInAlertGeometry } from "../alerts/geometryHitTest";
 import type { MyLocation } from "../location/useMyLocation";
 import type { StormCell, StormTracks } from "../storms/nst";
 import type { MrmsViewport } from "../mrms/types";
+import type { RadarView } from "../radar/useRadarRenderer";
 import { isDesktop } from "../platform/desktop";
 import { registerDesktopRainbowProtocol } from "../rainbow/desktopTiles";
 import {
@@ -585,10 +586,6 @@ const SITES_GEOJSON = {
   })),
 };
 
-/** Fallback sweep radius (km, WSR-88D's typical reflectivity range) until the
- * renderer reports its real range (`sweepRangeKm`, from radar-web's `renderedRangeKm`). */
-const APPROX_SWEEP_RADIUS_KM = 460;
-
 /** Screen-pixel radius of `rangeKm` around `site`, measured with the map's
  * own projection (east-west, so it is exact for the canvas's width). A
  * hand-rolled meters-per-pixel formula here used 256 px tiles while
@@ -606,8 +603,7 @@ function radiusPx(map: MapLibreMap, site: { lat: number; lon: number }, rangeKm:
  * `map.getBounds()` -- the same "regular flat-plane" approximation
  * `forecast_grid.wgsl` already documents (not a real map projection), which
  * is an acceptable, documented approximation for a raster overlay at this
- * scale (mirrors `APPROX_SWEEP_RADIUS_KM`'s own "reasonable approximation"
- * precedent above).
+ * scale.
  */
 function viewportFromMapBounds(map: MapLibreMap): MrmsViewport {
   const bounds = map.getBounds();
@@ -626,12 +622,11 @@ function viewportFromMapBounds(map: MapLibreMap): MrmsViewport {
 export interface MapViewProps {
   site: RadarSite;
   canvasRef: RefObject<HTMLCanvasElement>;
-  canvasSize: number;
+  /** Called with the radar canvas's view on every pan/zoom/resize, so the
+   * renderer redraws the sweep at screen resolution for it. */
+  onRadarView?: (view: RadarView) => void;
   /** Called with a site's ICAO when its map dot is clicked. */
   onSiteClick?: (icao: string) => void;
-  /** Real site-to-edge range (km) of the rendered sweep; `null` falls back
-   * to `APPROX_SWEEP_RADIUS_KM`. */
-  sweepRangeKm?: number | null;
   /** Range-ring geometry from `RadarWebRenderer`'s `rangeRingsGeoJson` free
    * function (plain `[lon, lat]` coordinates, one ring per radius) --
    * `null` until available. */
@@ -748,8 +743,7 @@ export interface MapViewProps {
 export function MapView({
   site,
   canvasRef,
-  canvasSize,
-  sweepRangeKm = null,
+  onRadarView,
   onSiteClick,
   rangeRings = null,
   onCursorMove,
@@ -783,8 +777,8 @@ export function MapView({
   selectedIcaoRef.current = site.icao;
   const onSiteClickRef = useRef(onSiteClick);
   onSiteClickRef.current = onSiteClick;
-  const sweepRangeKmRef = useRef(sweepRangeKm);
-  sweepRangeKmRef.current = sweepRangeKm;
+  const onRadarViewRef = useRef(onRadarView);
+  onRadarViewRef.current = onRadarView;
   const rangeRingsRef = useRef<number[][][] | null>(rangeRings);
   rangeRingsRef.current = rangeRings;
   const courseRef = useRef<CourseLeg | null>(course);
@@ -822,7 +816,14 @@ export function MapView({
       style: MAP_STYLE_URL,
       center: [site.lon, site.lat],
       zoom: 6,
+      // North-up only: the radar is drawn in the map's unrotated Mercator frame.
+      dragRotate: false,
+      pitchWithRotate: false,
+      touchPitch: false,
+      maxPitch: 0,
     });
+    map.touchZoomRotate.disableRotation();
+    map.keyboard.disableRotation();
     mapRef.current = map;
     // Radar-site dots (click to switch site -- see `siteAtPoint`). Sits under
     // the radar canvas, whose no-data pixels are transparent.
@@ -897,12 +898,28 @@ export function MapView({
 
     function updateOverlay() {
       if (!map || !canvas) return;
-      const centerPx = map.project([site.lon, site.lat]);
-      const sizePx = 2 * radiusPx(map, site, sweepRangeKmRef.current ?? APPROX_SWEEP_RADIUS_KM);
-      canvas.style.width = `${sizePx}px`;
-      canvas.style.height = `${sizePx}px`;
-      canvas.style.left = `${centerPx.x - sizePx / 2}px`;
-      canvas.style.top = `${centerPx.y - sizePx / 2}px`;
+      // The radar canvas covers the map at device resolution and the
+      // renderer redraws the sweep for exactly this view, so gates stay
+      // sharp at any zoom (stretching one fixed image blurred them).
+      const mapCanvas = map.getCanvas();
+      if (canvas.width !== mapCanvas.width || canvas.height !== mapCanvas.height) {
+        canvas.width = mapCanvas.width;
+        canvas.height = mapCanvas.height;
+        canvas.style.width = mapCanvas.style.width;
+        canvas.style.height = mapCanvas.style.height;
+      }
+      const northWest = map.unproject([0, 0]);
+      const southEast = map.unproject([mapCanvas.clientWidth, mapCanvas.clientHeight]);
+      onRadarViewRef.current?.({
+        width: mapCanvas.width,
+        height: mapCanvas.height,
+        siteLat: site.lat,
+        siteLon: site.lon,
+        west: northWest.lng,
+        north: northWest.lat,
+        east: southEast.lng,
+        south: southEast.lat,
+      });
 
       // Keep the range-rings overlay canvas's backing buffer matching the
       // map's current on-screen size (it covers the full map, unlike the
@@ -985,7 +1002,7 @@ export function MapView({
       map.off("resize", updateOverlay);
       map.off("load", updateOverlay);
     };
-  }, [site, canvasRef, mrmsCanvasRef, sweepRangeKm]);
+  }, [site, canvasRef, mrmsCanvasRef]);
 
   // Redraw the range rings whenever the geometry itself changes (new site,
   // or the first time it becomes available after wasm load) -- projecting
@@ -1178,8 +1195,6 @@ export function MapView({
       <div ref={containerRef} style={{ position: "absolute", inset: 0 }} />
       <canvas
         ref={canvasRef}
-        width={canvasSize}
-        height={canvasSize}
         style={{
           position: "absolute",
           zIndex: 1,

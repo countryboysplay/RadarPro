@@ -129,7 +129,10 @@ fn render_pipeline_produces_a_non_uniform_image_when_a_gpu_is_available() {
             lookup_texel_count: DEFAULT_LOOKUP_TEXEL_COUNT,
             palette_min_dbz: DEFAULT_REF_MIN_DBZ,
             palette_max_dbz: DEFAULT_REF_MAX_DBZ,
-            _pad: [0; 4],
+            site_lat_rad: 0.0,
+            site_mercator_y: 0.0,
+            _pad: [0; 2],
+            range_folded_color: [1.0, 0.0, 1.0, 1.0],
         },
     );
 

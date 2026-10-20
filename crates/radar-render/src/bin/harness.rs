@@ -107,7 +107,10 @@ fn main() {
             lookup_texel_count: DEFAULT_LOOKUP_TEXEL_COUNT,
             palette_min_dbz: DEFAULT_REF_MIN_DBZ,
             palette_max_dbz: DEFAULT_REF_MAX_DBZ,
-            _pad: [0; 4],
+            site_lat_rad: 0.0,
+            site_mercator_y: 0.0,
+            _pad: [0; 2],
+            range_folded_color: [1.0, 0.0, 1.0, 1.0],
         },
     );
     let pipeline = gpu::create_pipeline(&ctx.device, gpu::RENDER_TARGET_FORMAT);
@@ -158,7 +161,10 @@ fn main() {
                 lookup_texel_count: DEFAULT_LOOKUP_TEXEL_COUNT,
                 palette_min_dbz: DEFAULT_REF_MIN_DBZ,
                 palette_max_dbz: DEFAULT_REF_MAX_DBZ,
-                _pad: [0; 4],
+                site_lat_rad: 0.0,
+                site_mercator_y: 0.0,
+                _pad: [0; 2],
+                range_folded_color: [1.0, 0.0, 1.0, 1.0],
             },
         );
         gpu::render_frame(

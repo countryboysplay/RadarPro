@@ -11,7 +11,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 import { MapView } from "./map/MapView";
-import { RADAR_CANVAS_SIZE, useRadarRenderer, type ProbeResult } from "./radar/useRadarRenderer";
+import { useRadarRenderer, type ProbeResult } from "./radar/useRadarRenderer";
 import { useStormMotion } from "./radar/useStormMotion";
 import { DEFAULT_SITE_ICAO, findSite, RADAR_SITES } from "./sites";
 import {
@@ -374,7 +374,7 @@ export default function App() {
     activeColorTableJson,
     probeGate,
     rangeRings,
-    renderedRangeKm,
+    setView: setRadarView,
     crossSection,
     setDealias,
     setHideNonWeather,
@@ -1580,8 +1580,7 @@ export default function App() {
         <MapView
           site={site}
           canvasRef={canvasRef}
-          canvasSize={RADAR_CANVAS_SIZE}
-          sweepRangeKm={renderedRangeKm}
+          onRadarView={setRadarView}
           onSiteClick={setIcao}
           rangeRings={rangeRingsGeo}
           onCursorMove={handleCursorMove}

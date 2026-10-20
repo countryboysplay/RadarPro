@@ -1,21 +1,21 @@
 // S03 GPU radar renderer prototype shader.
 //
-// Per pixel: clip-space position -> site-relative world (x, y) in km via a
+// Per pixel: clip-space position -> site-relative world (x, y) via a
 // CPU-supplied orthographic projection (its inverse, `clip_to_world`, so
-// the shader can go directly from a pixel to world space) -> azimuth +
-// ground-range from that flat local (x, y) plane -> radial index via the
-// lookup texture -> gate index via the same half-open-interval convention
-// as `radar_geo::lookup::find_gate_index` -> raw/converted gate value ->
+// the shader goes directly from a pixel to world space). World is Web
+// Mercator relative to the site, scaled to km at the equator, so a canvas
+// laid over a Mercator map lines up with it at any zoom. Then: unproject to
+// lat/lon -> great-circle ground range and bearing from the site -> slant
+// range along the beam -> radial index via the lookup texture -> gate index
+// via the same half-open-interval convention as
+// `radar_geo::lookup::find_gate_index` -> raw/converted gate value ->
 // distinct output for missing/range-folded, otherwise the palette ramp.
+// The geometry matches `radar_geo::lookup::cursor_to_polar`, so the pixel
+// under the cursor is the gate the probe reports.
 //
-// Scope boundary (documented per the S03 task): this shader does *not* do
-// real lat/lon/great-circle geodesy. It treats the already-decoded,
-// site-relative Cartesian plane as flat, and treats straight-line distance
-// in that plane as directly comparable to a moment's slant-range gate
-// spacing. Resolving an actual geographic cursor to azimuth/range (real
-// geodesy, `radar_geo`'s job) is a separate concern from proving this
-// render pipeline; that resolution already happened on the CPU when this
-// crate's `render.rs` built `clip_to_world` from a site-relative view.
+// With `site_lat_rad = site_mercator_y = 0` (the native harness and GPU
+// tests) world is, to within 0.3% at 460 km, the flat site-relative km plane
+// this shader originally used.
 //
 // Never-fabricate rule: a pixel that resolves to "no radial" (lookup
 // sentinel), "outside this radial's gate range", or a gate flagged
@@ -40,11 +40,19 @@ struct Uniforms {
     // value, and its last texel corresponds to `palette_max_dbz`.
     palette_min_dbz: f32,
     palette_max_dbz: f32,
+    // Site latitude (radians) and its Web Mercator y (`ln(tan(pi/4 + lat/2))`,
+    // computed on the CPU in f64), for unprojecting world (x, y) to lat/lon.
+    site_lat_rad: f32,
+    site_mercator_y: f32,
     _pad0: u32,
     _pad1: u32,
-    _pad2: u32,
-    _pad3: u32,
+    // The active color table's `range_folded_color`, straight (not
+    // premultiplied) RGBA in 0..1.
+    range_folded_color: vec4<f32>,
 };
+
+// Same sphere `radar_geo::spherical::distance_bearing` uses.
+const EARTH_RADIUS_KM: f32 = 6371.0088;
 
 struct RadialMeta {
     azimuth_deg: f32,
@@ -64,10 +72,6 @@ const GATE_FLAG_VALID: u32 = 0u;
 const GATE_FLAG_RANGE_FOLDED: u32 = 2u;
 const SENTINEL_NO_RADIAL: u32 = 4294967295u; // u32::MAX
 
-// Reserved diagnostic color for a range-folded gate: full-alpha magenta,
-// a color the REF palette (green -> yellow -> red) never produces, so a
-// viewer can never mistake a range-folded return for a real reading.
-const RANGE_FOLDED_COLOR: vec4<f32> = vec4<f32>(1.0, 0.0, 1.0, 1.0);
 const NO_DATA_COLOR: vec4<f32> = vec4<f32>(0.0, 0.0, 0.0, 0.0);
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -103,19 +107,31 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let world = uniforms.clip_to_world * vec4<f32>(in.ndc, 0.0, 1.0);
-    let x = world.x;
-    let y = world.y;
 
-    let ground_range_km = length(vec2<f32>(x, y));
+    // World is site-relative Web Mercator scaled to km at the equator (the
+    // map's own projection), so unproject to lat/lon and take the true
+    // great-circle range and bearing from the site, exactly as
+    // `radar_geo::lookup::cursor_to_polar` does for the gate probe.
+    let d_lambda = world.x / EARTH_RADIUS_KM;
+    let phi1 = uniforms.site_lat_rad;
+    let phi2 = 2.0 * atan(exp(world.y / EARTH_RADIUS_KM + uniforms.site_mercator_y)) - 1.5707963267948966;
+    let d_phi = phi2 - phi1;
+    let sin_half_lambda = sin(d_lambda * 0.5);
+    let sin_half_phi = sin(d_phi * 0.5);
+    let a = sin_half_phi * sin_half_phi + cos(phi1) * cos(phi2) * sin_half_lambda * sin_half_lambda;
+    let ground_range_km = 2.0 * EARTH_RADIUS_KM * asin(min(sqrt(a), 1.0));
     if (ground_range_km > uniforms.site_max_range_km) {
         return NO_DATA_COLOR;
     }
 
-    // Bearing clockwise from north: north is +y, east is +x, so
-    // atan2(x, y) (not the usual atan2(y, x)) gives compass bearing
-    // directly, matching `radar_types::Radial::azimuth_angle_deg`'s
-    // convention.
-    var azimuth_deg = degrees(atan2(x, y));
+    // Initial bearing clockwise from north, matching
+    // `radar_types::Radial::azimuth_angle_deg`. The usual
+    // `cos(phi1) sin(phi2) - sin(phi1) cos(phi2) cos(d_lambda)` cancels
+    // badly in f32 near the site; this is the same value rewritten as
+    // `sin(d_phi) + 2 sin(phi1) cos(phi2) sin^2(d_lambda / 2)`.
+    let east = sin(d_lambda) * cos(phi2);
+    let north = sin(d_phi) + 2.0 * sin(phi1) * cos(phi2) * sin_half_lambda * sin_half_lambda;
+    var azimuth_deg = degrees(atan2(east, north));
     azimuth_deg = azimuth_deg - 360.0 * floor(azimuth_deg / 360.0);
 
     let texel_count_f = f32(uniforms.lookup_texel_count);
@@ -131,11 +147,14 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     // Mirrors `radar_geo::lookup::find_gate_index`'s half-open-interval
     // convention: gate i covers [center_i - spacing/2, center_i + spacing/2).
+    // Gates are spaced along the tilted beam: slant range = ground range /
+    // cos(elevation), as `radar_geo::beam::slant_range_from_ground_range_km`.
+    let slant_range_km = ground_range_km / cos(radians(radial.elevation_deg));
     let first_gate_start_km = radial.first_gate_range_km - radial.gate_spacing_km * 0.5;
-    if (ground_range_km < first_gate_start_km || radial.gate_spacing_km <= 0.0) {
+    if (slant_range_km < first_gate_start_km || radial.gate_spacing_km <= 0.0) {
         return NO_DATA_COLOR;
     }
-    let offset_km = ground_range_km - first_gate_start_km;
+    let offset_km = slant_range_km - first_gate_start_km;
     let gate_index = u32(floor(offset_km / radial.gate_spacing_km));
     if (gate_index >= radial.gate_count) {
         return NO_DATA_COLOR;
@@ -143,7 +162,11 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     let sample = gate_samples[radial.gate_offset + gate_index];
     if (sample.flag == GATE_FLAG_RANGE_FOLDED) {
-        return RANGE_FOLDED_COLOR;
+        // The table's own range-folded color, which `ColorTable::validate`
+        // keeps distinct from `missing_color` so it is never mistaken for
+        // "no data" (premultiplied like the palette colors below).
+        let rf = uniforms.range_folded_color;
+        return vec4<f32>(rf.rgb * rf.a, rf.a);
     }
     if (sample.flag != GATE_FLAG_VALID) {
         // GATE_FLAG_MISSING (or any other non-valid flag): no data.
@@ -163,8 +186,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // ordinary (straight-alpha) RGBA -- see `COLOR_TABLE_FORMAT.md` -- so
     // that conversion happens here, once, at the only point a partial
     // (neither-0-nor-255) alpha value can actually reach this shader.
-    // `NO_DATA_COLOR`/`RANGE_FOLDED_COLOR` above are already
-    // premultiply-safe (alpha 0 or 1), so they return directly without
-    // this step.
+    // `NO_DATA_COLOR` above is already premultiply-safe (alpha 0), so it
+    // returns directly without this step.
     return vec4<f32>(palette_color.rgb * palette_color.a, palette_color.a);
 }

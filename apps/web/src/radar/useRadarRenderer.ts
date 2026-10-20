@@ -1,16 +1,20 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { ensureWasmModuleLoaded, initGpu, rangeRingsGeoJson, type RadarWebRenderer } from "./wasmModule";
 
-/** Fixed backing-buffer size for the radar `<canvas>` (device pixels, no
- * `devicePixelRatio` scaling -- same choice `radar-web`'s own `www/` test
- * page makes, see its README "Canvas sizing"). The canvas is then scaled
- * on-screen via CSS by `MapView` to approximate the sweep's real-world
- * extent at the map's current zoom -- see that component's docs. Using a
- * fixed backing buffer (rather than resizing the GPU surface to match
- * on-screen pixels) means pan/zoom/resize never need to re-touch the GPU
- * surface at all -- only CSS -- which is why this stage did not need to
- * add resize support to `radar-web`'s exported API. */
-export const RADAR_CANVAS_SIZE = 900;
+/** What the map shows, for `radar-web`'s `setView`: the radar canvas's
+ * backing size in device pixels, the radar site, and the lon/lat box the
+ * canvas covers. The sweep is redrawn for exactly this view, so it stays
+ * sharp at any zoom. */
+export interface RadarView {
+  width: number;
+  height: number;
+  siteLat: number;
+  siteLon: number;
+  west: number;
+  north: number;
+  east: number;
+  south: number;
+}
 
 export type RendererStatus = "loading" | "ready" | "error";
 
@@ -59,6 +63,14 @@ export interface RadarRendererState {
   decodeError: string | null;
 }
 
+function applyView(renderer: RadarWebRenderer, v: RadarView) {
+  try {
+    renderer.setView(v.width, v.height, v.siteLat, v.siteLon, v.west, v.north, v.east, v.south);
+  } catch (err) {
+    console.error("setView failed:", errMessage(err));
+  }
+}
+
 function errMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
@@ -86,12 +98,12 @@ export function useRadarRenderer(canvasRef: RefObject<HTMLCanvasElement>) {
     decodeError: null,
   });
   const rendererRef = useRef<RadarWebRenderer | null>(null);
+  // The map usually reports its view before the GPU is ready; kept to apply then.
+  const viewRef = useRef<RadarView | null>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    canvas.width = RADAR_CANVAS_SIZE;
-    canvas.height = RADAR_CANVAS_SIZE;
 
     let cancelled = false;
     setState((s) => ({ ...s, status: "loading", error: null }));
@@ -99,16 +111,13 @@ export function useRadarRenderer(canvasRef: RefObject<HTMLCanvasElement>) {
     (async () => {
       try {
         await ensureWasmModuleLoaded();
-        const renderer = (await initGpu(
-          canvas,
-          RADAR_CANVAS_SIZE,
-          RADAR_CANVAS_SIZE,
-        )) as RadarWebRenderer;
+        const renderer = (await initGpu(canvas, Math.max(1, canvas.width), Math.max(1, canvas.height))) as RadarWebRenderer;
         if (cancelled) {
           renderer.free();
           return;
         }
         rendererRef.current = renderer;
+        if (viewRef.current) applyView(renderer, viewRef.current);
         setState((s) => ({
           ...s,
           status: "ready",
@@ -133,8 +142,7 @@ export function useRadarRenderer(canvasRef: RefObject<HTMLCanvasElement>) {
       rendererRef.current = null;
     };
     // Runs once per mounted canvas (empty deps -- `canvasRef` is a stable
-    // ref object) -- `radar-web` has no resize/re-init API (see
-    // RADAR_CANVAS_SIZE doc comment), so there is nothing else to react to.
+    // ref object); size changes go through `setView`, not re-init.
   }, []);
 
   /**
@@ -220,16 +228,18 @@ export function useRadarRenderer(canvasRef: RefObject<HTMLCanvasElement>) {
    * failure (renderer not ready, or the sweep doesn't carry that moment)
    * without throwing.
    */
-  /** Site-to-edge ground range (km) of the last rendered sweep -- the
-   * radar canvas spans twice this, so the map overlay sizes from it. */
-  const [renderedRangeKm, setRenderedRangeKm] = useState<number | null>(null);
+  /** Frame (and redraw) the sweep for what the map now shows -- see `RadarView`. */
+  const setView = useCallback((view: RadarView): void => {
+    viewRef.current = view;
+    const renderer = rendererRef.current;
+    if (renderer) applyView(renderer, view);
+  }, []);
 
   const selectAndRender = useCallback((sweepIndex: number, momentCode: string): boolean => {
     const renderer = rendererRef.current;
     if (!renderer) return false;
     try {
       renderer.selectAndRender(sweepIndex, momentCode);
-      setRenderedRangeKm(renderer.renderedRangeKm() ?? null);
       return true;
     } catch (err) {
       console.error("selectAndRender failed:", errMessage(err));
@@ -255,8 +265,7 @@ export function useRadarRenderer(canvasRef: RefObject<HTMLCanvasElement>) {
       if (!renderer) return false;
       try {
         renderer.selectAndRenderStormRelativeVelocity(sweepIndex, stormSpeedMps, stormDirectionDeg);
-        setRenderedRangeKm(renderer.renderedRangeKm() ?? null);
-        return true;
+          return true;
       } catch (err) {
         console.error("selectAndRenderStormRelativeVelocity failed:", errMessage(err));
         return false;
@@ -432,7 +441,7 @@ export function useRadarRenderer(canvasRef: RefObject<HTMLCanvasElement>) {
 
   return {
     ...state,
-    renderedRangeKm,
+    setView,
     crossSection,
     decodeVolume,
     momentWireCodesForSweep,

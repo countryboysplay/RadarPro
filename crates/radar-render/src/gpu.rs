@@ -329,7 +329,13 @@ pub struct GpuUniforms {
     pub lookup_texel_count: u32,
     pub palette_min_dbz: f32,
     pub palette_max_dbz: f32,
-    pub _pad: [u32; 4],
+    /// Site latitude in radians, and [`crate::camera::mercator_y`] of it;
+    /// both 0 for the flat km plane (see the shader's header comment).
+    pub site_lat_rad: f32,
+    pub site_mercator_y: f32,
+    pub _pad: [u32; 2],
+    /// The color table's `range_folded_color`, straight RGBA in 0..1.
+    pub range_folded_color: [f32; 4],
 }
 
 impl UniformsGpu {

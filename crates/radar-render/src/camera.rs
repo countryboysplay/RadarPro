@@ -35,6 +35,46 @@ pub fn clip_to_world(center_km: (f32, f32), half_extent_km: (f32, f32)) -> Mat4 
     ]
 }
 
+/// Same sphere `radar_geo` and the sweep shader use.
+const EARTH_RADIUS_KM: f64 = 6371.0088;
+
+/// Web Mercator y of `lat_rad`: `ln(tan(pi/4 + lat/2))`.
+pub fn mercator_y(lat_rad: f64) -> f64 {
+    (std::f64::consts::FRAC_PI_4 + lat_rad / 2.0).tan().ln()
+}
+
+/// `clip_to_world` for a canvas covering the lon/lat box `west..east`,
+/// `south..north` on a Web Mercator map, in the sweep shader's world units:
+/// Mercator relative to the site at `(site_lat_deg, site_lon_deg)`, scaled to
+/// km at the equator. Computed in f64 so only the final, site-relative
+/// values are rounded to f32.
+pub fn mercator_view(
+    site_lat_deg: f64,
+    site_lon_deg: f64,
+    west_lon: f64,
+    north_lat: f64,
+    east_lon: f64,
+    south_lat: f64,
+) -> Mat4 {
+    let site_y = mercator_y(site_lat_deg.to_radians());
+    let x = |lon: f64| (lon - site_lon_deg).to_radians() * EARTH_RADIUS_KM;
+    let y = |lat: f64| (mercator_y(lat.to_radians()) - site_y) * EARTH_RADIUS_KM;
+    let (left, right, top, bottom) = (x(west_lon), x(east_lon), y(north_lat), y(south_lat));
+    clip_to_world(
+        (((left + right) / 2.0) as f32, ((top + bottom) / 2.0) as f32),
+        (((right - left) / 2.0) as f32, ((top - bottom) / 2.0) as f32),
+    )
+}
+
+/// A square [`mercator_view`] around the site reaching at least `range_km`
+/// in every direction: the default framing before the map reports a view.
+pub fn full_range_view(site_lat_deg: f64, range_km: f32) -> Mat4 {
+    // Mercator stretches distances by 1/cos(lat); the extra 10% covers the
+    // stretch growing toward the pole over the sweep's own north-south span.
+    let half = f64::from(range_km) / site_lat_deg.to_radians().cos() * 1.1;
+    clip_to_world((0.0, 0.0), (half as f32, half as f32))
+}
+
 /// Apply `matrix` to `(ndc_x, ndc_y, 0.0, 1.0)`, returning the resulting
 /// `(x, y)` — used by this module's own tests to verify
 /// [`clip_to_world`] without needing the shader to run on a GPU.
@@ -78,5 +118,26 @@ mod tests {
         let (near_x, _) = apply(&zoomed_in, 1.0, 0.0);
         let (far_x, _) = apply(&zoomed_out, 1.0, 0.0);
         assert!(far_x - 5.0 > near_x - 5.0);
+    }
+
+    #[test]
+    fn mercator_view_frames_the_box_around_the_site() {
+        // A box centred on the site at the equator is centred on world (0, 0),
+        // one degree of longitude wide = 111.2 km at the equator.
+        let m = mercator_view(0.0, -100.0, -100.5, 0.5, -99.5, -0.5);
+        let (cx, cy) = apply(&m, 0.0, 0.0);
+        assert!(cx.abs() < 1e-3 && cy.abs() < 1e-3, "centre {cx},{cy}");
+        let (right, top) = apply(&m, 1.0, 1.0);
+        assert!((right - 55.6).abs() < 0.1, "right {right}");
+        // Mercator y of 0.5 deg is a hair more than its x.
+        assert!(top > right && top - right < 0.01, "top {top}");
+
+        // At 35N the same degree of longitude still spans 111.2 Mercator km,
+        // and a box north of the site sits at positive y.
+        let m = mercator_view(35.0, -100.0, -100.5, 36.5, -99.5, 35.5);
+        let (cx, cy) = apply(&m, 0.0, 0.0);
+        assert!(cx.abs() < 1e-3, "centre x {cx}");
+        let expected_y = (mercator_y(36.0f64.to_radians()) - mercator_y(35.0f64.to_radians())) * EARTH_RADIUS_KM;
+        assert!((f64::from(cy) - expected_y).abs() < 0.5, "centre y {cy} vs {expected_y}");
     }
 }

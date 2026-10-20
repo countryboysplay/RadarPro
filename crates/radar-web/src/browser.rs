@@ -79,7 +79,7 @@ use wasm_bindgen_futures::future_to_promise;
 use web_sys::HtmlCanvasElement;
 
 use radar_geo::storm_relative_velocity::StormMotion;
-use radar_render::camera::clip_to_world;
+use radar_render::camera::{full_range_view, mercator_view, mercator_y};
 use radar_render::color_table::{build_lut_from_table, default_color_table, ColorTable};
 use radar_render::gpu::{
     self, GpuUniforms, PaletteGpuResources, RenderTarget, SweepGpuResources, SweepPipeline,
@@ -237,10 +237,25 @@ struct UploadedSweep {
     // `bind_group`.
     _sweep_gpu: SweepGpuResources,
     _palette_gpu: PaletteGpuResources,
-    _uniforms_gpu: UniformsGpu,
+    uniforms_gpu: UniformsGpu,
+    /// As uploaded; the camera fields are rewritten from the current view on
+    /// every frame (see [`RadarWebRenderer::render_and_present`]).
+    uniforms: GpuUniforms,
     bind_group: wgpu::BindGroup,
-    /// Half-width of the rendered square, in km (the camera's framing).
+    /// The sweep's farthest gate edge, in km.
     range_km: f32,
+}
+
+/// What the map shows: the radar site and the lon/lat box the canvas
+/// covers -- see [`RadarWebRenderer::set_view`].
+#[derive(Clone, Copy)]
+struct MapView {
+    site_lat_deg: f64,
+    site_lon_deg: f64,
+    west_lon: f64,
+    north_lat: f64,
+    east_lon: f64,
+    south_lat: f64,
 }
 
 /// A live GPU device/surface pair targeting one `<canvas>`, the most
@@ -254,9 +269,11 @@ pub struct RadarWebRenderer {
     device: wgpu::Device,
     queue: wgpu::Queue,
     surface: wgpu::Surface<'static>,
+    surface_config: wgpu::SurfaceConfiguration,
     pipeline: SweepPipeline,
-    width: u32,
-    height: u32,
+    /// Set by [`RadarWebRenderer::set_view`]; until then the full sweep is
+    /// framed around a site at the equator.
+    view: Option<MapView>,
     adapter_name: String,
     adapter_backend: wgpu::Backend,
     volume: Option<Volume>,
@@ -378,7 +395,7 @@ impl RadarWebRenderer {
         // it requires the shader's output RGB to already be multiplied by
         // its own alpha, which `radar_sweep.wgsl`'s final palette-sample
         // return does explicitly for this reason. Every *other* color this
-        // shader can output (`NO_DATA_COLOR`, `RANGE_FOLDED_COLOR`, and
+        // shader can output (`NO_DATA_COLOR`, the range-folded color, and
         // every shipped default color table's stops) only ever uses alpha
         // 0 or 255, where premultiplication is a no-op (0*x=0, 1*x=x) --
         // native rendering (`radar-render`'s off-screen-texture harness,
@@ -427,9 +444,9 @@ impl RadarWebRenderer {
             device,
             queue,
             surface,
+            surface_config,
             pipeline,
-            width,
-            height,
+            view: None,
             adapter_name: adapter_info.name,
             adapter_backend: adapter_info.backend,
             volume: None,
@@ -834,13 +851,44 @@ impl RadarWebRenderer {
         Ok(rgba)
     }
 
-    /// Ground range (km) from the site to the rendered canvas's edge for
-    /// the current selection -- the canvas spans `2 * range` km square, so
-    /// a map overlay must size it from this, not a fixed guess. `None`
-    /// until a sweep has been rendered.
-    #[wasm_bindgen(js_name = renderedRangeKm)]
-    pub fn rendered_range_km(&self) -> Option<f32> {
-        self.uploaded.as_ref().map(|u| u.range_km)
+    /// Frame the sweep to what a Web Mercator map shows: the canvas is
+    /// `width` x `height` device pixels covering the lon/lat box `west_lon`..
+    /// `east_lon`, `south_lat`..`north_lat`, with the radar at
+    /// `site_lat_deg`/`site_lon_deg`. Resizes the surface if needed and
+    /// redraws the current sweep (if any) right away, at full gate detail.
+    #[wasm_bindgen(js_name = setView)]
+    #[allow(clippy::too_many_arguments)]
+    pub fn set_view(
+        &mut self,
+        width: u32,
+        height: u32,
+        site_lat_deg: f64,
+        site_lon_deg: f64,
+        west_lon: f64,
+        north_lat: f64,
+        east_lon: f64,
+        south_lat: f64,
+    ) -> Result<(), JsValue> {
+        if width == 0 || height == 0 {
+            return Ok(());
+        }
+        if (width, height) != (self.surface_config.width, self.surface_config.height) {
+            self.surface_config.width = width;
+            self.surface_config.height = height;
+            self.surface.configure(&self.device, &self.surface_config);
+        }
+        self.view = Some(MapView {
+            site_lat_deg,
+            site_lon_deg,
+            west_lon,
+            north_lat,
+            east_lon,
+            south_lat,
+        });
+        if self.uploaded.is_none() {
+            return Ok(());
+        }
+        self.render_and_present()
     }
 
     #[wasm_bindgen(js_name = probeGate)]
@@ -1003,21 +1051,23 @@ impl RadarWebRenderer {
 
         let sweep_gpu = gpu::upload_sweep(&self.device, &self.queue, &buffer_data, &lookup_table);
         let palette_gpu = gpu::upload_palette(&self.device, &self.queue, &palette_lut);
-        let uniforms_gpu = UniformsGpu::new(
-            &self.device,
-            GpuUniforms {
-                clip_to_world: clip_to_world((0.0, 0.0), (max_range_km, max_range_km)),
-                site_max_range_km: max_range_km,
-                lookup_texel_count: DEFAULT_LOOKUP_TEXEL_COUNT,
-                // Despite the field names (dating from the S03 REF-only
-                // proof), these are now a generic palette-domain min/max --
-                // whatever unit `table.units` documents (m/s, dB, deg, ...),
-                // not necessarily dBZ. See `GpuUniforms`'s doc comment.
-                palette_min_dbz: table.domain.min,
-                palette_max_dbz: table.domain.max,
-                _pad: [0; 4],
-            },
-        );
+        let initial_uniforms = GpuUniforms {
+            // Camera fields are filled in per frame by `render_and_present`.
+            clip_to_world: full_range_view(0.0, max_range_km),
+            site_lat_rad: 0.0,
+            site_mercator_y: 0.0,
+            site_max_range_km: max_range_km,
+            lookup_texel_count: DEFAULT_LOOKUP_TEXEL_COUNT,
+            // Despite the field names (dating from the S03 REF-only
+            // proof), these are now a generic palette-domain min/max --
+            // whatever unit `table.units` documents (m/s, dB, deg, ...),
+            // not necessarily dBZ. See `GpuUniforms`'s doc comment.
+            palette_min_dbz: table.domain.min,
+            palette_max_dbz: table.domain.max,
+            _pad: [0; 2],
+            range_folded_color: table.range_folded_color.map(|c| f32::from(c) / 255.0),
+        };
+        let uniforms_gpu = UniformsGpu::new(&self.device, initial_uniforms);
         let bind_group = gpu::create_bind_group(
             &self.device,
             &self.pipeline.bind_group_layout,
@@ -1029,7 +1079,8 @@ impl RadarWebRenderer {
         self.uploaded = Some(UploadedSweep {
             _sweep_gpu: sweep_gpu,
             _palette_gpu: palette_gpu,
-            _uniforms_gpu: uniforms_gpu,
+            uniforms_gpu,
+            uniforms: initial_uniforms,
             bind_group,
             range_km: max_range_km,
         });
@@ -1044,11 +1095,28 @@ impl RadarWebRenderer {
     /// surface-acquisition/present sequence, with nothing selection- or
     /// moment-specific left in it.
     fn render_and_present(&mut self) -> Result<(), JsValue> {
-        let bind_group = &self
+        let uploaded = self
             .uploaded
             .as_ref()
-            .expect("caller populated this above if it was empty")
-            .bind_group;
+            .expect("caller populated this above if it was empty");
+        let mut uniforms = uploaded.uniforms;
+        match self.view {
+            Some(v) => {
+                uniforms.clip_to_world = mercator_view(
+                    v.site_lat_deg,
+                    v.site_lon_deg,
+                    v.west_lon,
+                    v.north_lat,
+                    v.east_lon,
+                    v.south_lat,
+                );
+                uniforms.site_lat_rad = v.site_lat_deg.to_radians() as f32;
+                uniforms.site_mercator_y = mercator_y(v.site_lat_deg.to_radians()) as f32;
+            }
+            None => uniforms.clip_to_world = full_range_view(0.0, uploaded.range_km),
+        }
+        uploaded.uniforms_gpu.update(&self.queue, uniforms);
+        let bind_group = &uploaded.bind_group;
 
         // Off-screen `radar-render` renders into a plain `RenderTarget` it
         // owns; a canvas has no such texture to own ahead of time -- one
@@ -1074,8 +1142,8 @@ impl RadarWebRenderer {
         let target = RenderTarget {
             texture: surface_texture.texture.clone(),
             view,
-            width: self.width,
-            height: self.height,
+            width: self.surface_config.width,
+            height: self.surface_config.height,
         };
 
         gpu::render_frame(
