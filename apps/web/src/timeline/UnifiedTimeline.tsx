@@ -84,6 +84,12 @@ function formatTime(ms: number): string {
   return new Date(ms).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true });
 }
 
+/** Like `formatTime`, but just the time when it's today -- the strip label has little room. */
+function formatTimeShort(ms: number): string {
+  if (new Date(ms).toDateString() !== new Date().toDateString()) return formatTime(ms);
+  return new Date(ms).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit", hour12: true });
+}
+
 function useNowMillis(): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -295,7 +301,7 @@ export function UnifiedTimeline({ history, forecast, onRegionChange }: UnifiedTi
           </span>
           <span className="unified-timeline-source unified-timeline-source-forecast">
             FORECAST
-            {forecastValidMs !== null ? ` valid ${formatTime(forecastValidMs)}` : " — no run loaded"}
+            {forecastValidMs !== null ? ` valid ${formatTimeShort(forecastValidMs)}` : " — no run loaded"}
           </span>
         </span>
         <span>{formatTime(domainMax)}</span>

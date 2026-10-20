@@ -11,6 +11,24 @@
         ],
         "createdAt": "2026-10-19T16:30:30.101Z",
         "reason": "Throwaway decision-page sketches, not shipped UI"
+      },
+      {
+        "rule": "design-system-font",
+        "value": "*",
+        "files": [
+          ".impeccable/mocks/decision/*.html"
+        ],
+        "createdAt": "2026-10-19T17:49:00.845Z",
+        "reason": "Throwaway decision-page sketches, not shipped UI"
+      },
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "apps/web/src/App.css"
+        ],
+        "createdAt": "2026-10-19T19:26:57.745Z",
+        "reason": "DESIGN.md specifies the forecast badge's 3px amber left rule (Forecast Amber + Forecast badge sections); predates this session (8e1459d)"
       }
     ]
   }

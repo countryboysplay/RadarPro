@@ -1,0 +1,161 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-19T00:00:00Z",
+  "title": "Design System: RadarPro",
+  "extensions": {
+    "colorMeta": {
+      "ground-deep": { "role": "neutral", "displayName": "Ground Deep", "canonical": "#0b0e0d", "tonalRamp": ["#0b0e0d", "#0e1110", "#161b19", "#1d2420", "#262e2a", "#36403a", "#858b80", "#ecebe4"] },
+      "ground": { "role": "neutral", "displayName": "Ground", "canonical": "#0e1110", "tonalRamp": ["#0b0e0d", "#0e1110", "#161b19", "#1d2420", "#262e2a", "#36403a", "#858b80", "#ecebe4"] },
+      "panel": { "role": "neutral", "displayName": "Panel", "canonical": "#161b19", "tonalRamp": ["#0b0e0d", "#0e1110", "#161b19", "#1d2420", "#262e2a", "#36403a", "#858b80", "#ecebe4"] },
+      "raised": { "role": "neutral", "displayName": "Raised", "canonical": "#1d2420", "tonalRamp": ["#0b0e0d", "#0e1110", "#161b19", "#1d2420", "#262e2a", "#36403a", "#858b80", "#ecebe4"] },
+      "rule": { "role": "neutral", "displayName": "Rule", "canonical": "#262e2a", "tonalRamp": ["#0b0e0d", "#0e1110", "#161b19", "#1d2420", "#262e2a", "#36403a", "#858b80", "#ecebe4"] },
+      "rule-strong": { "role": "neutral", "displayName": "Rule Strong", "canonical": "#36403a", "tonalRamp": ["#0b0e0d", "#0e1110", "#161b19", "#1d2420", "#262e2a", "#36403a", "#858b80", "#ecebe4"] },
+      "ink-faint": { "role": "neutral", "displayName": "Ink Faint", "canonical": "#858b80", "tonalRamp": ["#0b0e0d", "#0e1110", "#161b19", "#1d2420", "#262e2a", "#36403a", "#858b80", "#ecebe4"] },
+      "ink-muted": { "role": "neutral", "displayName": "Ink Muted", "canonical": "#a3a89f", "tonalRamp": ["#0e1110", "#161b19", "#1d2420", "#262e2a", "#36403a", "#858b80", "#a3a89f", "#ecebe4"] },
+      "paper-ink": { "role": "neutral", "displayName": "Paper Ink", "canonical": "#ecebe4", "tonalRamp": ["#0e1110", "#161b19", "#1d2420", "#262e2a", "#36403a", "#858b80", "#a3a89f", "#ecebe4"] },
+      "accent": { "role": "primary", "displayName": "Steel Blue Accent", "canonical": "#739bd0", "tonalRamp": ["oklch(15% 0.05 255)", "oklch(25% 0.07 255)", "oklch(35% 0.08 255)", "oklch(45% 0.09 255)", "oklch(55% 0.09 255)", "oklch(67% 0.09 255)", "oklch(80% 0.06 255)", "oklch(95% 0.02 255)"] },
+      "accent-strong": { "role": "primary", "displayName": "Lifted Steel", "canonical": "#8fb0dc", "tonalRamp": ["oklch(15% 0.05 255)", "oklch(25% 0.07 255)", "oklch(35% 0.08 255)", "oklch(45% 0.09 255)", "oklch(55% 0.09 255)", "oklch(67% 0.09 255)", "oklch(74% 0.08 255)", "oklch(95% 0.02 255)"] },
+      "accent-ink": { "role": "neutral", "displayName": "Accent Ink", "canonical": "#0b0e0d", "tonalRamp": ["#0b0e0d", "#0e1110", "#161b19", "#1d2420", "#262e2a", "#36403a", "#858b80", "#ecebe4"] },
+      "course-ink": { "role": "secondary", "displayName": "Course Purple", "canonical": "#b56cff", "tonalRamp": ["oklch(15% 0.08 305)", "oklch(25% 0.12 305)", "oklch(35% 0.16 305)", "oklch(45% 0.2 305)", "oklch(55% 0.22 305)", "oklch(65% 0.22 305)", "oklch(80% 0.12 305)", "oklch(95% 0.03 305)"] },
+      "forecast-amber": { "role": "tertiary", "displayName": "Forecast Amber", "canonical": "#f0b84a", "tonalRamp": ["oklch(15% 0.04 80)", "oklch(25% 0.06 80)", "oklch(35% 0.08 80)", "oklch(45% 0.1 80)", "oklch(55% 0.12 80)", "oklch(65% 0.13 80)", "oklch(81% 0.14 80)", "oklch(95% 0.04 80)"] },
+      "ok-green": { "role": "status", "displayName": "Live Green", "canonical": "#8fcf8a", "tonalRamp": ["oklch(15% 0.04 143)", "oklch(25% 0.06 143)", "oklch(35% 0.08 143)", "oklch(45% 0.1 143)", "oklch(55% 0.12 143)", "oklch(65% 0.12 143)", "oklch(79% 0.12 143)", "oklch(95% 0.04 143)"] },
+      "danger-red": { "role": "status", "displayName": "Danger Red", "canonical": "#ef6a5a", "tonalRamp": ["oklch(15% 0.05 28)", "oklch(25% 0.08 28)", "oklch(35% 0.11 28)", "oklch(45% 0.14 28)", "oklch(55% 0.16 28)", "oklch(67% 0.17 28)", "oklch(80% 0.1 28)", "oklch(95% 0.03 28)"] }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "The site code only (KTLX); the largest thing in the chrome." },
+      "headline": { "displayName": "Headline", "purpose": "The RADARPRO wordmark, uppercase, in the sticky rail head." },
+      "title": { "displayName": "Title", "purpose": "The current scan or valid time in the time strip." },
+      "control": { "displayName": "Control", "purpose": "Product segment labels (tilts at 15px)." },
+      "body": { "displayName": "Body", "purpose": "Default text, buttons at 600, course-table rows with values at 700." },
+      "label": { "displayName": "Label", "purpose": "Uppercase rail block headings and category headers in Ink Muted; each is the real heading of its control group." },
+      "meta": { "displayName": "Meta", "purpose": "Ages, axis notes, legend domain, statuses; 11px for timeline end labels and attributions, 10px for the NOW tag." }
+    },
+    "shadows": [
+      { "name": "float", "value": "0 8px 24px rgb(0 0 0 / 0.45), 0 2px 6px rgb(0 0 0 / 0.35)", "purpose": "Forecast drawer and the right-hand point-forecast panel only: chrome floating over the map." },
+      { "name": "selection-inset", "value": "inset 0 0 0 1px #739bd0", "purpose": "Selected alert row." },
+      { "name": "tick-halo", "value": "0 0 0 2px #0e1110", "purpose": "Active tick on the time track." }
+    ],
+    "motion": [
+      { "name": "leg-draw", "value": "200ms, ease-out cubic (1 - (1 - t)^3), requestAnimationFrame", "purpose": "The cross-section leg draws from start to finish. The one authored motion; skipped under prefers-reduced-motion." },
+      { "name": "state-color", "value": "120ms ease-out on background-color, border-color, color", "purpose": "Button hover and state changes in chrome; disabled under prefers-reduced-motion." }
+    ],
+    "breakpoints": [
+      { "name": "stacked", "value": "900px", "purpose": "At or below: map 60vh, then strip, then rail in document flow." }
+    ]
+  },
+  "components": [
+    {
+      "name": "Rail Button",
+      "kind": "button",
+      "refersTo": "button",
+      "description": "Default chrome button: a quiet slab in the legend.",
+      "html": "<button class=\"ds-btn\">Set leg on map</button>",
+      "css": ".ds-btn { font: 600 14px/1 var(--font, 'Roboto Condensed', 'Arial Narrow', sans-serif); letter-spacing: 0.01em; color: var(--g8, #ecebe4); background: var(--g3, #1d2420); border: 1px solid var(--g5, #36403a); border-radius: 3px; min-height: 30px; padding: 0 12px; cursor: pointer; transition: background-color 120ms ease-out, border-color 120ms ease-out, color 120ms ease-out; } .ds-btn:hover { background: var(--g4, #262e2a); border-color: var(--g6, #858b80); } .ds-btn:focus-visible { outline: 2px solid var(--accent, #739bd0); outline-offset: 2px; } .ds-btn:disabled { color: var(--g6, #858b80); background: transparent; border-color: var(--g4, #262e2a); cursor: default; }"
+    },
+    {
+      "name": "Play Button",
+      "kind": "button",
+      "refersTo": "button-play",
+      "description": "The one filled primary action, in the time strip.",
+      "html": "<button class=\"ds-btn-play\" aria-label=\"Play\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 20 20\" fill=\"currentColor\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M6 4.5l10 5.5-10 5.5z\"/></svg></button>",
+      "css": ".ds-btn-play { display: inline-flex; align-items: center; justify-content: center; min-width: 46px; min-height: 36px; padding: 0 8px; color: var(--accent-ink, #0b0e0d); background: var(--accent, #739bd0); border: 1px solid var(--accent, #739bd0); border-radius: 3px; cursor: pointer; transition: background-color 120ms ease-out, border-color 120ms ease-out; } .ds-btn-play:hover { background: var(--accent-strong, #8fb0dc); border-color: var(--accent-strong, #8fb0dc); } .ds-btn-play:focus-visible { outline: 2px solid var(--accent, #739bd0); outline-offset: 2px; }"
+    },
+    {
+      "name": "Product Segment",
+      "kind": "chip",
+      "refersTo": "segment",
+      "description": "Product and tilt pickers: every option visible, selection fills steel blue.",
+      "html": "<div class=\"ds-segment\" role=\"group\"><button aria-pressed=\"true\">REF</button><button aria-pressed=\"false\">VEL</button><button aria-pressed=\"false\">SRV</button><button aria-pressed=\"false\">CC</button></div>",
+      "css": ".ds-segment { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; width: 288px; } .ds-segment button { min-height: 36px; padding: 0 4px; font: 700 16px/1 var(--font, 'Roboto Condensed', 'Arial Narrow', sans-serif); letter-spacing: 0.02em; color: var(--g8, #ecebe4); background: var(--g3, #1d2420); border: 1px solid transparent; border-radius: 3px; cursor: pointer; transition: background-color 120ms ease-out; } .ds-segment button:hover { background: var(--g4, #262e2a); } .ds-segment button:focus-visible { outline: 2px solid var(--accent, #739bd0); outline-offset: 2px; } .ds-segment button[aria-pressed=\"true\"] { background: var(--accent, #739bd0); border-color: var(--accent, #739bd0); color: var(--accent-ink, #0b0e0d); }"
+    },
+    {
+      "name": "Field",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Text, number and select fields in the rail and drawer.",
+      "html": "<input class=\"ds-input\" placeholder=\"Type a code or city\" />",
+      "css": ".ds-input { font: 500 14px/1.2 var(--font, 'Roboto Condensed', 'Arial Narrow', sans-serif); color: var(--g8, #ecebe4); background: var(--g1, #0e1110); border: 1px solid var(--g5, #36403a); border-radius: 3px; min-height: 30px; padding: 0 8px; width: 288px; } .ds-input::placeholder { color: var(--g6, #858b80); } .ds-input:focus-visible { border-color: var(--accent, #739bd0); outline: 2px solid var(--accent, #739bd0); outline-offset: 0; }"
+    },
+    {
+      "name": "Category Header",
+      "kind": "nav",
+      "refersTo": "category-header",
+      "description": "Collapsible rail category with a live one-line summary.",
+      "html": "<button class=\"ds-cat\" aria-expanded=\"false\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 20 20\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"ds-cat-chev\"><path d=\"M8 5l5 5-5 5\"/></svg><span class=\"ds-cat-title\">Warnings</span><span class=\"ds-cat-summary\">306 US · 0 polygons near KTLX</span></button>",
+      "css": ".ds-cat { display: flex; align-items: center; gap: 8px; width: 288px; min-height: 44px; padding: 0; background: transparent; border: 0; border-bottom: 1px solid var(--g4, #262e2a); text-align: left; cursor: pointer; } .ds-cat-chev { color: var(--g6, #858b80); } .ds-cat-title { font: 700 13px/1 var(--font, 'Roboto Condensed', 'Arial Narrow', sans-serif); letter-spacing: 0.08em; text-transform: uppercase; color: var(--g7, #a3a89f); } .ds-cat:hover .ds-cat-title { color: var(--g8, #ecebe4); } .ds-cat:focus-visible { outline: 2px solid var(--accent, #739bd0); outline-offset: 2px; } .ds-cat-summary { margin-left: auto; font: 500 13px/1 var(--font, 'Roboto Condensed', 'Arial Narrow', sans-serif); color: var(--g6, #858b80); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }"
+    },
+    {
+      "name": "Course Table Row",
+      "kind": "custom",
+      "refersTo": "course-row",
+      "description": "Orienteering description row: purple pictograms, label, right-aligned tabular values.",
+      "html": "<table class=\"ds-course\"><tr><td class=\"ds-course-sym\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 20 20\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linejoin=\"round\"><path d=\"M10 3.5l7 12H3z\"/></svg><svg width=\"16\" height=\"16\" viewBox=\"0 0 20 20\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\"><circle cx=\"10\" cy=\"10\" r=\"7\"/><circle cx=\"10\" cy=\"10\" r=\"4\"/></svg></td><td>Cross-section leg</td><td class=\"ds-num\">255.0 km</td><td class=\"ds-num\">060°</td></tr></table>",
+      "css": ".ds-course { width: 288px; border-collapse: collapse; font: 400 14px/1.35 var(--font, 'Roboto Condensed', 'Arial Narrow', sans-serif); font-variant-numeric: tabular-nums; color: var(--g8, #ecebe4); } .ds-course td { padding: 7px 4px; border-top: 1px solid var(--g4, #262e2a); border-bottom: 1px solid var(--g4, #262e2a); } .ds-course-sym { width: 1%; white-space: nowrap; color: var(--course, #b56cff); } .ds-course-sym svg { display: inline-block; vertical-align: -3px; margin-right: 2px; } .ds-num { text-align: right; font-weight: 700; white-space: nowrap; }"
+    },
+    {
+      "name": "Forecast Toggle",
+      "kind": "button",
+      "refersTo": "forecast-toggle",
+      "description": "Opens forecasts from the time strip, beyond NOW; amber because it is model time.",
+      "html": "<button class=\"ds-fc\" aria-expanded=\"false\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 20 20\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M3 15l4-5 3 3 4-6 3 4M3 17.5h14\"/></svg><span>Forecast<small>HRRR ready</small></span></button>",
+      "css": ".ds-fc { display: inline-flex; align-items: center; gap: 10px; min-height: 46px; padding: 0 14px; text-align: left; color: var(--forecast, #f0b84a); background: var(--g3, #1d2420); border: 1px solid rgb(240 184 74 / 0.45); border-radius: 3px; cursor: pointer; transition: background-color 120ms ease-out, border-color 120ms ease-out; } .ds-fc:hover { background: var(--g4, #262e2a); } .ds-fc:focus-visible { outline: 2px solid var(--accent, #739bd0); outline-offset: 2px; } .ds-fc[aria-expanded=\"true\"] { background: rgb(240 184 74 / 0.14); border-color: var(--forecast, #f0b84a); } .ds-fc span { display: grid; gap: 3px; font: 700 14px/1 var(--font, 'Roboto Condensed', 'Arial Narrow', sans-serif); letter-spacing: 0.06em; text-transform: uppercase; } .ds-fc small { font: 500 12px/1 var(--font, 'Roboto Condensed', 'Arial Narrow', sans-serif); letter-spacing: 0; text-transform: none; color: var(--g7, #a3a89f); }"
+    },
+    {
+      "name": "Unified Time Track",
+      "kind": "custom",
+      "refersTo": "time-strip",
+      "description": "One axis: observed scans to NOW at 35%, amber-hatched forecast hours beyond.",
+      "html": "<div class=\"ds-track\"><div class=\"ds-now\"><span>NOW</span></div><i class=\"ds-tick\" style=\"left:10%\"></i><i class=\"ds-tick\" style=\"left:20%\"></i><i class=\"ds-tick ds-tick-active\" style=\"left:30%\"></i><i class=\"ds-tick ds-tick-fc\" style=\"left:50%\"></i><i class=\"ds-tick ds-tick-fc\" style=\"left:70%\"></i></div>",
+      "css": ".ds-track { position: relative; width: 420px; height: 24px; margin-top: 14px; border: 1px solid var(--g4, #262e2a); border-radius: 3px; background: linear-gradient(90deg, var(--g3, #1d2420) 0 35%, transparent 35%), repeating-linear-gradient(135deg, rgb(240 184 74 / 0.1) 0 5px, transparent 5px 10px), var(--g1, #0e1110); } .ds-now { position: absolute; left: 35%; top: -4px; bottom: -4px; border-left: 2px solid var(--g8, #ecebe4); z-index: 3; } .ds-now span { position: absolute; top: -15px; left: 4px; font: 700 10px/1 var(--font, 'Roboto Condensed', sans-serif); letter-spacing: 0.12em; color: var(--g8, #ecebe4); } .ds-tick { position: absolute; top: 6px; bottom: 6px; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--g7, #a3a89f); opacity: 0.6; } .ds-tick:hover { opacity: 1; } .ds-tick-fc { background: var(--forecast, #f0b84a); opacity: 0.55; } .ds-tick-active { opacity: 1; width: 4px; margin-left: -2px; top: 2px; bottom: 2px; background: var(--accent, #739bd0); box-shadow: 0 0 0 2px var(--g1, #0e1110); z-index: 4; }"
+    },
+    {
+      "name": "Forecast Radar Badge",
+      "kind": "custom",
+      "refersTo": "forecast-badge",
+      "description": "Top-left map chip shown whenever model radar replaces observed radar.",
+      "html": "<div class=\"ds-badge\" role=\"status\"><strong>Forecast radar</strong> HRRR simulated reflectivity · valid Mon 1:00 PM (+3h) · model, not observed <button>Back to radar</button></div>",
+      "css": ".ds-badge { display: inline-flex; align-items: center; gap: 8px; padding: 6px 6px 6px 12px; font: 400 13px/1.35 var(--font, 'Roboto Condensed', 'Arial Narrow', sans-serif); color: var(--g8, #ecebe4); background: var(--g2, #161b19); border: 1px solid var(--g4, #262e2a); border-left: 3px solid var(--forecast, #f0b84a); border-radius: 3px; } .ds-badge strong { color: var(--forecast, #f0b84a); text-transform: uppercase; letter-spacing: 0.06em; } .ds-badge button { font: 600 13px/1 var(--font, 'Roboto Condensed', sans-serif); color: var(--g8, #ecebe4); background: var(--g3, #1d2420); border: 1px solid var(--g5, #36403a); border-radius: 3px; min-height: 28px; padding: 0 10px; cursor: pointer; } .ds-badge button:hover { background: var(--g4, #262e2a); } .ds-badge button:focus-visible { outline: 2px solid var(--accent, #739bd0); outline-offset: 2px; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Night Orienteering Map",
+    "overview": "The radar is terrain: fixed, never restyled, read the way an orienteer reads a printed map. Everything around it is the map's legend, set at night: paper-white ink on near-black green-greys, ranked tables with hairline rules, one condensed sans at sizes you can read in a moving vehicle. Whatever the chaser places on the terrain (the cross-section leg, the chosen site, the probe's control) is printed in one course ink. It sits above the echoes on a dark casing, the way an orienteering course is overprinted on a map.\n\nThe workstation is dense but calm. A 320px rail on the left holds the hot path (site, product, tilt, course) open at all times. Depth lives in collapsed categories below it: Warnings, Layers, Archive, Color table, Settings. A single 64px time strip runs along the bottom: transport, one time axis with observed scans up to NOW, then forecast hours hatched in amber beyond it. The map gets everything else. Only two colours carry meaning in the chrome. Steel blue marks what is selected and the one primary action. Amber marks model time. Everything else is a neutral from one stepped ramp.\n\nThe world rejects the category default of a grey toolbar of buttons floating over the map. It also rejects chrome that covers the radar, controls hidden behind menus, and any presentation that lets a forecast pass for an observation.",
+    "keyCharacteristics": [
+      "Map dominant: fixed 320px rail and 64px strip; the map takes the rest.",
+      "One condensed family, tabular numerals everywhere.",
+      "Flat legend chrome: 1px rules and tonal steps, not cards and shadows.",
+      "Two reserved inks (steel-blue accent, course purple) plus amber for model time.",
+      "Orienteering pictograms (start triangle, control circle, finish double circle) shared by the rail and the map.",
+      "Every displayed time is 12-hour local."
+    ],
+    "rules": [
+      { "name": "The Two Reserved Inks Rule", "body": "Steel blue means \"selected or primary\". Course purple means \"the user put this here\". Neither appears as decoration, as a category colour or as a data colour.", "section": "colors" },
+      { "name": "The Amber Is Model Time Rule", "body": "Amber marks forecast and model output beyond NOW, so it can never read as observed. When a new state needs a warning colour, it does not borrow amber.", "section": "colors" },
+      { "name": "The One Ramp Rule", "body": "Neutrals come only from the nine ground-to-paper steps. A new surface picks a step; it does not mix a new grey.", "section": "colors" },
+      { "name": "The Tabular Rule", "body": "Body text sets `tabular-nums` globally. Times, ranges, bearings and dBZ never shift width as they change.", "section": "typography" },
+      { "name": "The 12-Hour Local Rule", "body": "Every time the chrome formats is 12-hour local (`hour12: true`), for example \"11:39:38 AM\" or \"Oct 19, 1:00 PM\". Bearings are three digits with a degree sign (\"060°\"). Distances use one decimal with the unit (\"255.0 km\").", "section": "typography" },
+      { "name": "The Map Dominant Rule", "body": "Chrome lives in the rail and the strip. Anything drawn over the map must be small, dismissable, and anchored to a corner.", "section": "layout" },
+      { "name": "The Forecast Lives With Time Rule", "body": "Model fields and point forecasts open from the time strip, beyond NOW. They never appear in the rail.", "section": "layout" },
+      { "name": "The Flat Legend Rule", "body": "Nothing in the rail or strip casts a shadow. When a surface needs separating, use a rule or a tonal step.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do keep the rail at 320px and the time strip a single 64px row. The map takes every remaining pixel.",
+      "Do keep site, product, tilt and transport visible at all times as segments and buttons, never inside a menu.",
+      "Do use steel blue (#739bd0) only for the selected option, the primary action and focus.",
+      "Do draw anything the user places on the radar in course purple (#b56cff) over a 7px Ground casing, using the start, control and finish pictograms.",
+      "Do colour model time amber (#f0b84a) and label model radar on the map \"model, not observed\".",
+      "Do format every displayed time as 12-hour local, set in tabular numerals.",
+      "Do separate chrome with 1px rules and tonal steps, and save the Float shadow for panels that sit over the map.",
+      "Do draw new icons on the 20-unit, 1.75-stroke, round-join grid in the Icon set."
+    ],
+    "donts": [
+      "Don't restyle, tint or dim the radar terrain to suit the chrome.",
+      "Don't put forecast or model data in the rail.",
+      "Don't use course purple for selection or steel blue for user marks. The two inks never swap.",
+      "Don't reuse amber for warnings, staleness or emphasis. It means model time.",
+      "Don't add a second typeface, or proportional numerals in any readout.",
+      "Don't let more than one loop play at once. Starting the forecast loop pauses the scan loop, and the reverse.",
+      "Don't add motion beyond the 200ms leg draw and 120ms state-colour changes."
+    ]
+  }
+}
