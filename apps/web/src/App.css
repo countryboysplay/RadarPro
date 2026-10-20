@@ -1226,6 +1226,25 @@ body,
   color: var(--g7);
 }
 
+.forecast-key {
+  display: grid;
+  gap: 2px;
+  width: 168px;
+}
+
+.forecast-key-bar {
+  height: 8px;
+  border: 1px solid var(--g4);
+}
+
+.forecast-key-labels {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--g7);
+}
+
 .map-forecast-badge button {
   font: 600 13px/1 var(--font);
   color: var(--g8);

@@ -170,6 +170,45 @@ pub fn display_scale(variable: ForecastVariable) -> DisplayScale {
                 s(6000.0, [220, 120, 40, 255]),
             ],
         ),
+        // Severe-weather fields: clear below where they start to matter, so the
+        // map shows through, then blue -> green -> yellow -> red -> magenta.
+        ForecastVariable::SbCape | ForecastVariable::MlCape => (
+            "J/kg",
+            0.0,
+            5000.0,
+            severe_ramp(s, [99.0, 100.0, 1000.0, 2000.0, 3000.0, 4000.0, 5000.0]),
+        ),
+        ForecastVariable::Srh01 | ForecastVariable::Srh03 => (
+            "m²/s²",
+            0.0,
+            500.0,
+            severe_ramp(s, [49.0, 50.0, 100.0, 200.0, 300.0, 400.0, 500.0]),
+        ),
+        ForecastVariable::BulkShear06 => (
+            "kt",
+            0.0,
+            80.0,
+            severe_ramp(s, [19.0, 20.0, 30.0, 40.0, 50.0, 60.0, 80.0]),
+        ),
+        ForecastVariable::Stp => (
+            "",
+            0.0,
+            10.0,
+            severe_ramp(s, [0.49, 0.5, 1.0, 2.0, 4.0, 6.0, 10.0]),
+        ),
+        // Low cloud bases favour tornadoes: warm under 1000 m, cool and fading above 2000 m.
+        ForecastVariable::LclHeight => (
+            "m",
+            0.0,
+            3000.0,
+            vec![
+                s(0.0, [220, 60, 40, 255]),
+                s(1000.0, [240, 200, 40, 255]),
+                s(1500.0, [90, 180, 90, 255]),
+                s(2000.0, [80, 130, 200, 255]),
+                s(3000.0, [60, 70, 110, 0]),
+            ],
+        ),
     };
     DisplayScale {
         unit,
@@ -179,10 +218,36 @@ pub fn display_scale(variable: ForecastVariable) -> DisplayScale {
     }
 }
 
+/// Clear up to `at[0]`, then blue, green, yellow, orange, red, magenta at `at[1..]`.
+fn severe_ramp(s: fn(f32, [u8; 4]) -> PaletteStop, at: [f32; 7]) -> Vec<PaletteStop> {
+    vec![
+        s(0.0, [0, 0, 0, 0]),
+        s(at[0], [0, 0, 0, 0]),
+        s(at[1], [70, 130, 210, 255]),
+        s(at[2], [60, 180, 80, 255]),
+        s(at[3], [240, 210, 40, 255]),
+        s(at[4], [240, 130, 30, 255]),
+        s(at[5], [210, 30, 30, 255]),
+        s(at[6], [200, 50, 200, 255]),
+    ]
+}
+
 /// Convert a decoded field into a *new* display-unit array matching
-/// [`display_scale`]: Kelvin -> Celsius, Pa -> hPa, anything else unchanged.
-/// Never mutates `field.values`.
+/// [`display_scale`]: Kelvin -> Celsius, Pa -> hPa, shear m/s -> kt, anything
+/// else unchanged. Never mutates `field.values`.
 pub fn to_display_values(field: &ForecastGrid) -> Vec<f32> {
+    if field.variable == ForecastVariable::BulkShear06 {
+        return field.values.iter().map(|&ms| ms * 1.943_844).collect();
+    }
+    // HRRR leaves some LCLs missing; the GPU's handling of NaN is undefined, so
+    // draw them as "no cloud base" (the clear top of the scale).
+    if field.variable == ForecastVariable::LclHeight {
+        return field
+            .values
+            .iter()
+            .map(|&m| if m.is_nan() { f32::MAX } else { m })
+            .collect();
+    }
     match field.unit {
         "K" => to_display_celsius(field),
         "Pa" => field.values.iter().map(|&pa| pa / 100.0).collect(),

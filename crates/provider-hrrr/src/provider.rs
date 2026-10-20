@@ -4,7 +4,7 @@
 use crate::client::HrrrClient;
 use crate::error::HrrrError;
 use crate::keys::{ForecastHour, Product, RunReference};
-use forecast_core::grid::ForecastGrid;
+use forecast_core::grid::{ForecastGrid, NativeVariableMetadata};
 use forecast_core::model::{ModelMetadata, ModelRun};
 use forecast_core::request::FieldRequest;
 use forecast_core::time::UtcTimestamp;
@@ -92,34 +92,60 @@ impl forecast_core::provider::ForecastProvider for HrrrProvider {
         let key = crate::keys::object_key(*run, Product::CONUS_SURFACE, forecast_hour);
         let idx_key = crate::keys::idx_key(*run, Product::CONUS_SURFACE, forecast_hour);
 
-        let (idx_variable, idx_level, _native_unit, _category, _number) =
-            crate::decode::idx_names(request.variable).ok_or_else(|| {
-                HrrrError::FieldNotFoundInIdx {
-                    url: idx_key.clone(),
-                    variable: request.variable.canonical_name().to_string(),
-                    level: String::new(),
-                }
-            })?;
+        let specs = crate::decode::input_messages(request.variable).ok_or_else(|| {
+            HrrrError::FieldNotFoundInIdx {
+                url: idx_key.clone(),
+                variable: request.variable.canonical_name().to_string(),
+                level: String::new(),
+            }
+        })?;
 
         let idx_text = self.client.fetch_idx_text(&idx_key).await?;
         let entries = crate::idx::parse_idx(&idx_key, &idx_text)?;
-        let position = entries
-            .iter()
-            .position(|e| e.variable == idx_variable && e.level == idx_level)
-            .ok_or_else(|| HrrrError::FieldNotFoundInIdx {
-                url: idx_key.clone(),
-                variable: idx_variable.to_string(),
-                level: idx_level.to_string(),
-            })?;
-
-        let content_length = if position + 1 == entries.len() {
-            Some(self.client.content_length(&key).await?)
-        } else {
-            None
+        // A derived field (shear, STP) needs several messages; each is one range GET.
+        let mut grids = Vec::with_capacity(specs.len());
+        for spec in specs {
+            let (idx_variable, idx_level, ..) = spec;
+            let position = entries
+                .iter()
+                .position(|e| e.variable == idx_variable && e.level == idx_level)
+                .ok_or_else(|| HrrrError::FieldNotFoundInIdx {
+                    url: idx_key.clone(),
+                    variable: idx_variable.to_string(),
+                    level: idx_level.to_string(),
+                })?;
+            let content_length = if position + 1 == entries.len() {
+                Some(self.client.content_length(&key).await?)
+            } else {
+                None
+            };
+            let (start, end) = crate::idx::byte_range(&key, &entries, position, content_length)?;
+            let bytes = self.client.fetch_byte_range(&key, start, end).await?;
+            grids.push(crate::decode::decode_message(
+                &key,
+                &bytes,
+                request.variable,
+                spec,
+            )?);
+        }
+        if grids.len() == 1 {
+            return Ok(grids.remove(0));
+        }
+        let names =
+            |f: fn(&ForecastGrid) -> &str| grids.iter().map(f).collect::<Vec<_>>().join(",");
+        let native = NativeVariableMetadata {
+            provider_variable_name: names(|g| &g.native.provider_variable_name),
+            provider_level_name: names(|g| &g.native.provider_level_name),
+            native_unit: crate::decode::derived_unit(request.variable),
         };
-        let (start, end) = crate::idx::byte_range(&key, &entries, position, content_length)?;
-
-        let bytes = self.client.fetch_byte_range(&key, start, end).await?;
-        crate::decode::decode_field(&key, &bytes, request.variable)
+        let inputs: Vec<Vec<f32>> = grids
+            .iter_mut()
+            .map(|g| std::mem::take(&mut g.values))
+            .collect();
+        let mut grid = grids.remove(0);
+        grid.values = crate::decode::derive(request.variable, &inputs);
+        grid.unit = native.native_unit;
+        grid.native = native;
+        Ok(grid)
     }
 }

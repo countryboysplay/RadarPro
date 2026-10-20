@@ -46,12 +46,27 @@ pub enum ForecastVariable {
     RelativeHumidity,
     /// Model-simulated composite (column-maximum) radar reflectivity, dBZ.
     CompositeReflectivity,
+    /// Surface-based CAPE, J/kg.
+    SbCape,
+    /// Mixed-layer CAPE (HRRR: lowest 90 mb), J/kg.
+    MlCape,
+    /// 0-1 km storm-relative helicity, m²/s².
+    Srh01,
+    /// 0-3 km storm-relative helicity, m²/s².
+    Srh03,
+    /// 0-6 km bulk wind shear magnitude, m/s (derived from its u/v parts).
+    BulkShear06,
+    /// Surface-based lifted condensation level height.
+    LclHeight,
+    /// Fixed-layer significant tornado parameter (SPC), dimensionless,
+    /// derived from SBCAPE, LCL height, 0-1 km SRH and 0-6 km shear.
+    Stp,
 }
 
 impl ForecastVariable {
     /// Every canonical variable, in declaration order -- useful for a UI
     /// variable picker or an exhaustiveness check in a test.
-    pub const ALL: [ForecastVariable; 11] = [
+    pub const ALL: [ForecastVariable; 18] = [
         ForecastVariable::Temperature2m,
         ForecastVariable::Dewpoint2m,
         ForecastVariable::WindU10m,
@@ -63,6 +78,13 @@ impl ForecastVariable {
         ForecastVariable::GeopotentialHeight,
         ForecastVariable::RelativeHumidity,
         ForecastVariable::CompositeReflectivity,
+        ForecastVariable::SbCape,
+        ForecastVariable::MlCape,
+        ForecastVariable::Srh01,
+        ForecastVariable::Srh03,
+        ForecastVariable::BulkShear06,
+        ForecastVariable::LclHeight,
+        ForecastVariable::Stp,
     ];
 
     /// A stable, RadarPro-native identifier (`FORECASTING.md`: "canonical
@@ -81,6 +103,13 @@ impl ForecastVariable {
             Self::GeopotentialHeight => "geopotential_height",
             Self::RelativeHumidity => "relative_humidity",
             Self::CompositeReflectivity => "composite_reflectivity",
+            Self::SbCape => "sbcape",
+            Self::MlCape => "mlcape",
+            Self::Srh01 => "srh_0_1km",
+            Self::Srh03 => "srh_0_3km",
+            Self::BulkShear06 => "bulk_shear_0_6km",
+            Self::LclHeight => "lcl_height",
+            Self::Stp => "stp",
         }
     }
 
@@ -133,6 +162,12 @@ impl ForecastVariable {
             Self::GeopotentialHeight => (3, 5),       // HGT
             Self::RelativeHumidity => (1, 1),         // RH
             Self::CompositeReflectivity => (16, 196), // REFC (NCEP local)
+            Self::SbCape | Self::MlCape => (7, 6),    // CAPE
+            Self::Srh01 | Self::Srh03 => (7, 8),      // HLCY
+            // Derived: the first message each is computed from.
+            Self::BulkShear06 => (2, 15), // VUCSH
+            Self::LclHeight => (3, 5),    // HGT
+            Self::Stp => (7, 6),          // CAPE
         }
     }
 }

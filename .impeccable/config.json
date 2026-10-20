@@ -28,7 +28,7 @@
           "apps/web/src/App.css"
         ],
         "createdAt": "2026-10-19T19:26:57.745Z",
-        "reason": "DESIGN.md specifies the forecast badge's 3px amber left rule (Forecast Amber + Forecast badge sections); predates this session (8e1459d)"
+        "reason": "DESIGN.md:173,285 specify the 3px Forecast Amber left rule on the map forecast badge as the model-time marker (commit 8e1459d)"
       }
     ]
   }

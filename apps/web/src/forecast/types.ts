@@ -83,6 +83,8 @@ export interface ForecastGridMetadata {
   displayUnit: string;
   displayMin: number;
   displayMax: number;
+  /** The colour ramp, `[value, [r, g, b, a]]`. */
+  displayStops: [number, [number, number, number, number]][];
 }
 
 /** The `ensemble` argument `ProviderHandle.fetchField` accepts -- one of

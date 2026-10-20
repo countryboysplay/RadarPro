@@ -131,9 +131,7 @@ const COORD_SCALE: f64 = 1e-6;
 /// `forecast_core::variable::ForecastVariable::grib2_parameter()`'s
 /// shared constant -- this project's "provider-specific names and
 /// formats stop at the adapter" rule.
-pub fn idx_names(
-    variable: ForecastVariable,
-) -> Option<(&'static str, &'static str, &'static str, u8, u8)> {
+pub fn idx_names(variable: ForecastVariable) -> Option<MessageSpec> {
     match variable {
         // (idx VARNAME, idx LEVEL, native unit, category, number)
         ForecastVariable::Temperature2m => Some(("TMP", "2 m above ground", "K", 0, 0)),
@@ -153,7 +151,87 @@ pub fn idx_names(
         ForecastVariable::CompositeReflectivity => {
             Some(("REFC", "entire atmosphere", "dBZ", 16, 196))
         }
-        ForecastVariable::Precipitation1h | ForecastVariable::GeopotentialHeight => None,
+        // Severe-weather fields, confirmed live 2026-10-20 (`hrrr.t12z.wrfsfcf06`).
+        ForecastVariable::SbCape => Some(("CAPE", "surface", "J/kg", 7, 6)),
+        // HRRR's mixed layer is the lowest 90 mb.
+        ForecastVariable::MlCape => Some(("CAPE", "90-0 mb above ground", "J/kg", 7, 6)),
+        ForecastVariable::Srh01 => Some(("HLCY", "1000-0 m above ground", "m²/s²", 7, 8)),
+        ForecastVariable::Srh03 => Some(("HLCY", "3000-0 m above ground", "m²/s²", 7, 8)),
+        ForecastVariable::LclHeight => {
+            Some(("HGT", "level of adiabatic condensation from sfc", "m", 3, 5))
+        }
+        ForecastVariable::Precipitation1h
+        | ForecastVariable::GeopotentialHeight
+        | ForecastVariable::BulkShear06
+        | ForecastVariable::Stp => None,
+    }
+}
+
+/// One GRIB2 message: (idx VARNAME, idx LEVEL, native unit, category, number).
+pub type MessageSpec = (&'static str, &'static str, &'static str, u8, u8);
+
+const SHEAR_U_0_6KM: MessageSpec = ("VUCSH", "0-6000 m above ground", "m/s", 2, 15);
+const SHEAR_V_0_6KM: MessageSpec = ("VVCSH", "0-6000 m above ground", "m/s", 2, 16);
+
+/// The messages `variable` is computed from: its own for a field HRRR
+/// publishes, several for a derived one (see [`derive`]).
+pub fn input_messages(variable: ForecastVariable) -> Option<Vec<MessageSpec>> {
+    match variable {
+        ForecastVariable::BulkShear06 => Some(vec![SHEAR_U_0_6KM, SHEAR_V_0_6KM]),
+        ForecastVariable::Stp => Some(vec![
+            idx_names(ForecastVariable::SbCape)?,
+            idx_names(ForecastVariable::LclHeight)?,
+            idx_names(ForecastVariable::Srh01)?,
+            SHEAR_U_0_6KM,
+            SHEAR_V_0_6KM,
+        ]),
+        _ => idx_names(variable).map(|spec| vec![spec]),
+    }
+}
+
+/// Native unit of a derived variable's values.
+pub fn derived_unit(variable: ForecastVariable) -> &'static str {
+    match variable {
+        ForecastVariable::BulkShear06 => "m/s",
+        _ => "",
+    }
+}
+
+/// Fixed-layer significant tornado parameter (Thompson et al. 2003, SPC's
+/// "STP (fixed layer)"): SBCAPE/1500 J/kg x (2000 - SBLCL)/1000 m (1 under
+/// 1000 m, 0 over 2000 m) x SRH(0-1 km)/150 m²/s² x shear(0-6 km)/20 m/s
+/// (0 under 12.5 m/s, capped at 1.5 over 30 m/s). HRRR leaves the LCL
+/// missing at some points (about 0.3% of the grid on 2026-10-20); STP is 0 there.
+pub fn stp(sbcape: f32, lcl_m: f32, srh01: f32, shear06: f32) -> f32 {
+    if lcl_m.is_nan() {
+        return 0.0;
+    }
+    let lcl = ((2000.0 - lcl_m) / 1000.0).clamp(0.0, 1.0);
+    let shear = if shear06 < 12.5 {
+        0.0
+    } else {
+        shear06.min(30.0) / 20.0
+    };
+    sbcape / 1500.0 * lcl * (srh01 / 150.0) * shear
+}
+
+/// A derived variable's values from its [`input_messages`] values, in order.
+pub fn derive(variable: ForecastVariable, inputs: &[Vec<f32>]) -> Vec<f32> {
+    let shear =
+        |u: &[f32], v: &[f32]| -> Vec<f32> { u.iter().zip(v).map(|(u, v)| u.hypot(*v)).collect() };
+    match (variable, inputs) {
+        (ForecastVariable::BulkShear06, [u, v]) => shear(u, v),
+        (ForecastVariable::Stp, [cape, lcl, srh, u, v]) => cape
+            .iter()
+            .zip(lcl)
+            .zip(srh)
+            .zip(shear(u, v))
+            .map(|(((&cape, &lcl), &srh), shear)| stp(cape, lcl, srh, shear))
+            .collect(),
+        _ => unreachable!(
+            "derive called for {variable:?} with {} inputs",
+            inputs.len()
+        ),
     }
 }
 
@@ -164,13 +242,24 @@ pub fn decode_field(
     bytes: &[u8],
     variable: ForecastVariable,
 ) -> Result<ForecastGrid, HrrrError> {
-    let (want_idx_variable, want_idx_level, native_unit, want_category, want_number) =
-        idx_names(variable).ok_or_else(|| HrrrError::UnexpectedField {
-            url: url.to_string(),
-            category: 0,
-            number: 0,
-            expected_field: variable.canonical_name().to_string(),
-        })?;
+    let spec = idx_names(variable).ok_or_else(|| HrrrError::UnexpectedField {
+        url: url.to_string(),
+        category: 0,
+        number: 0,
+        expected_field: variable.canonical_name().to_string(),
+    })?;
+    decode_message(url, bytes, variable, spec)
+}
+
+/// Decode one message described by `spec` into a grid labelled `variable`
+/// (for a derived variable, one of its inputs).
+pub fn decode_message(
+    url: &str,
+    bytes: &[u8],
+    variable: ForecastVariable,
+    spec: MessageSpec,
+) -> Result<ForecastGrid, HrrrError> {
+    let (want_idx_variable, want_idx_level, native_unit, want_category, want_number) = spec;
 
     let grib2 = grib::from_bytes(bytes.to_vec()).map_err(|e| HrrrError::Grib2Parse {
         url: url.to_string(),
@@ -736,5 +825,35 @@ mod tests {
         let bytes = fixture("hrrr_t12z_f00_tmp2m.grib2");
         let err = decode_field("u", &bytes, ForecastVariable::Dewpoint2m).unwrap_err();
         assert!(matches!(err, HrrrError::UnexpectedField { .. }));
+    }
+
+    #[test]
+    fn stp_matches_spc_fixed_layer_terms() {
+        // Every term at its reference value: STP 1.
+        assert!((stp(1500.0, 1000.0, 150.0, 20.0) - 1.0).abs() < 1e-6);
+        // LCL term 1 under 1000 m, 0 over 2000 m; shear 0 under 12.5 m/s, capped at 1.5.
+        assert!((stp(3000.0, 500.0, 300.0, 40.0) - 2.0 * 1.0 * 2.0 * 1.5).abs() < 1e-5);
+        assert_eq!(stp(3000.0, 2500.0, 300.0, 40.0), 0.0);
+        assert_eq!(stp(3000.0, 500.0, 300.0, 12.0), 0.0);
+        assert_eq!(stp(3000.0, f32::NAN, 300.0, 40.0), 0.0);
+    }
+
+    #[test]
+    fn derives_shear_and_stp_from_their_messages_in_order() {
+        let shear = derive(ForecastVariable::BulkShear06, &[vec![3.0], vec![4.0]]);
+        assert_eq!(shear, vec![5.0]);
+        let stp_values = derive(
+            ForecastVariable::Stp,
+            &[
+                vec![1500.0],
+                vec![1000.0],
+                vec![150.0],
+                vec![12.0],
+                vec![16.0],
+            ],
+        );
+        assert!((stp_values[0] - 1.0).abs() < 1e-6);
+        assert_eq!(input_messages(ForecastVariable::Stp).unwrap().len(), 5);
+        assert_eq!(input_messages(ForecastVariable::SbCape).unwrap().len(), 1);
     }
 }

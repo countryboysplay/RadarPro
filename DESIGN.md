@@ -282,7 +282,7 @@ A single 64px row. The 24px track is Raised up to NOW (35%), then Ground with a 
 
 ### Forecast Surfaces
 - **Forecast drawer:** a Panel float with a 2px amber top rule, an amber uppercase 15px heading and the Float shadow. It opens from the strip toggle.
-- **Forecast badge:** a Panel chip at the map's top-left with a 3px amber left rule. It reads "**FORECAST RADAR** HRRR simulated reflectivity · valid Mon 1:00 PM (+3h) · model, not observed", with a "Back to radar" button. It is shown whenever model radar replaces observed radar past NOW.
+- **Forecast badge:** a Panel chip at the map's top-left with a 3px amber left rule. It reads "**FORECAST RADAR** HRRR simulated reflectivity · valid Mon 1:00 PM (+3h) · model, not observed", with a "Back to radar" button. It is shown whenever model radar replaces observed radar past NOW. For an HRRR severe-weather field (STP, CAPE, helicity, shear, LCL) it names the field instead and adds a 168px colour bar, labelled where colour starts, mid-scale and at the top with the unit; low values are clear so the map shows through.
 
 ### Map Marks
 Radar sites are 4px Ink Muted dots with a 2px Ground stroke. The selected site is a 6px course-purple dot. Range rings are 1px Ink Muted at 50% alpha. The basemap is OpenFreeMap Dark. The radar, MRMS and forecast fields render through their own colour tables and are never tinted by the chrome.

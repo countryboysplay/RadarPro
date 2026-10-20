@@ -7,7 +7,7 @@ import {
   type ForecastPhase,
   type useForecastProvider,
 } from "./useForecastProvider";
-import type { ForecastEnsembleSpec, ForecastProviderId } from "./types";
+import type { ForecastEnsembleSpec, ForecastGridMetadata, ForecastProviderId } from "./types";
 
 const PROVIDERS: { id: ForecastProviderId; label: string }[] = [
   { id: "gefs", label: "GEFS" },
@@ -199,7 +199,7 @@ export function ForecastPanel({ canvasRef, forecast }: ForecastPanelProps) {
         <dt>Variable</dt>
         <dd>
           {forecast.variable}
-          {forecast.grid ? ` (${forecast.grid.unit})` : ""}
+          {forecast.grid?.unit ? ` (${forecast.grid.unit})` : ""}
         </dd>
         <dt>Scale</dt>
         <dd>
@@ -218,5 +218,27 @@ export function ForecastPanel({ canvasRef, forecast }: ForecastPanelProps) {
       />
       <div className="forecast-canvas-caption">Model forecast render — not live radar</div>
     </div>
+  );
+}
+
+/** A colour bar for a field drawn on the map, labelled where colour starts, mid-scale and at the top. */
+export function ForecastKey({ grid }: { grid: ForecastGridMetadata }) {
+  const { displayStops: stops, displayMin: min, displayMax: max, displayUnit: unit } = grid;
+  const pct = (v: number) => ((v - min) / (max - min)) * 100;
+  const gradient = stops.map(([v, [r, g, b, a]]) => `rgba(${r}, ${g}, ${b}, ${a / 255}) ${pct(v)}%`).join(", ");
+  const start = stops.find(([, c]) => c[3] > 0)?.[0] ?? min;
+  const labels = [start, stops[Math.floor(stops.length / 2)][0], max];
+  return (
+    <span className="forecast-key">
+      <span className="forecast-key-bar" style={{ background: `linear-gradient(to right, ${gradient})` }} />
+      <span className="forecast-key-labels num">
+        {labels.map((v, i) => (
+          <span key={i}>
+            {Math.round(v * 10) / 10}
+            {i === labels.length - 1 && unit ? ` ${unit}` : ""}
+          </span>
+        ))}
+      </span>
+    </span>
   );
 }

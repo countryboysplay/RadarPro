@@ -567,6 +567,9 @@ struct ForecastGridMetadataJson<'a> {
     display_min: f32,
     #[serde(rename = "displayMax")]
     display_max: f32,
+    /// The colour ramp, `[value, [r, g, b, a]]`, for a key on the map.
+    #[serde(rename = "displayStops")]
+    display_stops: Vec<(f32, [u8; 4])>,
 }
 
 /// This decoded field's metadata as JSON -- deliberately excludes
@@ -591,6 +594,7 @@ fn grid_metadata_json(grid: &ForecastGrid) -> String {
         display_unit: scale.unit,
         display_min: scale.min,
         display_max: scale.max,
+        display_stops: scale.stops.iter().map(|s| (s.value, s.color)).collect(),
     };
     serde_json::to_string(&json).expect("ForecastGridMetadataJson always encodes")
 }

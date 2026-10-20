@@ -35,10 +35,18 @@ export const FORECAST_HALF_EXTENT_LAT = 20;
  * proof-of-concept concern, per this stage's brief). */
 const DISCOVER_LOOKBACK_DAYS = 5;
 
-/** Variables both GEFS and HRRR decode (canonical names, see
- * `forecast-core`'s `ForecastVariable::canonical_name`). */
+/** Forecast variables (canonical names, see `forecast-core`'s
+ * `ForecastVariable::canonical_name`). `hrrrOnly`: GEFS has no such field.
+ * `onMap`: drawn on the map in place of the radar (clear where it is low). */
 export const FORECAST_VARIABLES = [
-  { id: "composite_reflectivity", label: "Simulated reflectivity", hrrrOnly: true },
+  { id: "composite_reflectivity", label: "Simulated reflectivity", hrrrOnly: true, onMap: true },
+  { id: "stp", label: "Significant tornado parameter (STP)", hrrrOnly: true, onMap: true },
+  { id: "sbcape", label: "CAPE, surface-based", hrrrOnly: true, onMap: true },
+  { id: "mlcape", label: "CAPE, mixed-layer", hrrrOnly: true, onMap: true },
+  { id: "srh_0_1km", label: "Helicity 0–1 km", hrrrOnly: true, onMap: true },
+  { id: "srh_0_3km", label: "Helicity 0–3 km", hrrrOnly: true, onMap: true },
+  { id: "bulk_shear_0_6km", label: "Bulk shear 0–6 km", hrrrOnly: true, onMap: true },
+  { id: "lcl_height", label: "LCL height (cloud base)", hrrrOnly: true, onMap: true },
   { id: "temperature_2m", label: "Temperature (2 m)" },
   { id: "dewpoint_2m", label: "Dewpoint (2 m)" },
   { id: "relative_humidity", label: "Relative humidity" },
@@ -381,7 +389,7 @@ export function useForecastProvider(canvasRef: RefObject<HTMLCanvasElement>) {
         grid: null,
         leadHours: firstLead,
         // GEFS has no simulated reflectivity; fall back to temperature there.
-        variable: providerId !== "hrrr" && s.variable === "composite_reflectivity" ? "temperature_2m" : s.variable,
+        variable: providerId !== "hrrr" && FORECAST_VARIABLES.some((v) => v.id === s.variable && "hrrrOnly" in v) ? "temperature_2m" : s.variable,
         ensemble: null,
         cachedLeads: [],
         publishedLeads: null,
