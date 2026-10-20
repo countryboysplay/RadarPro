@@ -47,11 +47,18 @@ switching between apps.
   CC, PHI and derived Storm-Relative Velocity; probe readout; range rings;
   custom color tables; scan-history playback; archive loading by UTC date;
   vertical cross-sections; click a site dot to switch radars.
-- MRMS: composite reflectivity, precip rate, 1-h rainfall, 60-min max hail
-  (MESH), 18 dBZ echo tops, VIL.
+- MRMS: composite reflectivity, precip rate, 1-h and 3-h rainfall,
+  precipitation type, 60-min max hail (MESH), 18 dBZ echo tops, VIL, lightning
+  density.
+- GOES-East and GOES-West GLM lightning (last 15 min, separate toggles, both on
+  by default) with a nearby-lightning notification.
+- SPC outlooks, watches and MDs; WPC excessive rainfall and QPF; NWS storm
+  tracks, storm reports and placefiles; notifications for warnings covering
+  you and severe storms nearby.
 - Forecasts (GEFS ensemble, HRRR): temperature, dewpoint, humidity, wind
   components, gusts, sea-level pressure, cloud cover.
-- NWS alert polygons with lifecycle tracking; Rainbow Weather tiles, nowcast
+- NWS alert polygons with lifecycle tracking and hazard tags; archived scans
+  show the warnings in effect then; Rainbow Weather tiles, nowcast
   and point forecast (needs an API key).
 - Stack: React + MapLibre + Rust/wasm (wgpu) web app in `apps/web`, wrapped by
   a Tauri desktop shell.
@@ -69,6 +76,10 @@ switching between apps.
   must be one step away, never behind a menu. Primary screen: a 13-15" laptop
   in a moving vehicle (glare, trackpad). Red flags: hidden controls, chrome
   covering the radar.
+- Lean sidebar (owner, 2026-10-20): set-once options (storms and lightning
+  toggles, location alerts, placefiles, color tables, data) live in a Settings
+  window opened from the gear in the rail head, floating over the map's
+  top-left corner without dimming it; the sidebar keeps what a chase touches.
 
 ## Brand Commitments
 

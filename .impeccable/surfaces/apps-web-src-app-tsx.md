@@ -28,8 +28,9 @@ STORY: The chaser sees the site, product, tilt and scan time at a glance, flips 
 one click, loops scans, and marks a leg across a storm to slice it.
 
 FIRST VIEWPORT: Left column 300 px: wordmark, site (code grid search), product segment, tilt
-segment, then course table (leg + probe), warnings in view, and collapsed Layers / Tools /
-Settings. Map fills the rest. Bottom strip 64 px: transport, scan ticks to NOW, forecast hatched
+segment, then course table (leg + probe), then collapsed Warnings / SPC / My location /
+Layers / Archive. A gear in the rail head opens the Settings window (set-once options) over the
+map's top-left corner. Map fills the rest. Bottom strip 64 px: transport, scan ticks to NOW, forecast hatched
 beyond NOW with its model/variable picker.
 
 FORM: orienteering map and legend, challenger (notation-diagram-systems-orienteering-map), seed:2745c92188fa82a0.

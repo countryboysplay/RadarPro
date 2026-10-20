@@ -1,7 +1,7 @@
 //! GOES Geostationary Lightning Mapper (GLM) Level 2 flashes.
 //!
 //! NOAA publishes one `GLM-L2-LCFA` file every 20 s per satellite
-//! (`noaa-goes19` on AWS is GOES-East). Each is netCDF4, i.e. HDF5, read
+//! (`noaa-goes19` on AWS is GOES-East, `noaa-goes18` GOES-West). Each is netCDF4, i.e. HDF5, read
 //! here with the pure-Rust `hdf5-pure` so the same code runs in the browser.
 //! Only the flash level is read: where each flash was and when it began.
 

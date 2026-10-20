@@ -18,3 +18,4 @@ This index lists RadarPro's ADRs in order. See `Agent Context/templates/ADR_TEMP
 | [0012](0012-hrrr-lambert-conformal-grid.md) | HRRR's real grid is Lambert Conformal Conic, handled by `grib` with no PROJ needed | Accepted |
 | [0013](0013-forecast-core-extraction.md) | Extracting `forecast-core` -- `ForecastProvider`/`ForecastGrid`/`EnsembleStatistic` shape | Accepted |
 | [0014](0014-mrms-grib2-png-unpack-and-local-discipline.md) | MRMS GRIB2 PNG-unpack feature selection, local-use discipline, and missing-value sentinels | Accepted |
+| [0015](0015-glm-lightning-hdf5-pure.md) | GOES GLM lightning: `hdf5-pure` for netCDF4 in the browser, two satellites split at 106 W | Accepted |

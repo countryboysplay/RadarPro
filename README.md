@@ -13,7 +13,7 @@ preserved end to end rather than smoothed away for looks.
 
 ## Status
 
-Working desktop (Windows, Tauri) and web workstation, through stage S11:
+Working desktop (Windows, Tauri) and web workstation, through stage S11 and roadmap Phases 0-4:
 
 - **Live NEXRAD Level II** for ~160 WSR-88D sites, from the real-time
   chunk feed (the newest scan fills in tilt by tilt within seconds; falls
@@ -23,16 +23,28 @@ Working desktop (Windows, Tauri) and web workstation, through stage S11:
   rings; custom color tables; a scan loop backfilled from the archive on
   site switch; historical archive loading by date; vertical cross-sections;
   site search, nearby-site buttons, and clickable site dots.
-- **MRMS national mosaic**: composite reflectivity, precip rate, 1-hour
-  multi-sensor rainfall, 60-minute max hail size (MESH), 18 dBZ echo tops,
-  VIL, and NLDN cloud-to-ground lightning density (5 min).
+- **MRMS national mosaic**: composite reflectivity, precip rate, 1- and
+  3-hour radar-only rainfall, precipitation type, 60-minute max hail size
+  (MESH), 18 dBZ echo tops, VIL, and NLDN cloud-to-ground lightning density
+  (5 min).
+- **GOES lightning (GLM)**: flashes from the last 15 minutes from GOES-East
+  and GOES-West (each toggled on its own, both on by default), live every
+  20 s, drawn as bolts coloured by age; a "lightning N mi from you"
+  notification within 10 mi.
+- **SPC and WPC**: convective outlooks, watches and mesoscale discussions;
+  WPC excessive rainfall outlook (Days 1-3) and rain forecast (QPF).
+- **Storms**: NWS storm cell tracks with TVS/mesocyclone/hail markers, local
+  storm reports, GR-style placefiles (e.g. spotter networks), and
+  notifications when a warning covers you or a severe storm nears you.
 - **Forecast radar**: HRRR simulated composite reflectivity, hourly to
   +18 h, shown on the map past NOW on the timeline and playable as a loop;
   hours not yet published are greyed out.
 - **Model forecasts** (GEFS ensemble, HRRR): temperature, dewpoint,
   humidity, wind components, gusts, sea-level pressure, cloud cover (in the
   Forecast panel).
-- **NWS alerts**, live polygons with lifecycle tracking.
+- **NWS alerts**, live polygons with lifecycle tracking and hazard tags
+  (tornado detection, damage threat, hail size, wind gust); archived scans
+  show the warnings and special weather statements in effect at that time.
 - **Rainbow Weather** tiles, nowcast, and point forecast (needs an API key).
 
 Not yet: multi-site radar compositing (use MRMS for a multi-radar view),
@@ -63,6 +75,7 @@ crates/
   forecast-web/      Browser glue for forecasts
   mrms/              MRMS mosaic products
   mrms-web/          Browser glue for MRMS
+  glm/               GOES GLM lightning flash decoder (+ wasm API)
 fixtures/            Small sample data for tests
 docs/adr/            Architecture Decision Records
 ```

@@ -215,6 +215,9 @@ identical `wasm-bindgen` version, `0.2.128`). This app needs both modules'
 `weather_alerts.js`/`weather_alerts_bg.wasm`, each plus `.d.ts` files)
 importable as plain ES modules.
 
+Since then `forecast-web`, `mrms-web` and `glm` (GOES lightning) were
+added the same way; `scripts/build-wasm.mjs` lists all five.
+
 **Chosen approach**: `scripts/build-wasm.mjs` runs the same two commands
 for each crate (`buildWasmCrate`, a small loop, not copy-pasted per-crate
 logic) and writes both crates' output directly into `apps/web/src/wasm/`
