@@ -64,7 +64,7 @@ const time = (ms: number) => new Date(ms).toLocaleTimeString(undefined, { hour: 
 /** A filled area (hover anywhere inside) plus its outline. */
 export function area(contours: Rings, fill: string, stroke: string, width: number, hover: string): PlaceItem[] {
   if (contours.length === 0) return [];
-  const base = { anchor: null, threshold: 999 };
+  const base = { anchor: null, threshold: Infinity };
   return [
     { ...base, kind: "polygon", contours, color: fill, hover },
     ...contours.map((points): PlaceItem => ({ ...base, kind: "line", points, width, color: stroke, hover: "" })),

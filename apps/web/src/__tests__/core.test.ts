@@ -7,6 +7,7 @@ import { placeLabel } from "../storms/labelPlacement";
 import type { StormCell, StormTracks } from "../storms/nst";
 import { parseObjectKey } from "../nexrad/keys";
 import { parsePlacefile } from "../placefiles/placefile";
+import { drawPlacefiles } from "../placefiles/draw";
 import { fetchMds, fetchWatches } from "../spc/spc";
 import { lsrLayer } from "../spc/lsr";
 import { fetchWpc } from "../spc/wpc";
@@ -580,5 +581,32 @@ describe("GOES lightning", () => {
     expect(km).toBeGreaterThan(10.5);
     expect(km).toBeLessThan(11.5);
     expect(nearestFlashKm(flashes, { lat: 35, lon: -97 }, now)).toBeNull();
+  });
+
+  it("draws at any zoom and only the topmost of stacked bolts", () => {
+    const ctx = new Proxy({ drawImage: vi.fn() } as Record<string, unknown>, { get: (t, k) => t[k as string] ?? (() => {}), set: () => true });
+    vi.stubGlobal("OffscreenCanvas", class { getContext = () => ctx; transferToImageBitmap = () => ({}) });
+    // A 3000-mile-wide view: 1 px per 0.05 deg.
+    const map = {
+      getBounds: () => ({ getNorth: () => 50, getSouth: () => 20, getEast: () => -60, getWest: () => -125 }),
+      project: ([lon, lat]: [number, number]) => ({ x: (lon + 125) * 20, y: (50 - lat) * 20 }),
+    };
+    const now = Date.UTC(2026, 9, 20, 17, 15);
+    // Two bolts 0.01 deg apart (same pixel), the newer on top, and one far away.
+    const flashes = Float64Array.from([-97, 35, now - 7 * 60_000, -97.01, 35, now - 30_000, -90, 40, now - 60_000]);
+    const canvas = { width: 1300, height: 600, getContext: () => ctx } as unknown as HTMLCanvasElement;
+    const layer = glmLayer(flashes, now);
+    layer.sheets.set(1, { width: 88, height: 22 } as ImageBitmap);
+    drawPlacefiles(map as never, canvas, [layer]);
+    const drawn = (ctx.drawImage as ReturnType<typeof vi.fn>).mock.calls;
+    expect(drawn.length).toBe(2);
+    // Source x is the age colour: the far 1-min (yellow) bolt, then the 30-s (white) one over the hidden 7-min one.
+    expect(drawn.map((c) => c[1])).toEqual([22, 0]);
+    // An icon from another layer under the same bolt is still drawn.
+    const under = glmLayer(Float64Array.from([-97, 35, now - 30_000]), now);
+    under.sheets.set(1, { width: 88, height: 22 } as ImageBitmap);
+    (ctx.drawImage as ReturnType<typeof vi.fn>).mockClear();
+    drawPlacefiles(map as never, canvas, [under, layer]);
+    expect((ctx.drawImage as ReturnType<typeof vi.fn>).mock.calls.length).toBe(3);
   });
 });

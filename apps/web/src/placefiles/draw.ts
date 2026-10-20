@@ -6,6 +6,8 @@ import { pointInPolygonRings } from "../alerts/geometryHitTest";
 const KM_PER_MILE = 1.609344;
 /** Hover reach (px) around an icon's hotspot, a text's centre or a line. */
 const HOVER_RADIUS_PX = 12;
+/** Icons whose hotspots round to the same cell this size (px) are drawn once, the topmost. */
+const DECLUTTER_PX = 4;
 
 /** Half the view's width in miles, the "range" GR's Threshold is compared to.
  * shortcut: measured along the centre latitude, fine for a north-up map. */
@@ -36,7 +38,24 @@ export function drawPlacefiles(map: MapLibreMap, canvas: HTMLCanvasElement, laye
   ctx.save();
   ctx.lineJoin = "round";
   ctx.lineCap = "round";
-  for (const { layer, item } of visible(map, layers)) {
+  const items = visible(map, layers);
+  // Declutter: an icon with a later (on top) icon in the same DECLUTTER_PX cell is hidden anyway;
+  // zoomed out, 20,000 lightning bolts collapse to a few hundred.
+  const at = new Map<number, { x: number; y: number }>();
+  // Per layer, so a bolt never hides a spotter or report icon from another layer.
+  const taken = new Map<PlacefileLayer, Set<number>>();
+  for (let i = items.length - 1; i >= 0; i--) {
+    const { layer, item } = items[i];
+    if (item.kind !== "icon") continue;
+    const p = screen(map, item, item.at);
+    if (p.x < -64 || p.y < -64 || p.x > width + 64 || p.y > height + 64) continue;
+    const cell = Math.round(p.x / DECLUTTER_PX) * 100_000 + Math.round(p.y / DECLUTTER_PX);
+    const cells = taken.get(layer) ?? taken.set(layer, new Set()).get(layer)!;
+    if (cells.has(cell)) continue;
+    cells.add(cell);
+    at.set(i, p);
+  }
+  for (const [i, { layer, item }] of items.entries()) {
     if (item.kind === "line") {
       ctx.strokeStyle = item.color;
       ctx.lineWidth = item.width;
@@ -62,12 +81,15 @@ export function drawPlacefiles(map: MapLibreMap, canvas: HTMLCanvasElement, laye
     } else if (item.kind === "icon") {
       const icons = layer.file.iconFiles.get(item.file);
       const sheet = layer.sheets.get(item.file);
-      if (!icons || !sheet || item.index < 1) continue;
-      const p = screen(map, item, item.at);
-      if (p.x < -64 || p.y < -64 || p.x > width + 64 || p.y > height + 64) continue;
+      const p = at.get(i);
+      if (!icons || !sheet || item.index < 1 || !p) continue;
       const cols = Math.max(1, Math.floor(sheet.width / icons.width));
       const sx = ((item.index - 1) % cols) * icons.width;
       const sy = Math.floor((item.index - 1) / cols) * icons.height;
+      if (item.angle === 0) {
+        ctx.drawImage(sheet, sx, sy, icons.width, icons.height, p.x - icons.hotX, p.y - icons.hotY, icons.width, icons.height);
+        continue;
+      }
       ctx.save();
       ctx.translate(p.x, p.y);
       ctx.rotate((item.angle * Math.PI) / 180);

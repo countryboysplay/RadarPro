@@ -121,7 +121,8 @@ export function UnifiedTimeline({ history, forecast, onRegionChange }: UnifiedTi
   const forecastBusy =
     forecast.phase !== "ready" && forecast.phase !== "error" && forecast.phase !== "idle";
 
-  let domainMin = history.entries.length > 0 ? history.entries[0].startTimeMillis : nowMs - MIN_PAST_SPAN_MS;
+  // While archive scans are still downloading, start at the archive time, not today.
+  let domainMin = history.entries[0]?.startTimeMillis ?? history.archiveStartMillis ?? nowMs - MIN_PAST_SPAN_MS;
   domainMin = Math.min(domainMin, nowMs - MIN_PAST_SPAN_MS);
 
   let domainMax = runInitMs !== null ? runInitMs + maxLeadHours * MS_PER_HOUR : nowMs + MIN_FUTURE_SPAN_MS;

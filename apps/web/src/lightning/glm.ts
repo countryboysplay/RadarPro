@@ -164,7 +164,7 @@ export function glmLayer(flashes: Flashes, nowMs: number): PlacefileLayer {
   const items = order.map((i): PlaceItem => {
     const ageMin = (nowMs - flashes[i + 2]) / 60_000;
     const index = AGES.findIndex((a) => ageMin < a.maxMin) + 1 || AGES.length;
-    return { kind: "icon", anchor: null, threshold: 999, color: "", at: [flashes[i], flashes[i + 1]], angle: 0, file: 1, index, hover: `Lightning ${time(flashes[i + 2])}` };
+    return { kind: "icon", anchor: null, threshold: Infinity, color: "", at: [flashes[i], flashes[i + 1]], angle: 0, file: 1, index, hover: `Lightning ${time(flashes[i + 2])}` };
   });
   return {
     url: "glm",

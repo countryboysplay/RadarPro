@@ -88,7 +88,7 @@ export function lsrLayer(features: { properties: LsrProps }[], url: string): Pla
     ]
       .filter(Boolean)
       .join("\n");
-    items.push({ kind: "icon", anchor: null, threshold: 999, color: "", at: [p.lon, p.lat], angle: 0, file: 1, index: kind.icon, hover });
+    items.push({ kind: "icon", anchor: null, threshold: Infinity, color: "", at: [p.lon, p.lat], angle: 0, file: 1, index: kind.icon, hover });
   }
   return {
     url,
