@@ -23,7 +23,7 @@ export function SpcPanel(props: SpcPanelProps) {
   return (
     <>
       <label className="map-layer-select">
-        <span>Day 1 outlook</span>
+        <span>Outlook</span>
         <select value={props.outlook} onChange={(e) => props.onOutlookChange(e.target.value as OutlookKind)}>
           {(Object.keys(OUTLOOK_NAMES) as OutlookKind[]).map((k) => (
             <option key={k} value={k}>

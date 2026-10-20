@@ -9,6 +9,7 @@ import { parseObjectKey } from "../nexrad/keys";
 import { parsePlacefile } from "../placefiles/placefile";
 import { fetchMds, fetchWatches } from "../spc/spc";
 import { lsrLayer } from "../spc/lsr";
+import { fetchWpc } from "../spc/wpc";
 import { alertsGeoJson, fetchArchivedAlerts } from "../alerts/archived";
 import { formatTags } from "../alerts/types";
 import { clampHistoryLimit, historyReducer, initialState } from "../scan/useScanHistory";
@@ -503,5 +504,42 @@ describe("archived warnings and SPS", () => {
     // SPS hail "0.00" means none.
     expect(formatTags(alerts[1].alert.tags)).toBe("Wind 50 mph");
     expect(alertsGeoJson(alerts).features[0]).toMatchObject({ id: "OUN.TO.W.12.2024", properties: { severity: "Extreme" }, geometry: { type: "MultiPolygon" } });
+  });
+});
+
+describe("WPC rainfall layers", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  const square = [[[-98, 35], [-97, 35], [-97, 36], [-98, 36], [-98, 35]]];
+  const serve = (features: object[]) => vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ features }))));
+
+  it("draws excessive rainfall risks lowest first, coloured by risk", async () => {
+    serve([
+      { geometry: { type: "Polygon", coordinates: square }, properties: { outlook: "Slight (At Least 15%)", dn: 2, valid_time: "12Z 10/21/26 - 12Z 10/22/26" } },
+      { geometry: { type: "Polygon", coordinates: square }, properties: { outlook: "Marginal (At Least 5%)", dn: 1, valid_time: "12Z 10/21/26 - 12Z 10/22/26" } },
+    ]);
+    const layer = await fetchWpc("ero2", new AbortController().signal);
+    const polygons = layer.file.items.filter((i) => i.kind === "polygon");
+    expect(polygons.map((i) => i.hover)).toEqual([
+      "WPC excessive rainfall Day 2: Marginal (At Least 5%)\n12Z 10/21/26 - 12Z 10/22/26",
+      "WPC excessive rainfall Day 2: Slight (At Least 15%)\n12Z 10/21/26 - 12Z 10/22/26",
+    ]);
+  });
+
+  it("stacks rain contours smallest first, with the amount on the outline only", async () => {
+    serve([
+      { geometry: { type: "Polygon", coordinates: square }, properties: { qpf: 1.5, valid_time: "v" } },
+      { geometry: { type: "Polygon", coordinates: square }, properties: { qpf: 0.01, valid_time: "v" } },
+    ]);
+    const layer = await fetchWpc("qpf72", new AbortController().signal);
+    expect(layer.file.items.map((i) => [i.kind, i.hover])).toEqual([
+      ["polygon", ""],
+      ["line", "WPC rain forecast Days 1-3: 0.01 in or more\nv"],
+      ["polygon", ""],
+      ["line", "WPC rain forecast Days 1-3: 1.5 in or more\nv"],
+    ]);
+    expect(layer.file.items[3].color).toBe("#8968cd");
+    // The 0.01 in fill has the 1.5 in contour cut out; the top band keeps its own ring only.
+    const fills = layer.file.items.filter((i) => i.kind === "polygon");
+    expect(fills.map((i) => (i.kind === "polygon" ? i.contours.length : 0))).toEqual([2, 1]);
   });
 });

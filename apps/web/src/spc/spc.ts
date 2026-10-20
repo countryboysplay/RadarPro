@@ -8,14 +8,24 @@
 import type { LonLat, PlaceItem } from "../placefiles/placefile";
 import type { PlacefileLayer } from "../placefiles/usePlacefiles";
 
-export type OutlookKind = "off" | "cat" | "torn" | "wind" | "hail";
+export type SpcOutlookKind = "cat" | "torn" | "wind" | "hail";
+export type WpcKind = "ero1" | "ero2" | "ero3" | "qpf1" | "qpf2" | "qpf3" | "qpf72";
+/** One outlook at a time: their fills would hide each other and the radar. */
+export type OutlookKind = "off" | SpcOutlookKind | WpcKind;
 
 export const OUTLOOK_NAMES: Record<OutlookKind, string> = {
   off: "Off",
-  cat: "Categorical",
-  torn: "Tornado",
-  wind: "Wind",
-  hail: "Hail",
+  cat: "SPC Day 1 categorical",
+  torn: "SPC Day 1 tornado",
+  wind: "SPC Day 1 wind",
+  hail: "SPC Day 1 hail",
+  ero1: "WPC excessive rain Day 1",
+  ero2: "WPC excessive rain Day 2",
+  ero3: "WPC excessive rain Day 3",
+  qpf1: "WPC rain forecast Day 1",
+  qpf2: "WPC rain forecast Day 2",
+  qpf3: "WPC rain forecast Day 3",
+  qpf72: "WPC rain forecast Days 1-3",
 };
 
 const IEM_API = "https://mesonet.agron.iastate.edu/api/1";
@@ -25,18 +35,18 @@ const WATCH_COLORS: Record<string, string> = { TOR: "#ffff00", SVR: "#db7093" };
 const MD_COLOR = "#4fb3ff";
 
 type Rings = LonLat[][];
-interface Geometry {
+export interface Geometry {
   type: string;
   coordinates?: unknown;
   geometries?: Geometry[];
 }
-interface Feature<P> {
+export interface Feature<P> {
   geometry: Geometry | null;
   properties: P;
 }
 
 /** Every ring of a Polygon, MultiPolygon or GeometryCollection of them. */
-function rings(g: Geometry | null): Rings {
+export function rings(g: Geometry | null): Rings {
   if (!g) return [];
   if (g.type === "Polygon") return g.coordinates as Rings;
   if (g.type === "MultiPolygon") return (g.coordinates as Rings[]).flat();
@@ -44,7 +54,7 @@ function rings(g: Geometry | null): Rings {
   return [];
 }
 
-function rgba(hex: string, alpha: number): string {
+export function rgba(hex: string, alpha: number): string {
   const n = parseInt(hex.replace("#", ""), 16);
   return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
 }
@@ -52,7 +62,7 @@ function rgba(hex: string, alpha: number): string {
 const time = (ms: number) => new Date(ms).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 
 /** A filled area (hover anywhere inside) plus its outline. */
-function area(contours: Rings, fill: string, stroke: string, width: number, hover: string): PlaceItem[] {
+export function area(contours: Rings, fill: string, stroke: string, width: number, hover: string): PlaceItem[] {
   if (contours.length === 0) return [];
   const base = { anchor: null, threshold: 999 };
   return [
@@ -61,7 +71,7 @@ function area(contours: Rings, fill: string, stroke: string, width: number, hove
   ];
 }
 
-function layer(url: string, title: string, items: PlaceItem[]): PlacefileLayer {
+export function layer(url: string, title: string, items: PlaceItem[]): PlacefileLayer {
   return { url, file: { title, refreshSeconds: 0, iconFiles: new Map(), fonts: new Map(), items }, sheets: new Map() };
 }
 
@@ -92,10 +102,10 @@ interface OutlookProps {
   fill: string;
 }
 
-const SIGNIFICANT: Record<Exclude<OutlookKind, "off">, string> = { cat: "severe", torn: "(EF2+) tornadoes", wind: "(65 kt+) wind", hail: "(2 in+) hail" };
+const SIGNIFICANT: Record<SpcOutlookKind, string> = { cat: "severe", torn: "(EF2+) tornadoes", wind: "(65 kt+) wind", hail: "(2 in+) hail" };
 
 /** SPC's live Day 1 outlook; areas come lowest risk first, so higher risk draws on top. */
-export async function fetchOutlook(kind: Exclude<OutlookKind, "off">, signal: AbortSignal): Promise<PlacefileLayer> {
+export async function fetchOutlook(kind: SpcOutlookKind, signal: AbortSignal): Promise<PlacefileLayer> {
   const url = `https://www.spc.noaa.gov/products/outlook/day1otlk_${kind}.lyr.geojson`;
   const data = await getJson<{ features: Feature<OutlookProps>[] }>(url, signal);
   const items = data.features.flatMap(({ geometry, properties: p }) => {

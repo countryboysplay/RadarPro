@@ -1421,7 +1421,7 @@ export default function App() {
 
         <SidebarCategory
           title="SPC"
-          summary={[spcOutlook !== "off" && `${OUTLOOK_NAMES[spcOutlook]} outlook`, showWatches && `${spc.watchCount} watches`, showMds && `${spc.mds.length} MDs`].filter(Boolean).join(" · ") || "off"}
+          summary={[spcOutlook !== "off" && OUTLOOK_NAMES[spcOutlook], showWatches && `${spc.watchCount} watches`, showMds && `${spc.mds.length} MDs`].filter(Boolean).join(" · ") || "off"}
         >
           <SpcPanel
             outlook={spcOutlook}
