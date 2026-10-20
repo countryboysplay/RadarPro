@@ -46,6 +46,9 @@ Working desktop (Windows, Tauri) and web workstation, through stage S11, roadmap
   NOW with a colour key): surface-based and mixed-layer CAPE, 0-1 and 0-3 km
   storm-relative helicity, 0-6 km bulk shear (kt), LCL height, and the
   fixed-layer significant tornado parameter (STP).
+- **HRRR point soundings**: click the map for a skew-T, hodograph, SBCAPE
+  and LCL at the forecast hour shown (39 levels via Open-Meteo, or a coarse
+  5-level NOAA column when Open-Meteo is slow; see ADR-0016).
 - **NWS alerts**, live polygons with lifecycle tracking and hazard tags
   (tornado detection, damage threat, hail size, wind gust); archived scans
   show the warnings and special weather statements in effect at that time.

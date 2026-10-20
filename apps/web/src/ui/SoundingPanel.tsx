@@ -105,6 +105,9 @@ export function SoundingView({ point, validMs, hrrrRunInitMs }: SoundingViewProp
   );
 }
 
+// Data colours in the usual skew-T convention, kept apart from the chrome inks (DESIGN.md "Sounding plots").
+const PLOT = { t: "#ff5a4d", td: "#3fbf5f", parcel: "#ecebe4", km3: "#ff5a4d", km6: "#3fbf5f", km9: "#e6d94a", km12: "#4ab8e6" };
+
 const SKEW_W = 300;
 const SKEW_H = 320;
 const P_BOTTOM = 1050;
@@ -138,9 +141,9 @@ function SkewT({ levels, parcel }: { levels: SoundingLevel[]; parcel: { p: numbe
           </text>
         </g>
       ))}
-      <polyline points={polyline(parcel)} fill="none" stroke="var(--g8)" strokeDasharray="4 3" />
-      <polyline points={polyline(levels.map((l) => ({ p: l.p, t: l.td })))} fill="none" stroke="var(--ok)" strokeWidth={2} />
-      <polyline points={polyline(levels.map((l) => ({ p: l.p, t: l.t })))} fill="none" stroke="var(--danger)" strokeWidth={2} />
+      <polyline points={polyline(parcel)} fill="none" stroke={PLOT.parcel} strokeDasharray="4 3" />
+      <polyline points={polyline(levels.map((l) => ({ p: l.p, t: l.td })))} fill="none" stroke={PLOT.td} strokeWidth={2} />
+      <polyline points={polyline(levels.map((l) => ({ p: l.p, t: l.t })))} fill="none" stroke={PLOT.t} strokeWidth={2} />
     </svg>
   );
 }
@@ -149,10 +152,10 @@ const HODO_SIZE = 190;
 
 /** Height bands chasers read: 0-3, 3-6, 6-9, 9-12 km AGL. */
 function hodoColor(aglM: number): string {
-  if (aglM <= 3000) return "var(--danger)";
-  if (aglM <= 6000) return "var(--ok)";
-  if (aglM <= 9000) return "var(--forecast)";
-  return "var(--accent)";
+  if (aglM <= 3000) return PLOT.km3;
+  if (aglM <= 6000) return PLOT.km6;
+  if (aglM <= 9000) return PLOT.km9;
+  return PLOT.km12;
 }
 
 function Hodograph({ levels }: { levels: SoundingLevel[] }) {

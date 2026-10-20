@@ -284,6 +284,11 @@ A single 64px row. The 24px track is Raised up to NOW (35%), then Ground with a 
 - **Forecast drawer:** a Panel float with a 2px amber top rule, an amber uppercase 15px heading and the Float shadow. It opens from the strip toggle.
 - **Forecast badge:** a Panel chip at the map's top-left with a 3px amber left rule. It reads "**FORECAST RADAR** HRRR simulated reflectivity · valid Mon 1:00 PM (+3h) · model, not observed", with a "Back to radar" button. It is shown whenever model radar replaces observed radar past NOW. For an HRRR severe-weather field (STP, CAPE, helicity, shear, LCL) it names the field instead and adds a 168px colour bar, labelled where colour starts, mid-scale and at the top with the unit; low values are clear so the map shows through.
 
+### Sounding Panel
+The HRRR sounding opens in the right panel from "Sounding at a point" in the Course block (the "pick a point" hint is course purple). Its valid time is amber, because it is always model output. Below it sit two plots on Ground Deep with a 1px Rule border, side by side at 3:2: a skew-T (1050-100 hPa, isotherms skewed 45°, Rule grid, 0 °C in Ink Faint) and a hodograph (20 kt rings). Course-table rows follow (surface T/Td, SBCAPE, LCL), then a Meta source line that says when the column is the coarse NOAA fallback.
+
+The plot lines are data, like the radar, so they use their own skew-T colours and never the chrome inks: temperature #ff5a4d, dew point #3fbf5f, surface parcel Paper Ink dashed 4/3. The hodograph is banded by height above ground: 0-3 km #ff5a4d, 3-6 km #3fbf5f, 6-9 km #e6d94a and 9-12 km #4ab8e6. Those are deliberately not Danger Red, Live Green, Forecast Amber or Steel Blue.
+
 ### Map Marks
 Radar sites are 4px Ink Muted dots with a 2px Ground stroke. The selected site is a 6px course-purple dot. Range rings are 1px Ink Muted at 50% alpha. The basemap is OpenFreeMap Dark. The radar, MRMS and forecast fields render through their own colour tables and are never tinted by the chrome.
 
