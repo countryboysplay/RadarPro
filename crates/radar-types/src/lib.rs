@@ -290,9 +290,8 @@ pub struct Radial {
 /// The digital weather moments this stage decodes from Message 31's Data
 /// Moment blocks.
 ///
-/// Deliberately excludes `"CFP"` (clutter filter power removed) and KDP
-/// (a derived product, not a wire moment at all) — both out of scope for
-/// this stage per `GLOBAL_CONTRACT.md`/S01.
+/// Excludes `"CFP"` (clutter filter power removed). KDP and SRV are derived
+/// products, not wire moments; they were added later at the end of the enum.
 ///
 /// Declaration order matches the S01 scope order ("REF first, then VEL,
 /// SW, ZDR, CC, PHI"), which also determines the derived [`Ord`] used to
@@ -330,6 +329,11 @@ pub enum MomentKind {
     /// from. Added at the end of this enum -- see the enum's own doc
     /// comment.
     StormRelativeVelocity,
+    /// Specific differential phase: a *derived* product (half the range
+    /// derivative of PHI, deg/km; see the `radar-geo` crate's `kdp` module),
+    /// added to each PHI-carrying radial right after decode. Added at the
+    /// end of this enum -- see the enum's own doc comment.
+    SpecificDifferentialPhase,
 }
 
 impl MomentKind {
@@ -365,6 +369,7 @@ impl MomentKind {
             MomentKind::CorrelationCoefficient => "CC",
             MomentKind::DifferentialPhase => "PHI",
             MomentKind::StormRelativeVelocity => "SRV",
+            MomentKind::SpecificDifferentialPhase => "KDP",
         }
     }
 
@@ -382,6 +387,7 @@ impl MomentKind {
             "CC" => Some(MomentKind::CorrelationCoefficient),
             "PHI" => Some(MomentKind::DifferentialPhase),
             "SRV" => Some(MomentKind::StormRelativeVelocity),
+            "KDP" => Some(MomentKind::SpecificDifferentialPhase),
             _ => None,
         }
     }
@@ -556,6 +562,7 @@ mod tests {
             MomentKind::CorrelationCoefficient,
             MomentKind::DifferentialPhase,
             MomentKind::StormRelativeVelocity,
+            MomentKind::SpecificDifferentialPhase,
         ];
         for kind in all {
             let code = kind.wire_code();

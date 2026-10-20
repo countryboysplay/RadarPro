@@ -1,4 +1,4 @@
-// This project's six shipped default color tables, vendored verbatim into
+// This project's shipped default color tables, vendored verbatim into
 // `src/data/color_tables/` (see that directory's README) and imported here
 // as raw text (Vite's `?raw` suffix) -- i.e. exactly the bytes
 // `RadarWebRenderer.loadColorTable` would accept, never re-serialized or
@@ -11,6 +11,7 @@ import differentialReflectivityRaw from "../data/color_tables/differential_refle
 import correlationCoefficientRaw from "../data/color_tables/correlation_coefficient.json?raw";
 import differentialPhaseRaw from "../data/color_tables/differential_phase.json?raw";
 import stormRelativeVelocityRaw from "../data/color_tables/storm_relative_velocity.json?raw";
+import specificDifferentialPhaseRaw from "../data/color_tables/specific_differential_phase.json?raw";
 
 export interface DefaultColorTablePreset {
   /** The moment wire code this default targets, e.g. `"REF"`. */
@@ -29,4 +30,5 @@ export const DEFAULT_COLOR_TABLE_PRESETS: DefaultColorTablePreset[] = [
   { momentCode: "CC", label: "CC -- Correlation Coefficient (default)", json: correlationCoefficientRaw },
   { momentCode: "PHI", label: "PHI -- Differential Phase (default)", json: differentialPhaseRaw },
   { momentCode: "SRV", label: "SRV -- Storm-Relative Velocity (default)", json: stormRelativeVelocityRaw },
+  { momentCode: "KDP", label: "KDP -- Specific Differential Phase (default)", json: specificDifferentialPhaseRaw },
 ];

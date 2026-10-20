@@ -345,7 +345,7 @@ impl From<serde_json::Error> for ColorTableError {
 /// default, not a Rust literal duplicating a JSON example elsewhere).
 ///
 /// The `expect` here is not a "trust untrusted input" violation: these
-/// seven files are developer-authored, compiled into the binary, and
+/// eight files are developer-authored, compiled into the binary, and
 /// covered by this module's own tests
 /// (`default_color_table_is_valid_for_every_moment_kind`) -- a parse/
 /// validation failure here is a build-time programmer error to be caught
@@ -372,6 +372,9 @@ pub fn default_color_table(kind: MomentKind) -> ColorTable {
         // `default_color_table_is_valid_for_every_moment_kind` below).
         MomentKind::StormRelativeVelocity => {
             include_str!("../color_tables/storm_relative_velocity.json")
+        }
+        MomentKind::SpecificDifferentialPhase => {
+            include_str!("../color_tables/specific_differential_phase.json")
         }
     };
     ColorTable::from_json(json).expect(
@@ -489,7 +492,7 @@ mod tests {
     use super::*;
     use crate::palette::lerp_color;
 
-    const ALL_MOMENT_KINDS: [MomentKind; 7] = [
+    const ALL_MOMENT_KINDS: [MomentKind; 8] = [
         MomentKind::Reflectivity,
         MomentKind::Velocity,
         MomentKind::SpectrumWidth,
@@ -497,6 +500,7 @@ mod tests {
         MomentKind::CorrelationCoefficient,
         MomentKind::DifferentialPhase,
         MomentKind::StormRelativeVelocity,
+        MomentKind::SpecificDifferentialPhase,
     ];
 
     // --- built-in defaults: valid for every moment kind ------------------

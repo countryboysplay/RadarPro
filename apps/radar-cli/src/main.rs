@@ -114,6 +114,7 @@ fn moment_short_name(kind: MomentKind) -> &'static str {
         MomentKind::CorrelationCoefficient => "CC",
         MomentKind::DifferentialPhase => "PHI",
         MomentKind::StormRelativeVelocity => "SRV",
+        MomentKind::SpecificDifferentialPhase => "KDP",
     }
 }
 

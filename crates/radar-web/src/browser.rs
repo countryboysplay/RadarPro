@@ -506,8 +506,9 @@ impl RadarWebRenderer {
     /// needed in this signature.
     #[wasm_bindgen(js_name = decodeVolume)]
     pub fn decode_volume(&mut self, archive2_bytes: &[u8]) -> Result<VolumeSummary, JsValue> {
-        let volume = nexrad_level2::decode_volume(archive2_bytes)
+        let mut volume = nexrad_level2::decode_volume(archive2_bytes)
             .map_err(|e| JsValue::from_str(&format!("failed to decode Archive II volume: {e}")))?;
+        radar_geo::add_kdp(&mut volume);
 
         let summary = VolumeSummary {
             site_icao: volume.site.icao.clone(),

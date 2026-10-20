@@ -104,7 +104,7 @@ function resolvePreferredMoment(preferred: string | null, availableMoments: stri
 }
 
 /** The product buttons' fixed order, SRV next to the VEL it comes from; other wire codes follow. */
-const PRODUCT_ORDER = ["REF", "VEL", "SRV", "SW", "ZDR", "CC", "PHI"];
+const PRODUCT_ORDER = ["REF", "VEL", "SRV", "SW", "ZDR", "CC", "KDP", "PHI"];
 
 function describePollEvent(event: PollEvent): string {
   switch (event.type) {

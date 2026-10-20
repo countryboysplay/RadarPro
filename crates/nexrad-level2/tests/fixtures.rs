@@ -63,6 +63,8 @@ fn assert_moment_values_in_documented_range(kind: MomentKind, values: &[f32]) {
         // it is VEL with a uniform vector subtracted (same units, not
         // independently range-bounded by anything in the spec).
         MomentKind::StormRelativeVelocity => (-100.0, 100.0),
+        // Derived after decode (radar_geo::add_kdp), never decoded itself.
+        MomentKind::SpecificDifferentialPhase => (-20.0, 40.0),
     };
     for &v in values {
         assert!(v.is_finite(), "{kind:?} gate value is not finite: {v}");
