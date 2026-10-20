@@ -18,6 +18,7 @@ import { clampHistoryLimit, historyReducer, initialState } from "../scan/useScan
 import { alertNearSite, pointInAlertGeometry } from "../alerts/geometryHitTest";
 import { coveringAlerts } from "../location/useMyLocation";
 import { parseColorTableJson } from "../colorTables/colorTableJson";
+import { fetchOpenMeteoSounding, surfaceParcel } from "../forecast/sounding";
 import { legLengthAndBearing } from "../ui/CrossSectionPanel";
 import { archiveKeyFor, newestVolumeNumber, nextVolumeNumber, parseChunkName, previousVolumeNumber } from "../nexrad/chunks";
 
@@ -608,5 +609,67 @@ describe("GOES lightning", () => {
     (ctx.drawImage as ReturnType<typeof vi.fn>).mockClear();
     drawPlacefiles(map as never, canvas, [under, layer]);
     expect((ctx.drawImage as ReturnType<typeof vi.fn>).mock.calls.length).toBe(3);
+  });
+});
+
+describe("surfaceParcel", () => {
+  const levels = [1000, 900, 850, 700, 500, 300, 200].map((p, i) => ({
+    p,
+    z: [0, 990, 1500, 3100, 5800, 9500, 12000][i],
+    t: [30, 20, 16, 4, -12, -40, -55][i],
+    td: [20, 15, 10, -5, -25, -50, -70][i],
+    u: 0,
+    v: 0,
+  }));
+
+  it("finds the LCL, moist-adiabatic lapse and CAPE of a warm, moist surface parcel", () => {
+    const parcel = surfaceParcel(levels);
+    // About 125 m per degree of dew point depression.
+    expect(parcel.lclAgl).toBeGreaterThan(1100);
+    expect(parcel.lclAgl).toBeLessThan(1400);
+    const t500 = parcel.path.find((x) => x.p === 500)!.t;
+    expect(t500).toBeGreaterThan(-8);
+    expect(t500).toBeLessThan(2);
+    expect(parcel.cape).toBeGreaterThan(500);
+    expect(parcel.cape).toBeLessThan(5000);
+  });
+
+  it("has no CAPE when the air aloft is warmer than the parcel", () => {
+    const stable = levels.map((l, i) => (i === 0 ? l : { ...l, t: l.t + 25 }));
+    expect(surfaceParcel(stable).cape).toBe(0);
+  });
+});
+
+describe("fetchOpenMeteoSounding", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("builds the column above the model ground from a real Open-Meteo HRRR answer (OKC, 2026-10-20 19Z)", async () => {
+    const hourly: Record<string, (number | null)[]> = {
+      surface_pressure: [976.0], temperature_2m: [24.0], dew_point_2m: [9.0], wind_speed_10m: [15.0], wind_direction_10m: [180],
+      // Under the 976 hPa ground: must be dropped.
+      temperature_1000hPa: [23.0], dew_point_1000hPa: [8.7], wind_speed_1000hPa: [18.0], wind_direction_1000hPa: [181], geopotential_height_1000hPa: [176],
+      temperature_975hPa: [22.0], dew_point_975hPa: [7.4], wind_speed_975hPa: [19.4], wind_direction_975hPa: [182], geopotential_height_975hPa: [399],
+      temperature_850hPa: [12.1], dew_point_850hPa: [-0.5], wind_speed_850hPa: [24.2], wind_direction_850hPa: [181], geopotential_height_850hPa: [1564],
+      temperature_500hPa: [-11.9], dew_point_500hPa: [-17.5], wind_speed_500hPa: [39.9], wind_direction_500hPa: [254], geopotential_height_500hPa: [5857],
+      // The top level has no dew point.
+      temperature_50hPa: [-65.5], dew_point_50hPa: [null], wind_speed_50hPa: [7.2], wind_direction_50hPa: [90], geopotential_height_50hPa: [20744.83],
+    };
+    const fetch = vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ elevation: 386, hourly: { time: ["2026-10-20T19:00"], ...hourly } }) }));
+    vi.stubGlobal("fetch", fetch);
+    const s = await fetchOpenMeteoSounding(35.4, -97.5, Date.parse("2026-10-20T19:20Z"), new AbortController().signal);
+    expect(String((fetch.mock.calls[0] as unknown[])[0])).toContain("start_hour=2026-10-20T19:00");
+    expect(s.levels.map((l) => l.p)).toEqual([976, 975, 850, 500, 50]);
+    // Model ground ~8 m under the 975 hPa height, not the 386 m DEM elevation.
+    expect(s.levels[0].z).toBeGreaterThan(385);
+    expect(s.levels[0].z).toBeLessThan(395);
+    // A south wind blows toward the north.
+    expect(s.levels[0].u).toBeCloseTo(0, 5);
+    expect(s.levels[0].v).toBeCloseTo(15, 5);
+    expect(s.levels.at(-1)!.td).toBe(-100);
+  });
+
+  it("reports Open-Meteo's own error text", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status: 429, json: async () => ({ error: true, reason: "Too many concurrent requests" }) })));
+    await expect(fetchOpenMeteoSounding(35.4, -97.5, 0, new AbortController().signal)).rejects.toThrow("Too many concurrent requests");
   });
 });

@@ -495,9 +495,99 @@ pub fn decode_message(
     })
 }
 
+/// One message of a small cropped HRRR file, sampled at one grid point.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ColumnValue {
+    pub category: u8,
+    pub number: u8,
+    /// GRIB2 Code Table 4.5 (1 = ground, 100 = isobaric in Pa, 103 = metres above ground).
+    pub surface_type: u8,
+    pub level: f64,
+    pub value: f32,
+}
+
+/// Every message in a NOMADS-cropped HRRR file (Phase 5.2's fallback
+/// sounding), each sampled at the grid point nearest `(lat, lon)`.
+pub fn sample_column(
+    url: &str,
+    bytes: &[u8],
+    lat: f32,
+    lon: f32,
+) -> Result<Vec<ColumnValue>, HrrrError> {
+    let parse_err = |message: String| HrrrError::Grib2Parse {
+        url: url.to_string(),
+        message,
+    };
+    let grib2 = grib::from_bytes(bytes.to_vec()).map_err(|e| parse_err(e.to_string()))?;
+    let mut column = Vec::new();
+    for (_, submessage) in grib2.iter() {
+        let prod_def = submessage.prod_def();
+        let (Some(category), Some(number), Some((surface, _))) = (
+            prod_def.parameter_category(),
+            prod_def.parameter_number(),
+            prod_def.fixed_surfaces(),
+        ) else {
+            continue;
+        };
+        let latlons = submessage.latlons().map_err(|e| parse_err(e.to_string()))?;
+        let values = grib::Grib2SubmessageDecoder::from(submessage)
+            .and_then(|d| d.dispatch().map(|v| v.collect::<Vec<f32>>()))
+            .map_err(|e| parse_err(e.to_string()))?;
+        // Longitude difference wrapped to -180..180 so 0..360 and -180..180 grids both work.
+        let distance = |(plat, plon): (f32, f32)| {
+            (plat - lat).powi(2) + ((plon - lon + 540.0).rem_euclid(360.0) - 180.0).powi(2)
+        };
+        let nearest = latlons
+            .zip(values)
+            .min_by(|a, b| distance(a.0).total_cmp(&distance(b.0)))
+            .ok_or_else(|| parse_err("empty message".to_string()))?;
+        column.push(ColumnValue {
+            category,
+            number,
+            surface_type: surface.surface_type,
+            level: surface.value(),
+            value: nearest.1,
+        });
+    }
+    Ok(column)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn samples_every_message_of_a_nomads_crop() {
+        // Live capture: NOMADS filter_hrrr_2d crop of hrrr.t16z.wrfsfcf01 around Oklahoma City.
+        let bytes = fixture("nomads_crop_okc_t16z_f01.grib2");
+        let column = sample_column("u", &bytes, 35.4, -97.5).unwrap();
+        let find = |cat, num, st, lev: f64| {
+            column
+                .iter()
+                .find(|c| {
+                    c.category == cat
+                        && c.number == num
+                        && c.surface_type == st
+                        && (c.level - lev).abs() < 1.0
+                })
+                .map(|c| c.value)
+        };
+        let t850 = find(0, 0, 100, 85_000.0).unwrap();
+        let z850 = find(3, 5, 100, 85_000.0).unwrap();
+        let psfc = find(3, 0, 1, 0.0).unwrap();
+        assert!(
+            (250.0..310.0).contains(&t850),
+            "850 mb temperature {t850} K"
+        );
+        assert!((1300.0..1700.0).contains(&z850), "850 mb height {z850} m");
+        assert!(
+            (90_000.0..105_000.0).contains(&psfc),
+            "surface pressure {psfc} Pa"
+        );
+        assert!(find(2, 2, 103, 10.0).is_some(), "10 m U wind");
+        let cape = find(7, 6, 1, 0.0).expect("surface CAPE");
+        assert!((0.0..8000.0).contains(&cape), "surface CAPE {cape} J/kg");
+    }
 
     fn fixture(name: &str) -> Vec<u8> {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))

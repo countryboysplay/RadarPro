@@ -517,6 +517,35 @@ body,
   color: var(--g6);
 }
 
+.sounding-panel {
+  margin-top: 10px;
+}
+
+.sounding-meta {
+  font-size: 13px;
+  color: var(--g7);
+}
+
+.sounding-valid {
+  font-weight: 700;
+  color: var(--forecast);
+}
+
+.sounding-plots {
+  display: grid;
+  grid-template-columns: 3fr 2fr;
+  align-items: start;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.sounding-plots svg {
+  width: 100%;
+  height: auto;
+  background: var(--g0);
+  border: 1px solid var(--g4);
+}
+
 .legend {
   margin-top: 16px;
 }

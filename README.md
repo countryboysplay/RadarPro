@@ -13,7 +13,7 @@ preserved end to end rather than smoothed away for looks.
 
 ## Status
 
-Working desktop (Windows, Tauri) and web workstation, through stage S11, roadmap Phases 0-4 and Phase 5.1:
+Working desktop (Windows, Tauri) and web workstation, through stage S11, roadmap Phases 0-4 and Phases 5.1-5.2:
 
 - **Live NEXRAD Level II** for ~160 WSR-88D sites, from the real-time
   chunk feed (the newest scan fills in tilt by tilt within seconds; falls

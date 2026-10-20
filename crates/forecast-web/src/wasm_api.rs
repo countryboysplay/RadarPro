@@ -59,6 +59,27 @@ fn on_wasm_module_init() {
     console_error_panic_hook::set_once();
 }
 
+/// Phase 5.2 fallback sounding: every message of a NOMADS-cropped HRRR file
+/// at the grid point nearest `(lat, lon)`, flattened as
+/// `[category, number, surfaceType, level, value]` per message.
+#[wasm_bindgen(js_name = sampleHrrrColumn)]
+pub fn sample_hrrr_column(bytes: &[u8], lat: f32, lon: f32) -> Result<Vec<f64>, JsValue> {
+    let column = provider_hrrr::decode::sample_column("nomads crop", bytes, lat, lon)
+        .map_err(|e| JsValue::from_str(&e.to_string()))?;
+    Ok(column
+        .iter()
+        .flat_map(|c| {
+            [
+                f64::from(c.category),
+                f64::from(c.number),
+                f64::from(c.surface_type),
+                c.level,
+                f64::from(c.value),
+            ]
+        })
+        .collect())
+}
+
 /// The concrete provider a [`ProviderHandle`] was constructed with. Not a
 /// `Box<dyn ForecastProvider>` -- see this module's parent doc comment.
 ///

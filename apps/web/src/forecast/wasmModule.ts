@@ -13,9 +13,9 @@
 // until `npm run build:wasm` (or `dev`/`build`/`typecheck`, which all run
 // it automatically via npm's `pre*` script hooks) has been run at least
 // once.
-import init, { ProviderHandle } from "../wasm/forecast_web.js";
+import init, { ProviderHandle, sampleHrrrColumn } from "../wasm/forecast_web.js";
 
-export { ProviderHandle };
+export { ProviderHandle, sampleHrrrColumn };
 
 let modulePromise: Promise<void> | null = null;
 

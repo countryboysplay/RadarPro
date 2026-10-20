@@ -32,6 +32,7 @@ import { InfoPanel } from "./ui/InfoPanel";
 import { PlaybackControls } from "./ui/PlaybackControls";
 import { ArchiveLoader } from "./ui/ArchiveLoader";
 import { CrossSectionPanel, CrossSectionSlice, legLengthAndBearing, type LatLonPoint } from "./ui/CrossSectionPanel";
+import { SoundingPanel, SoundingView } from "./ui/SoundingPanel";
 import { ProbePanel, probeText } from "./ui/ProbePanel";
 import { Legend } from "./ui/Legend";
 import { ColorTableEditor } from "./ui/ColorTableEditor";
@@ -477,9 +478,11 @@ export default function App() {
   const [rainbowPointPickTarget, setRainbowPointPickTarget] = useState<"nowcast" | "weather" | null>(null);
 
   const handleToggleNowcastPick = useCallback(() => {
+    setSoundingPicking(false);
     setRainbowPointPickTarget((prev) => (prev === "nowcast" ? null : "nowcast"));
   }, []);
   const handleToggleWeatherPick = useCallback(() => {
+    setSoundingPicking(false);
     setRainbowPointPickTarget((prev) => (prev === "weather" ? null : "weather"));
   }, []);
 
@@ -493,9 +496,17 @@ export default function App() {
   // Cross-section line: two map clicks (start, then end).
   const [xsLine, setXsLine] = useState<{ a: LatLonPoint; b: LatLonPoint | null } | null>(null);
   const [xsPicking, setXsPicking] = useState(false);
+  // Phase 5.2: one map click picks the HRRR sounding point.
+  const [soundingPoint, setSoundingPoint] = useState<LatLonPoint | null>(null);
+  const [soundingPicking, setSoundingPicking] = useState(false);
 
   const handleRainbowMapPointPick = useCallback(
     (lat: number, lon: number) => {
+      if (soundingPicking) {
+        setSoundingPoint({ lat, lon });
+        setSoundingPicking(false);
+        return;
+      }
       if (xsPicking) {
         if (xsLine && !xsLine.b) {
           setXsLine({ a: xsLine.a, b: { lat, lon } });
@@ -509,7 +520,7 @@ export default function App() {
       else if (rainbowPointPickTarget === "weather") rainbowWeather.setPoint(lon, lat);
       setRainbowPointPickTarget(null);
     },
-    [rainbowPointPickTarget, rainbowNowcast, rainbowWeather, xsPicking, xsLine],
+    [rainbowPointPickTarget, rainbowNowcast, rainbowWeather, xsPicking, xsLine, soundingPicking],
   );
 
   // S09 Phase 3: MRMS national-mosaic overlay -- `enabled`/`productId`
@@ -1106,6 +1117,7 @@ export default function App() {
             e.preventDefault();
             setRainbowPointPickTarget(null);
           }
+          setSoundingPicking(false);
           break;
       }
     }
@@ -1140,6 +1152,21 @@ export default function App() {
             // SRV is derived per tilt for display and isn't in the decoded volume; slice (raw or dealiased) velocity.
             momentCode ? crossSection(momentCode === "SRV" ? "VEL" : momentCode, a, b, cols, rows, topKm) : null
           }
+        />
+      ),
+    });
+  }
+  if (soundingPoint) {
+    rightPanelSections.push({
+      key: "sounding",
+      title: "HRRR sounding",
+      onDismiss: () => setSoundingPoint(null),
+      children: (
+        <SoundingView
+          point={soundingPoint}
+          // The forecast hour on screen; otherwise the nearest hour to now.
+          validMs={inForecast && forecast.run ? Date.parse(forecast.run.initTime) + forecast.leadHours * 3_600_000 : Math.round(Date.now() / 3_600_000) * 3_600_000}
+          hrrrRunInitMs={forecast.providerId === "hrrr" && forecast.run ? Date.parse(forecast.run.initTime) : null}
         />
       ),
     });
@@ -1532,12 +1559,26 @@ export default function App() {
             line={xsLine}
             picking={xsPicking}
             onStartPick={() => {
+              setSoundingPicking(false);
               setXsLine(null);
               setXsPicking(true);
             }}
             onClear={() => {
               setXsLine(null);
               setXsPicking(false);
+            }}
+          />
+          <SoundingPanel
+            point={soundingPoint}
+            picking={soundingPicking}
+            onStartPick={() => {
+              setXsPicking(false);
+              setRainbowPointPickTarget(null);
+              setSoundingPicking(true);
+            }}
+            onClear={() => {
+              setSoundingPoint(null);
+              setSoundingPicking(false);
             }}
           />
           {momentCode && <Legend activeColorTableJson={activeTableJson} momentCode={momentCode} />}
@@ -1769,7 +1810,7 @@ export default function App() {
           alerts={shownAlertsGeo}
           selectedAlertKey={selectedAlertKey}
           onAlertClick={handleAlertClick}
-          pointPickActive={rainbowPointPickTarget !== null || xsPicking}
+          pointPickActive={rainbowPointPickTarget !== null || xsPicking || soundingPicking}
           onPointPick={handleRainbowMapPointPick}
           rainbowTileUrlTemplate={rainbow.tileUrlTemplate}
           rainbowEnabled={rainbow.enabled}

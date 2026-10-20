@@ -58,8 +58,11 @@ switching between apps.
 - Forecasts (GEFS ensemble, HRRR): temperature, dewpoint, humidity, wind
   components, gusts, sea-level pressure, cloud cover.
 - HRRR severe-weather fields on the map: SBCAPE, MLCAPE, 0-1/0-3 km SRH,
-  0-6 km shear, LCL height, fixed-layer STP. Not yet: point soundings
-  (skew-T/hodograph), RTMA surface analysis, observed balloon soundings.
+  0-6 km shear, LCL height, fixed-layer STP.
+- HRRR point sounding: click the map for a skew-T, hodograph, SBCAPE and LCL
+  at the forecast hour shown (39 levels from Open-Meteo; a coarse 5-level
+  NOAA column when Open-Meteo is slow, see ADR-0016). Not yet: RTMA surface
+  analysis, observed balloon soundings.
 - NWS alert polygons with lifecycle tracking and hazard tags; archived scans
   show the warnings in effect then; Rainbow Weather tiles, nowcast
   and point forecast (needs an API key).
