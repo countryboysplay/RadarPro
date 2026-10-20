@@ -137,7 +137,11 @@ mod tests {
         let m = mercator_view(35.0, -100.0, -100.5, 36.5, -99.5, 35.5);
         let (cx, cy) = apply(&m, 0.0, 0.0);
         assert!(cx.abs() < 1e-3, "centre x {cx}");
-        let expected_y = (mercator_y(36.0f64.to_radians()) - mercator_y(35.0f64.to_radians())) * EARTH_RADIUS_KM;
-        assert!((f64::from(cy) - expected_y).abs() < 0.5, "centre y {cy} vs {expected_y}");
+        let expected_y =
+            (mercator_y(36.0f64.to_radians()) - mercator_y(35.0f64.to_radians())) * EARTH_RADIUS_KM;
+        assert!(
+            (f64::from(cy) - expected_y).abs() < 0.5,
+            "centre y {cy} vs {expected_y}"
+        );
     }
 }

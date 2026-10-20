@@ -520,7 +520,10 @@ mod tests {
         assert_eq!(at(0.0)[3], 0, "below 5 dBZ is transparent");
         assert!(at(10.0)[3] < 255, "weak echo is see-through");
         let [r, g, b, a] = at(25.0);
-        assert!(g > r && g > b && a == 255, "25 dBZ is green: {r},{g},{b},{a}");
+        assert!(
+            g > r && g > b && a == 255,
+            "25 dBZ is green: {r},{g},{b},{a}"
+        );
         let [r, g, b, _] = at(52.0);
         assert!(r > 200 && g < 80 && b < 40, "50s are red: {r},{g},{b}");
         let [r, g, b, _] = at(72.0);
