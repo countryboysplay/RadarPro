@@ -103,6 +103,9 @@ function resolvePreferredMoment(preferred: string | null, availableMoments: stri
   return preferred && availableMoments.includes(preferred) ? preferred : (availableMoments[0] ?? null);
 }
 
+/** The product buttons' fixed order, SRV next to the VEL it comes from; other wire codes follow. */
+const PRODUCT_ORDER = ["REF", "VEL", "SRV", "SW", "ZDR", "CC", "PHI"];
+
 function describePollEvent(event: PollEvent): string {
   switch (event.type) {
     case "checking":
@@ -1142,8 +1145,13 @@ export default function App() {
     }
   }, [activeTableJson]);
 
-  const favoriteAvailable = momentOptions.filter((code) => favoriteMoments.includes(code));
-  const productOrder = [...favoriteAvailable, ...momentOptions.filter((code) => !favoriteMoments.includes(code))];
+  // Fixed order, so buttons never move between tilts or while a live scan fills in;
+  // products this volume lacks are shown disabled.
+  const allProducts = momentOptions.length === 0 ? [] : [...new Set([...PRODUCT_ORDER, ...momentOptions])];
+  const productOrder = [
+    ...allProducts.filter((code) => favoriteMoments.includes(code)),
+    ...allProducts.filter((code) => !favoriteMoments.includes(code)),
+  ];
   const feedError = status === "error" || history.pollEvent.type === "error" || decodeError !== null;
   const forecastSummary = [modelForecastSummary, pointForecastsSummary].join(" · ");
   // Only forecast *radar* replaces the radar on the map; other model fields stay in the panel.
@@ -1262,11 +1270,16 @@ export default function App() {
                 key={code}
                 type="button"
                 aria-pressed={code === momentCode}
+                disabled={!momentOptions.includes(code)}
                 onClick={() => {
                   showRadar();
                   changeMoment(code);
                 }}
-                title={favoriteMoments.includes(code) ? `${code} (favorite)` : code}
+                title={
+                  !momentOptions.includes(code)
+                    ? `${code} is not in this scan`
+                    : favoriteMoments.includes(code) ? `${code} (favorite)` : code
+                }
               >
                 {code}
                 {favoriteMoments.includes(code) && <span className="segment-favorite" aria-hidden="true" />}
