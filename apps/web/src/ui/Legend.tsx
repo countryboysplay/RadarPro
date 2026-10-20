@@ -40,10 +40,12 @@ export function Legend({ activeColorTableJson, momentCode }: LegendProps) {
           <span className="legend-swatch-box" style={{ background: rgbaToCss(table.missing_color) }} />
           missing
         </span>
-        <span className="legend-swatch">
-          <span className="legend-swatch-box" style={{ background: rgbaToCss(table.range_folded_color) }} />
-          range-folded
-        </span>
+        {table.range_folded_color[3] > 0 && (
+          <span className="legend-swatch">
+            <span className="legend-swatch-box" style={{ background: rgbaToCss(table.range_folded_color) }} />
+            range-folded
+          </span>
+        )}
       </div>
     </div>
   );

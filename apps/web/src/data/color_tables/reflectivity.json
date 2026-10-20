@@ -39,5 +39,5 @@
     { "value": 95.0, "color": [115, 10, 1, 255] }
   ],
   "missing_color": [0, 0, 0, 0],
-  "range_folded_color": [255, 0, 255, 255]
+  "range_folded_color": [255, 0, 255, 0]
 }
