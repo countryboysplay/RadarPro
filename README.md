@@ -57,6 +57,9 @@ Working desktop (Windows, Tauri) and web workstation, through stage S11, roadmap
 - **Observed balloon soundings**: the same click, "Observed" tab: the
   nearest RAOB site's latest 00Z/12Z launch (before the scan in archive
   mode), from IEM; see ADR-0017.
+- **Export**: "Save image" saves the map as you see it (radar, overlays,
+  colour legend, site and time stamp) as a PNG; "Save loop" saves the held
+  scans as an MP4 (WebM where the browser can't record MP4).
 - **NWS alerts**, live polygons with lifecycle tracking and hazard tags
   (tornado detection, damage threat, hail size, wind gust); archived scans
   show the warnings and special weather statements in effect at that time.

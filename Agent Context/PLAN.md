@@ -248,6 +248,8 @@ per layer (topmost per 4 px cell): 20k clustered bolts draw ~5-15 ms.
 
 ## Phase 6: export (S-M)
 
+6.1 and 6.2 done 2026-10-20: "Save image" (PNG) and "Save loop" (MP4, WebM fallback) under the legend; `ui/ExportPanel.tsx`, `MapView`'s `exportRef`. Forecast-hour loops not exported yet.
+
 1. **Image export:** the current map with radar, overlays, legend, and a
    site/time stamp, as a PNG.
 2. **Loop export:** the current loop as an animated GIF or MP4, for

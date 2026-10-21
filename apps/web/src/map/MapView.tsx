@@ -1,4 +1,4 @@
-import { useEffect, useRef, type RefObject } from "react";
+import { useEffect, useRef, type MutableRefObject, type RefObject } from "react";
 // MapLibre GL JS >=5 has no default export; `MapLibreMap` is the library's
 // own non-colliding alias for its `Map` class (distinct from the global
 // JS `Map`).
@@ -748,7 +748,12 @@ export interface MapViewProps {
    * this; `MapView` just reports it on every relevant map event, same as
    * `onCursorMove` reports every raw `mousemove`. */
   onMrmsViewportChange?: (viewport: MrmsViewport) => void;
+  /** Set to a function that returns the map as the user sees it, as one canvas (Phase 6 export). */
+  exportRef?: MutableRefObject<ExportMap | null>;
 }
+
+/** Calls `rerenderRadar`, then flattens every visible map canvas into one at device resolution. */
+export type ExportMap = (rerenderRadar: () => void) => HTMLCanvasElement | null;
 
 /**
  * Full-viewport MapLibre map with the radar `<canvas>` (owned by the
@@ -801,9 +806,39 @@ export function MapView({
   forecastOnMap = false,
   forecastOpacity = 1,
   forecastKey = "",
+  exportRef,
 }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
+
+  // The map (WebGL) and radar (WebGPU) canvases read back blank once their frame is presented, so
+  // both are redrawn right before the copy, in the same task. DOM order is paint order (z 0..3).
+  useEffect(() => {
+    if (!exportRef) return;
+    exportRef.current = (rerenderRadar) => {
+      const map = mapRef.current;
+      const root = rootRef.current;
+      if (!map || !root) return null;
+      rerenderRadar();
+      map.redraw();
+      const mapCanvas = map.getCanvas();
+      const scale = mapCanvas.width / mapCanvas.clientWidth;
+      const box = root.getBoundingClientRect();
+      const out = document.createElement("canvas");
+      out.width = mapCanvas.width;
+      out.height = mapCanvas.height;
+      const ctx = out.getContext("2d")!;
+      for (const c of root.querySelectorAll("canvas")) {
+        const opacity = Number(getComputedStyle(c).opacity);
+        if (!opacity || !c.width) continue;
+        const r = c.getBoundingClientRect();
+        ctx.globalAlpha = opacity;
+        ctx.drawImage(c, (r.left - box.left) * scale, (r.top - box.top) * scale, r.width * scale, r.height * scale);
+      }
+      return out;
+    };
+  }, [exportRef]);
   const ringsCanvasRef = useRef<HTMLCanvasElement>(null);
   const alertsCanvasRef = useRef<HTMLCanvasElement>(null);
   const selectedIcaoRef = useRef(site.icao);
@@ -941,6 +976,8 @@ export function MapView({
       // renderer redraws the sweep for exactly this view, so gates stay
       // sharp at any zoom (stretching one fixed image blurred them).
       const mapCanvas = map.getCanvas();
+      // The overlay draw code works in CSS pixels (map.project); its canvases are device pixels (150% displays).
+      const dpr = mapCanvas.width / mapCanvas.clientWidth;
       if (canvas.width !== mapCanvas.width || canvas.height !== mapCanvas.height) {
         canvas.width = mapCanvas.width;
         canvas.height = mapCanvas.height;
@@ -971,6 +1008,7 @@ export function MapView({
           ringsCanvas.height = mapCanvas.height;
           ringsCanvas.style.width = mapCanvas.style.width;
           ringsCanvas.style.height = mapCanvas.style.height;
+          ringsCanvas.getContext("2d")?.setTransform(dpr, 0, 0, dpr, 0, 0);
         }
         drawRangeRings(map, ringsCanvas, rangeRingsRef.current);
         drawCourse(map, ringsCanvas, courseRef.current);
@@ -986,6 +1024,7 @@ export function MapView({
           alertsCanvas.height = mapCanvas.height;
           alertsCanvas.style.width = mapCanvas.style.width;
           alertsCanvas.style.height = mapCanvas.style.height;
+          alertsCanvas.getContext("2d")?.setTransform(dpr, 0, 0, dpr, 0, 0);
         }
         drawAlerts(map, alertsCanvas, alertsRef.current, selectedAlertKeyRef.current, spcLayersRef.current);
         drawPlacefiles(map, alertsCanvas, placefilesRef.current);
@@ -1234,7 +1273,7 @@ export function MapView({
     // visible despite rendering correctly to its backing buffer. Keeping
     // them as siblings under a common positioned parent, with the radar
     // canvas layered on top via `zIndex`, avoids MapLibre ever touching it.
-    <div style={{ position: "absolute", inset: 0 }}>
+    <div ref={rootRef} style={{ position: "absolute", inset: 0 }}>
       <div ref={containerRef} style={{ position: "absolute", inset: 0 }} />
       <canvas
         ref={canvasRef}

@@ -18,6 +18,8 @@ import { clampHistoryLimit, historyReducer, initialState } from "../scan/useScan
 import { alertNearSite, pointInAlertGeometry } from "../alerts/geometryHitTest";
 import { coveringAlerts } from "../location/useMyLocation";
 import { raobLevels } from "../forecast/sounding";
+import { legendStops } from "../ui/ExportPanel";
+import type { ColorTableJson } from "../colorTables/colorTableJson";
 import { parseColorTableJson } from "../colorTables/colorTableJson";
 import { fetchOpenMeteoSounding, surfaceParcel } from "../forecast/sounding";
 import { leadHourOptions, variableAvailable, variableOnMap } from "../forecast/useForecastProvider";
@@ -707,5 +709,30 @@ describe("raobLevels", () => {
     expect(levels[1].v).toBeCloseTo(10);
     expect(levels[1].u).toBeCloseTo(0);
     expect(Number.isNaN(levels[2].td)).toBe(true);
+  });
+});
+
+describe("legendStops", () => {
+  const table: ColorTableJson = {
+    format_version: 1,
+    name: "t",
+    moments: ["REF"],
+    units: "dBZ",
+    mode: "stepped",
+    domain: { min: 0, max: 100 },
+    stops: [
+      { value: 0, color: [0, 0, 0, 255] },
+      { value: 50, color: [255, 0, 0, 255] },
+    ],
+    missing_color: [0, 0, 0, 0],
+    range_folded_color: [0, 0, 0, 0],
+  };
+
+  it("holds each stepped colour up to the next stop, like the on-screen legend", () => {
+    expect(legendStops(table).map(([at]) => at)).toEqual([0, 0.5, 0.5, 1]);
+  });
+
+  it("places gradient stops once", () => {
+    expect(legendStops({ ...table, mode: "gradient" }).map(([at]) => at)).toEqual([0, 0.5]);
   });
 });

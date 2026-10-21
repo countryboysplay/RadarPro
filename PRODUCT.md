@@ -68,6 +68,9 @@ switching between apps.
 - Observed balloon soundings (RAOB): the sounding panel's "Observed" tab
   shows the nearest launch site's latest 00Z/12Z sounding, or the one before
   an archived scan (IEM, ADR-0017).
+- Export: the current map as a PNG, or the scan loop as an MP4 (WebM where
+  the browser lacks MP4 recording), with the colour legend and a site/time
+  stamp burned in, for spotter networks and social media.
 - NWS alert polygons with lifecycle tracking and hazard tags; archived scans
   show the warnings in effect then; Rainbow Weather tiles, nowcast
   and point forecast (needs an API key).

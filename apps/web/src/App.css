@@ -536,7 +536,8 @@ body,
   color: var(--g8);
 }
 
-.sounding-tabs {
+.sounding-tabs,
+.export-actions {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 4px;
@@ -1661,4 +1662,8 @@ body,
 .map-probe-tip strong {
   font-weight: 700;
   color: var(--g8);
+}
+
+.export-actions {
+  margin-top: 12px;
 }

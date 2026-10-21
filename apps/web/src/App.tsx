@@ -70,6 +70,8 @@ import { OUTLOOK_NAMES, type OutlookKind } from "./spc/spc";
 import { LSR_WINDOW_HOURS } from "./spc/lsr";
 import { UnifiedTimeline } from "./timeline/UnifiedTimeline";
 import { Icon } from "./ui/Icon";
+import { ExportPanel } from "./ui/ExportPanel";
+import type { ExportMap } from "./map/MapView";
 import { useNearbyStormTracks, useStormTracks } from "./storms/useStormTracks";
 import type { StormCell } from "./storms/nst";
 import { stormAlerts } from "./storms/nearbyHazards";
@@ -373,6 +375,7 @@ export default function App() {
   }, []);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const exportMapRef = useRef<ExportMap | null>(null);
   const {
     status,
     error,
@@ -1587,6 +1590,28 @@ export default function App() {
             }}
           />
           {momentCode && <Legend activeColorTableJson={activeTableJson} momentCode={momentCode} />}
+          <ExportPanel
+            capture={() =>
+              exportMapRef.current?.(() => {
+                if (sweepIndexRef.current !== null && momentCodeRef.current) renderSelection(sweepIndexRef.current, momentCodeRef.current);
+              }) ?? null
+            }
+            title={
+              forecastOnMap
+                ? `${site.icao} · HRRR ${forecastField?.label ?? ""}`
+                : `${site.icao} ${site.name} · ${momentCode ?? ""}${elevationDeg !== null ? ` ${elevationDeg.toFixed(1)}°` : ""}`
+            }
+            timeMs={inForecast ? forecastValidMs : (currentEntry?.startTimeMillis ?? null)}
+            tableJson={forecastOnMap ? null : activeTableJson}
+            frameTimes={inForecast ? [] : history.entries.map((e) => e.startTimeMillis)}
+            frameMs={history.frameMs}
+            goTo={history.jumpToNearestByTimestamp}
+            restore={
+              history.playMode === "live"
+                ? history.jumpToLatest
+                : () => currentEntry && history.jumpToNearestByTimestamp(currentEntry.startTimeMillis)
+            }
+          />
         </section>
 
         {/* Warnings default open the first time active alerts arrive, and
@@ -1807,6 +1832,7 @@ export default function App() {
         <MapView
           site={site}
           canvasRef={canvasRef}
+          exportRef={exportMapRef}
           onRadarView={setRadarView}
           onSiteClick={setIcao}
           rangeRings={rangeRingsGeo}

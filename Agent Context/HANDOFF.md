@@ -1001,6 +1001,11 @@ which is only the harness placeholder now.)
 - Owner chose IEM (ADR-0017) and "same click, 2 tabs". `fetchRaobSounding` / `raobLevels` in `forecast/sounding.ts`: one all-sites `raob.py?ts=` per 00Z/12Z (cached unless under 6 h old), sites from `RAOB.geojson`, nearest usable profile, steps back up to 2 days. `SoundingView` has an HRRR | Observed switch; Observed takes `observedAtMs` (archive frame, else now). The panel is titled "Sounding" now, and its times are 12-hour local (they were UTC "Z").
 - Verified in headless Chrome: live KTLX click -> "KOUN Norman OK · 47 mi W · launched Oct 20, 7:00 AM", surface 51/48 °F matching the raw IEM row, skew-T + hodograph drawn; archive 2024-05-06 23Z -> KOUN 12Z (105 levels); HRRR tab still loads via Open-Meteo. Desktop app (tauri dev + CDP) verified after the commit: HRRR tab via Open-Meteo, Observed on KVWX -> "KBNA Nashville Metro TN · 126 mi S", plots drawn. Not handled: specials (18Z), which aren't looked for. The owner says it's fine to open the desktop app when they aren't gaming; ask if unsure.
 
+## 2026-10-20 — Phase 6 export, overlay scaling fix (worked on the devbox)
+- "Save image" / "Save loop" under the legend (`ui/ExportPanel.tsx`). `MapView`'s `exportRef` re-renders the radar (WebGPU) and calls `map.redraw()` (WebGL) in the same task, then flattens every visible canvas in DOM order: both GPU canvases read back blank once presented. Stamp (site · product tilt, 12-hour local time, "RadarPro") and colour bar are drawn on the copy. Loop: `jumpToNearestByTimestamp` each held scan, 400 ms wait (ponytail comment), MediaRecorder on a `captureStream(0)` canvas at the playback speed, last scan held 3x (needs a redraw + `requestFrame` at the end or the hold is lost), capped at 1920 px wide; MP4 (H.264) in Chrome and WebView2, WebM fallback. Playback goes back to live/where it was afterwards.
+- Verified at 150% in headless Chrome (devbox Vite over tailnet) and the desktop app (tauri dev on the PC, devbox Vite tunnelled with `ssh -N -L 5173:127.0.0.1:5173 zima`): PNG and MP4 land in Downloads in WebView2. Not done: forecast-hour loops (button disabled past NOW). Exports include whatever placefiles are on, e.g. Spotter Network names.
+- **Bug fixed:** at Windows 150% scaling the overlay canvases (range rings, course leg, warnings, placefiles, storm tracks, my location) drew in CSS pixels on a device-pixel buffer, so they shrank toward the top-left and slid off the map when panning. Now `setTransform(scale)` after each resize in `updateOverlay`. Every earlier test ran at 100%, which hid it.
+
 ## Owner preferences (read before starting)
 Collected from Claude's memory on the old computer (2026-10-20); these override defaults.
 
@@ -1014,6 +1019,7 @@ Collected from Claude's memory on the old computer (2026-10-20); these override 
 - Ponytail mode: the smallest complete change, no features nobody asked for. End replies with what was skipped and any risk.
 - New data source: measure it first (size, speed, CORS, format), then put the real options to the owner before designing. 5.2 and 5.3 both went this way.
 - Test every feature in Chrome and in the desktop app (CDP) before calling it done, and say plainly what was not verified.
+- Test map features at 150% display scaling, not only 100%: start headless Chrome with `--force-device-scale-factor=1.5` (the owner's PC runs 150%; a 100%-only test hid the overlay bug above).
 - Update the docs with each feature: README, PRODUCT.md, DESIGN.md, an ADR for data-source or format decisions, plus PLAN.md and this file.
 - The owner lets Claude do the end-of-session handoff and push docs to main when asked; check CI after pushing.
 
@@ -1030,7 +1036,7 @@ Collected from Claude's memory on the old computer (2026-10-20); these override 
 
 ## START HERE (next session, after 2026-10-20)
 - main is at the docs commit after `7262c3a` (Phase 5.3 RTMA), pushed. Session 10 shipped `b0a292a` (5.2 soundings), `e0ecc5d` (sounding plot colours + docs), `7262c3a` (5.3 RTMA). CI green for `b0a292a` and `e0ecc5d`; `7262c3a` was still running at handoff (check `gh run list`).
-- Next task: Phase 6 (export: PNG image, then loop GIF/MP4) per PLAN.md. Done since: Phase 5.4 observed balloon soundings (RAOB, 00Z/12Z) near the view, in the same skew-T/hodograph view as 5.2 (`SoundingView` takes a `Sounding`; add a source). First step, as in 5.2/5.3: measure the data source before designing (candidates: IEM `json/raob.py`, University of Wyoming; check CORS, size and latency), then put the choice to the owner.
+- Next task: Phase 7.1 multi-radar composite per PLAN.md (Phase 6 export done; forecast-hour loop export left open). Done since: 5.4 observed soundings and Phase 6 export (sections above). 7.1 needs no new data source: render each nearby site into the same Mercator view and combine (closest radar or highest value per pixel).
 - Still to see live: an RTMA hour rollover swapping in place (recheck every 120 s in `useForecastProvider`); HRRR temperature/dewpoint on the map.
 - Known limits: Open-Meteo free tier (soundings) was overloaded/429 much of 2026-10-20 and is non-commercial only (ADR-0016); the NOAA fallback needs the desktop app or dev-server relay. STP loop downloads ~190 MB (only on play). The installed desktop app predates 5.2/5.3 (rebuild with `npm run tauri:build`).
 - Browser testing: two Chrome browsers are connected to the extension now; the owner must pick one before browser tools work. The desktop app over CDP needs no pick: start it with `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222 npx tauri dev --config '{"build":{"beforeDevCommand":""}}'` from `apps/desktop`, then `node apps/desktop/scripts/cdp.mjs eval "<js>"` or `node apps/desktop/scripts/cdp.mjs shot out.png`.
