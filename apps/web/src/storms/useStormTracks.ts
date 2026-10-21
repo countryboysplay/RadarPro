@@ -62,9 +62,11 @@ export function useStormTracks(
   icao: string,
   enabled: boolean,
   archiveTimeMs: number | null = null,
-): { tracks: StormTracks | null; error: string | null; archived: boolean } {
+): { tracks: StormTracks | null; error: string | null; archived: boolean; settled: boolean } {
   const [tracks, setTracks] = useState<StormTracks | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // The archive time (null for live) whose poll last finished: the tracks are current when it matches.
+  const [doneAt, setDoneAt] = useState<number | null | undefined>(undefined);
   const archived = archiveTimeMs !== null;
 
   // Cleared on a new site or mode; a new archive frame keeps the old tracks until its own arrive.
@@ -87,6 +89,7 @@ export function useStormTracks(
         if (err instanceof StormFeedStalled) setTracks(null);
         setError(err instanceof Error ? err.message : String(err));
       }
+      setDoneAt(archiveTimeMs);
     }
     poll();
     // Archived products never change; only live ones are re-polled.
@@ -97,7 +100,7 @@ export function useStormTracks(
     };
   }, [icao, enabled, archiveTimeMs]);
 
-  return { tracks, error, archived };
+  return { tracks, error, archived, settled: !enabled || doneAt === archiveTimeMs };
 }
 
 /** Radars whose storm products can see storms near the user. */

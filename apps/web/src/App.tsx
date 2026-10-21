@@ -916,10 +916,13 @@ export default function App() {
   const currentEntry = history.entries[history.currentIndex] ?? null;
   const currentKey = currentEntry?.key ?? null;
   const currentRevision = currentEntry?.revision ?? null;
+  // The scan last decoded and drawn, so loop export can wait for the one it asked for.
+  const [drawnScan, setDrawnScan] = useState<string | null>(null);
   useEffect(() => {
     if (status !== "ready" || !currentKey) return;
     const bytes = history.currentBytes();
     if (!bytes) return;
+    setDrawnScan(`${currentKey}|${currentRevision}`);
 
     const meta = decodeVolume(bytes);
     if (!meta) return;
@@ -1605,6 +1608,7 @@ export default function App() {
             tableJson={forecastOnMap ? null : activeTableJson}
             frameTimes={inForecast ? [] : history.entries.map((e) => e.startTimeMillis)}
             frameMs={history.frameMs}
+            frameReady={drawnScan === `${currentKey}|${currentRevision}` && archived.settled && stormTracks.settled && spc.settled}
             goTo={history.jumpToNearestByTimestamp}
             restore={
               history.playMode === "live"

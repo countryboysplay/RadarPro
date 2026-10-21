@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { parseColorTableJson, rgbaToCss, type ColorTableJson } from "../colorTables/colorTableJson";
 
 export interface ExportPanelProps {
@@ -11,6 +11,8 @@ export interface ExportPanelProps {
   /** Start times of the held scans, oldest first; empty when there is nothing to loop. */
   frameTimes: number[];
   frameMs: number;
+  /** The scan on screen is drawn and the time-keyed overlays (archive warnings, storm tracks, SPC) match it. */
+  frameReady: boolean;
   /** Shows the scan at this time and pauses playback. */
   goTo: (ms: number) => void;
   /** Puts playback back where it was before the loop export. */
@@ -18,8 +20,11 @@ export interface ExportPanelProps {
 }
 
 /** Image (PNG) and loop (MP4, else WebM) export of the map with a legend and site/time stamp. */
-export function ExportPanel({ capture, title, timeMs, tableJson, frameTimes, frameMs, goTo, restore }: ExportPanelProps) {
+export function ExportPanel({ capture, title, timeMs, tableJson, frameTimes, frameMs, frameReady, goTo, restore }: ExportPanelProps) {
   const [busy, setBusy] = useState<string | null>(null);
+  // Read inside the loop's awaits, which would otherwise see the value from when it started.
+  const readyRef = useRef(frameReady);
+  readyRef.current = frameReady;
   const table = tableJson ? parseColorTableJson(tableJson) : null;
 
   function frame(ms: number | null) {
@@ -38,9 +43,9 @@ export function ExportPanel({ capture, title, timeMs, tableJson, frameTimes, fra
     try {
       for (const ms of frameTimes) {
         goTo(ms);
-        // ponytail: fixed wait for React to decode and render the scan; overlays that refetch
-        // per frame (archive warnings, storm tracks) can lag one frame. A render-done signal if that shows.
-        await new Promise((r) => setTimeout(r, 400));
+        // One render to switch the scan, then wait for it to be drawn and its overlays fetched (up to 15 s).
+        await sleep(100);
+        for (let waited = 0; !readyRef.current && waited < 15_000; waited += 100) await sleep(100);
         const f = frame(ms);
         if (f) frames.push(f);
       }
@@ -142,17 +147,19 @@ async function encode(frames: HTMLCanvasElement[], frameMs: number) {
   for (const [i, f] of frames.entries()) {
     ctx.drawImage(f, 0, 0);
     track.requestFrame();
-    await new Promise((r) => setTimeout(r, i === frames.length - 1 ? frameMs * 3 : frameMs));
+    await sleep(i === frames.length - 1 ? frameMs * 3 : frameMs);
   }
   // A frame's length is the gap to the next one, so repeat the last frame to end the hold.
   // Redrawn because an unchanged canvas sends no frame.
   ctx.drawImage(frames[frames.length - 1], 0, 0);
   track.requestFrame();
-  await new Promise((r) => setTimeout(r, 100));
+  await sleep(100);
   recorder.stop();
   await stopped;
   return { blob: new Blob(chunks, { type: mimeType }), ext: mp4 ? "mp4" : "webm" };
 }
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 function save(blob: Blob, name: string) {
   const a = document.createElement("a");

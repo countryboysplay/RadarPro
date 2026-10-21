@@ -811,6 +811,8 @@ export function MapView({
   const containerRef = useRef<HTMLDivElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
+  // `updateOverlay` below, so export can redraw the overlays from this render's props.
+  const redrawOverlaysRef = useRef<(() => void) | null>(null);
 
   // The map (WebGL) and radar (WebGPU) canvases read back blank once their frame is presented, so
   // both are redrawn right before the copy, in the same task. DOM order is paint order (z 0..3).
@@ -822,6 +824,8 @@ export function MapView({
       if (!map || !root) return null;
       rerenderRadar();
       map.redraw();
+      // The overlay canvases redraw in effects, which can run after a loop export's capture.
+      redrawOverlaysRef.current?.();
       const mapCanvas = map.getCanvas();
       const scale = mapCanvas.width / mapCanvas.clientWidth;
       const box = root.getBoundingClientRect();
@@ -1069,6 +1073,7 @@ export function MapView({
     // `move`, which does cover zoom too) matches this stage's brief
     // explicitly and costs nothing extra since `updateOverlay` is cheap
     // and idempotent.
+    redrawOverlaysRef.current = updateOverlay;
     map.on("move", updateOverlay);
     map.on("zoom", updateOverlay);
     map.on("resize", updateOverlay);

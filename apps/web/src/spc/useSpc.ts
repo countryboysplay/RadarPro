@@ -15,11 +15,14 @@ const WPC_POLL_MS = 60 * 60_000;
 export function usePolled<T>(load: ((signal: AbortSignal) => Promise<T>) | null, key: string, pollMs: number | null) {
   const [value, setValue] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // The key whose fetch finished (or failed): the value is the current one when it matches.
+  const [doneKey, setDoneKey] = useState<string | null>(null);
   useEffect(() => {
     // Switched off: clear. A new archive step keeps the old outlines until its own arrive.
     if (!load) {
       setValue(null);
       setError(null);
+      setDoneKey(key);
       return;
     }
     const controller = new AbortController();
@@ -29,9 +32,12 @@ export function usePolled<T>(load: ((signal: AbortSignal) => Promise<T>) | null,
           if (controller.signal.aborted) return;
           setValue(v);
           setError(null);
+          setDoneKey(key);
         },
         (err) => {
-          if (!controller.signal.aborted) setError(err instanceof Error ? err.message : String(err));
+          if (controller.signal.aborted) return;
+          setError(err instanceof Error ? err.message : String(err));
+          setDoneKey(key);
         },
       );
     poll();
@@ -42,7 +48,7 @@ export function usePolled<T>(load: ((signal: AbortSignal) => Promise<T>) | null,
     };
     // `key` stands for `load`'s inputs, so a new closure each render doesn't refetch.
   }, [key]);
-  return { value, error };
+  return { value, error, settled: doneKey === key };
 }
 
 /**
@@ -75,5 +81,7 @@ export function useSpc(outlook: OutlookKind, showWatches: boolean, showMds: bool
     reportsError: r.error,
     error: o.error ?? w.error ?? m.error,
     outlookHiddenInArchive: outlook !== "off" && !live,
+    /** Every layer shows the data for the current time (loop export waits for this). */
+    settled: o.settled && w.settled && m.settled && r.settled,
   };
 }
