@@ -22,11 +22,14 @@ Working desktop (Windows, Tauri) and web workstation, through stage S11, roadmap
   rendering; probe readout; range
   rings; custom color tables; a scan loop backfilled from the archive on
   site switch; historical archive loading by date; vertical cross-sections;
-  site search, nearby-site buttons, and clickable site dots.
+  site search, nearby-site buttons, and clickable site dots. Live mode moves
+  to a new scan as soon as the tilt on screen has fully arrived in it (a
+  setting shows scans while they are still arriving instead).
 - **MRMS national mosaic**: composite reflectivity, precip rate, 1- and
-  3-hour radar-only rainfall, precipitation type, 60-minute max hail size
-  (MESH), 18 dBZ echo tops, VIL, and NLDN cloud-to-ground lightning density
-  (5 min).
+  3-hour radar-only rainfall, precipitation type, 60-minute and 4-hour max
+  hail size (MESH hail swaths), 60-minute and 4-hour low-level (0-2 km)
+  rotation tracks, 18 dBZ echo tops, VIL, and NLDN cloud-to-ground
+  lightning density (5 min).
 - **GOES lightning (GLM)**: flashes from the last 15 minutes from GOES-East
   and GOES-West (each toggled on its own, both on by default), live every
   20 s, drawn as bolts coloured by age; a "lightning N mi from you"
@@ -66,9 +69,9 @@ Working desktop (Windows, Tauri) and web workstation, through stage S11, roadmap
 - **Rainbow Weather** tiles, nowcast, and point forecast (needs an API key).
 
 Not yet: multi-site radar compositing (use MRMS for a multi-radar view),
-model precipitation and geopotential height, MRMS rotation tracks (grid too
-large for the browser as-is), and code signing / auto-update activation for
-the desktop build.
+model precipitation and geopotential height, mid-level (3-6 km) rotation
+tracks, MRMS following playback time (it always shows the latest mosaic),
+and code signing / auto-update activation for the desktop build.
 
 Stage planning and session handoff notes live in `Agent Context/` (`PLAN.md`, `HANDOFF.md`).
 

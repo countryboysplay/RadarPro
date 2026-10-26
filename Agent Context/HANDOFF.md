@@ -1,4 +1,29 @@
-# RadarPro handoff — 2026-10-20 (end of eighth session)
+# RadarPro handoff — 2026-10-26 (latest session on top; older notes below)
+
+## Session of 2026-10-26
+
+- `main` at `08ac808` + a docs commit, pushed; CI green on `08ac808`.
+  Installer rebuilt and installed on this PC (old version uninstalled).
+- **Live mode holds complete scans:** a real-time volume still arriving is
+  shown only once the watched tilt (`preferredSweepRef`, not the shown one,
+  so VCP changes don't ping-pong) has fully arrived. `useScanHistory`
+  `frameHasSweep`/`liveIndex`, `completeSweepCount` (radar-web wasm) on a
+  separate decode. Loop and loop export skip frames lacking the tilt.
+  Settings → Data & app "show a scan while it is still arriving" turns it off
+  (`radarpro.showArrivingScans`). Verified live on KAMA.
+- **Rotation and hail tracks (Phase 9 partly):** MRMS 0-2 km rotation track
+  60 min and 4 h, MESH 4 h. Wide grids 2x2 max-pooled to fit 8192.
+- Fixes: cross-section Cancel/Clear button and Escape; archive load jumps to
+  the chosen time; moment lists from decode-time `sweepMomentCodes`
+  instead of engine queries during render.
+- Open: Rainbow untested in the desktop app; review items left: one-time
+  check of pooled geometry, double decode for `completeSweepCount`.
+  Field-feature ideas offered: MRMS following playback, 3-6 km rotation,
+  contours.
+- `npx tauri build` leaves a line-ending-only change in
+  `apps/desktop/src-tauri/Cargo.toml`; `git restore` it.
+
+# Eighth-session handoff — 2026-10-20
 
 ## Where things stand
 

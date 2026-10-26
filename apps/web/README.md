@@ -136,7 +136,11 @@ New pieces added for S05 (all under `src/`):
   polling always keeps running in the background regardless of playback
   mode; only `"live"` mode auto-jumps the displayed frame to a newly
   downloaded scan -- reviewing history or animating never gets yanked
-  forward by a background download. See that file's doc comments for the
+  forward by a background download. A real-time volume still arriving is
+  shown only once the tilt on screen has fully arrived in it (counted by
+  `radar-web`'s `completeSweepCount` on a separate decode); until then live
+  mode, the loop and loop export stay on the newest scan that has it. The
+  "show a scan while it is still arriving" setting turns this off. See that file's doc comments for the
   full state machine.
 - **`radar/useRadarRenderer.ts`**: decode-once (`decodeVolume`) /
   select-and-render-many (`selectAndRender`) against the new wasm API,

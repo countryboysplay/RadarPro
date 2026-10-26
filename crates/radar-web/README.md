@@ -98,6 +98,11 @@ a nested `[[ [lon, lat], ... ], ...]` array (one ring per radius, GeoJSON
 coordinate order), directly usable as a MapLibre `MultiLineString`'s
 `coordinates`.
 
+Free function: `completeSweepCount(bytes, volumeComplete) -> number` -- how
+many sweeps of a real-time volume are fully received (the last one only
+once the volume is complete), from its own decode so a renderer's current
+volume is untouched; 0 if the bytes don't decode yet.
+
 See `src/browser.rs`'s doc comments for the full contract of each method
 (error behavior, what "selection changed" means, missing/range-folded
 state handling in `probeGate`, etc.).

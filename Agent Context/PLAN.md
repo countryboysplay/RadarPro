@@ -51,7 +51,7 @@ From the owner's screenshot of RadarScope Pro's subscription screen
 | METAR surface observations | ❌ | Phase 8.2 |
 | Archived NWS bulletins | ✅ warnings, advisories, SPS, watches, MDs and storm reports in effect at the archived scan, with full text (IEM) | done |
 | Atmospheric soundings | ✅ HRRR forecast (5.2) and observed RAOB (5.4) skew-T + hodograph | done |
-| Shear and hail contours | ❌ (MRMS hail is a grid only) | Phase 9 |
+| Shear and hail contours | ◐ 0-2 km rotation tracks (60 min, 4 h) and 4 h hail swath as grids; no contours, no 3-6 km | Phase 9 |
 | Detailed road layer | ◐ basemap highways and main roads | Phase 8.4 |
 | Satellite map layer | ❌ | Phase 8.3 |
 | Cross-platform subscription sharing | n/a (free app); equivalent is settings sync | Phase 11.4 |
@@ -278,6 +278,12 @@ per layer (topmost per 4 px cell): 20k clustered bolts draw ~5-15 ms.
    zoom, on top of the radar, as a toggle.
 
 ## Phase 9: MRMS shear and hail contours (M)
+
+Partly done (2026-10-26, `0ba0342`): MRMS `rotation_60min`,
+`rotation_240min` (RotationTrack 0-2 km, 0.001/s) and `hail_size_240min`
+(MESH_Max_240min) drawn as grids. Grids wider than 8192 (WebGPU texture
+limit) are 2x2 max-pooled in `crates/mrms/src/decode.rs`. Left: 3-6 km
+tracks, contour lines, MRMS following playback time.
 
 1. **Rotation tracks:** MRMS azimuthal shear (0-2 km and 3-6 km AGL,
    30/60/120 min) as contour lines on the map.
