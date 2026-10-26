@@ -110,6 +110,9 @@ fn classify_raw_value(product: MrmsProduct, raw: f32) -> MrmsCellValue {
             }
         }
         MrmsProduct::MeshMax60min
+        | MrmsProduct::MeshMax240min
+        | MrmsProduct::RotationTrack60min
+        | MrmsProduct::RotationTrack240min
         | MrmsProduct::EchoTop18
         | MrmsProduct::Vil
         | MrmsProduct::LightningCg5min => {
@@ -128,6 +131,20 @@ fn classify_raw_value(product: MrmsProduct, raw: f32) -> MrmsCellValue {
                 MrmsCellValue::Value(raw)
             }
         }
+    }
+}
+
+/// Widest grid decoded at full resolution: WebGPU's default max texture size.
+const MAX_GRID_WIDTH: u32 = 8192;
+
+/// The cell a pooled block keeps: the larger real value, else "covered, no echo" over "no coverage".
+fn stronger(a: MrmsCellValue, b: MrmsCellValue) -> MrmsCellValue {
+    match (a, b) {
+        (MrmsCellValue::Value(x), MrmsCellValue::Value(y)) => MrmsCellValue::Value(x.max(y)),
+        (MrmsCellValue::Value(_), _) => a,
+        (_, MrmsCellValue::Value(_)) => b,
+        (MrmsCellValue::Missing, _) | (_, MrmsCellValue::Missing) => MrmsCellValue::Missing,
+        _ => MrmsCellValue::NoCoverage,
     }
 }
 
@@ -220,13 +237,18 @@ pub fn decode_field(url: &str, bytes: &[u8], product: MrmsProduct) -> Result<Mrm
         lat_step_magnitude
     };
 
+    // Rotation tracks come at 0.005 deg (14000 columns), past a GPU texture's 8192 limit: keep the
+    // strongest value of each 2x2 block, which lands them on the same 0.01 deg grid as the rest.
+    let pool: u32 = if ni > MAX_GRID_WIDTH { 2 } else { 1 };
+    let (out_ni, out_nj) = (ni.div_ceil(pool), nj.div_ceil(pool));
+    let half_cell = f64::from(pool - 1) / 2.0;
     let geometry = GridGeometry::RegularLatLon(RegularLatLonGrid {
-        width: ni,
-        height: nj,
-        origin_lat_deg: la1,
-        origin_lon_deg: lo1,
-        lat_step_deg,
-        lon_step_deg: lon_step_magnitude,
+        width: out_ni,
+        height: out_nj,
+        origin_lat_deg: la1 + lat_step_deg * half_cell,
+        origin_lon_deg: (lo1 + lon_step_magnitude * half_cell).rem_euclid(360.0),
+        lat_step_deg: lat_step_deg * f64::from(pool),
+        lon_step_deg: lon_step_magnitude * f64::from(pool),
     });
 
     let ij_iter = submessage.ij().map_err(|e| MrmsError::Grib2Parse {
@@ -239,34 +261,37 @@ pub fn decode_field(url: &str, bytes: &[u8], product: MrmsProduct) -> Result<Mrm
             url: url.to_string(),
             message: e.to_string(),
         })?;
-    let decoded_values: Vec<f32> = decoder
-        .dispatch()
-        .map_err(|e| MrmsError::Grib2Parse {
-            url: url.to_string(),
-            message: e.to_string(),
-        })?
-        .collect();
+    // Streamed straight into the grid, never collected: a full-resolution list would double peak memory.
+    let decoded_values = decoder.dispatch().map_err(|e| MrmsError::Grib2Parse {
+        url: url.to_string(),
+        message: e.to_string(),
+    })?;
 
-    let expected = geometry.point_count();
-    if decoded_values.len() != expected {
-        return Err(MrmsError::GridSizeMismatch {
-            url: url.to_string(),
-            decoded: decoded_values.len(),
-            expected,
-            ni,
-            nj,
-        });
-    }
-
-    let mut values = vec![None; expected];
+    let expected = ni as usize * nj as usize;
+    let mut values: Vec<Option<MrmsCellValue>> = vec![None; out_ni as usize * out_nj as usize];
+    let mut decoded = 0usize;
     for ((i, j), raw) in ij_iter.zip(decoded_values) {
         if i >= ni as usize || j >= nj as usize {
             return Err(MrmsError::IncompleteGridCoverage {
                 url: url.to_string(),
             });
         }
-        let index = j * ni as usize + i;
-        values[index] = Some(classify_raw_value(product, raw));
+        decoded += 1;
+        let index = (j / pool as usize) * out_ni as usize + i / pool as usize;
+        let cell = classify_raw_value(product, raw);
+        values[index] = Some(match values[index] {
+            None => cell,
+            Some(held) => stronger(held, cell),
+        });
+    }
+    if decoded != expected {
+        return Err(MrmsError::GridSizeMismatch {
+            url: url.to_string(),
+            decoded,
+            expected,
+            ni,
+            nj,
+        });
     }
     if values.iter().any(Option::is_none) {
         return Err(MrmsError::IncompleteGridCoverage {
@@ -422,6 +447,15 @@ mod tests {
             classify_raw_value(MrmsProduct::PrecipRate, -2.5),
             MrmsCellValue::Value(-2.5)
         );
+    }
+
+    #[test]
+    fn pooling_keeps_the_strongest_cell() {
+        use MrmsCellValue::{Missing, NoCoverage, Value};
+        assert_eq!(stronger(Value(3.0), Value(9.0)), Value(9.0));
+        assert_eq!(stronger(Missing, Value(0.0)), Value(0.0));
+        assert_eq!(stronger(NoCoverage, Missing), Missing);
+        assert_eq!(stronger(NoCoverage, NoCoverage), NoCoverage);
     }
 
     #[test]

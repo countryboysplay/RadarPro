@@ -55,6 +55,14 @@ pub enum MrmsProduct {
     /// `CONUS/MESH_Max_60min_00.50/` -- max estimated hail size over the
     /// past 60 minutes, mm (a hail swath).
     MeshMax60min,
+    /// `CONUS/MESH_Max_240min_00.50/` -- the same hail swath over the past 4 hours.
+    MeshMax240min,
+    /// `CONUS/RotationTrack60min_00.50/` -- max 0-2 km AGL azimuthal shear over
+    /// the past 60 minutes (a low-level rotation track), in 0.001 s^-1: live
+    /// values are 0 with a tail of small integers up to ~70.
+    RotationTrack60min,
+    /// `CONUS/RotationTrack240min_00.50/` -- the same rotation track over the past 4 hours.
+    RotationTrack240min,
     /// `CONUS/EchoTop_18_00.50/` -- 18 dBZ echo top height, km MSL.
     EchoTop18,
     /// `CONUS/VIL_00.50/` -- vertically integrated liquid, kg/m^2.
@@ -78,10 +86,13 @@ pub enum MrmsProduct {
 }
 
 impl MrmsProduct {
-    pub const ALL: [MrmsProduct; 9] = [
+    pub const ALL: [MrmsProduct; 12] = [
         MrmsProduct::ReflectivityQcComposite,
         MrmsProduct::PrecipRate,
         MrmsProduct::MeshMax60min,
+        MrmsProduct::MeshMax240min,
+        MrmsProduct::RotationTrack60min,
+        MrmsProduct::RotationTrack240min,
         MrmsProduct::EchoTop18,
         MrmsProduct::Vil,
         MrmsProduct::Qpe01h,
@@ -98,6 +109,9 @@ impl MrmsProduct {
             MrmsProduct::ReflectivityQcComposite => "MergedReflectivityQCComposite_00.50",
             MrmsProduct::PrecipRate => "PrecipRate_00.00",
             MrmsProduct::MeshMax60min => "MESH_Max_60min_00.50",
+            MrmsProduct::MeshMax240min => "MESH_Max_240min_00.50",
+            MrmsProduct::RotationTrack60min => "RotationTrack60min_00.50",
+            MrmsProduct::RotationTrack240min => "RotationTrack240min_00.50",
             MrmsProduct::EchoTop18 => "EchoTop_18_00.50",
             MrmsProduct::Vil => "VIL_00.50",
             MrmsProduct::Qpe01h => "RadarOnly_QPE_01H_00.00",
@@ -113,7 +127,8 @@ impl MrmsProduct {
         match self {
             MrmsProduct::ReflectivityQcComposite => "dBZ",
             MrmsProduct::PrecipRate => "mm/hr",
-            MrmsProduct::MeshMax60min => "mm",
+            MrmsProduct::MeshMax60min | MrmsProduct::MeshMax240min => "mm",
+            MrmsProduct::RotationTrack60min | MrmsProduct::RotationTrack240min => "0.001/s",
             MrmsProduct::EchoTop18 => "km",
             MrmsProduct::Vil => "kg/m^2",
             MrmsProduct::Qpe01h | MrmsProduct::Qpe03h => "mm",
@@ -128,6 +143,9 @@ impl MrmsProduct {
             MrmsProduct::ReflectivityQcComposite => "MRMS national reflectivity mosaic",
             MrmsProduct::PrecipRate => "MRMS precipitation rate",
             MrmsProduct::MeshMax60min => "MRMS max hail size (60 min)",
+            MrmsProduct::MeshMax240min => "MRMS max hail size (4 h)",
+            MrmsProduct::RotationTrack60min => "MRMS low-level rotation track (60 min)",
+            MrmsProduct::RotationTrack240min => "MRMS low-level rotation track (4 h)",
             MrmsProduct::EchoTop18 => "MRMS echo tops (18 dBZ)",
             MrmsProduct::Vil => "MRMS vertically integrated liquid",
             MrmsProduct::Qpe01h => "MRMS 1-hour rainfall (radar only)",

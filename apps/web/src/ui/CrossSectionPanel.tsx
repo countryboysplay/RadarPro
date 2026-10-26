@@ -49,9 +49,9 @@ export function CrossSectionPanel({ line, picking, onStartPick, onClear }: Cross
         <button type="button" onClick={onStartPick} disabled={picking}>
           {line ? "Set a new leg" : "Set leg on map"}
         </button>
-        {line && (
+        {(line || picking) && (
           <button type="button" className="button-quiet" onClick={onClear}>
-            Clear
+            {picking ? "Cancel" : "Clear"}
           </button>
         )}
       </div>

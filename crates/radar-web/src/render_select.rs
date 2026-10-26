@@ -61,6 +61,14 @@ pub fn volume_sweep_summaries(volume: &Volume) -> Vec<SweepSummary> {
         .collect()
 }
 
+/// How many of `volume`'s sweeps are fully received. A real-time volume
+/// still arriving may end part-way through its last sweep, so that one only
+/// counts once the volume is complete.
+pub fn complete_sweep_count(volume: &Volume, volume_complete: bool) -> usize {
+    let n = volume.sweeps.len();
+    if volume_complete { n } else { n.saturating_sub(1) }
+}
+
 /// Every distinct [`MomentKind`] at least one of `sweep`'s radials
 /// carries, deduplicated and in canonical [`MomentKind`] order.
 fn moments_present_in(sweep: &Sweep) -> Vec<MomentKind> {
@@ -105,6 +113,14 @@ mod tests {
     }
 
     // --- volume_sweep_summaries / resolve_sweep: pure logic --------------
+
+    #[test]
+    fn complete_sweep_count_holds_back_the_last_sweep_while_arriving() {
+        let volume = decode_fixture();
+        let n = volume.sweeps.len();
+        assert_eq!(complete_sweep_count(&volume, true), n);
+        assert_eq!(complete_sweep_count(&volume, false), n - 1);
+    }
 
     #[test]
     fn volume_sweep_summaries_lists_every_sweep_with_its_present_moments() {

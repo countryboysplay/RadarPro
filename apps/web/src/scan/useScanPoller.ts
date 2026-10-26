@@ -39,7 +39,7 @@ export type PollEvent =
  */
 export function useScanPoller(
   icao: string,
-  onVolumeBytes: (bytes: Uint8Array, volume: DiscoveredVolume) => void,
+  onVolumeBytes: (bytes: Uint8Array, volume: DiscoveredVolume, complete?: boolean) => void,
   /** `false` pauses polling entirely (archive playback). */
   enabled = true,
 ): PollEvent {
@@ -64,7 +64,7 @@ export function useScanPoller(
       if (cancelled) return; // a fetch that finished after a site switch belongs to the old site.
       const described = volume.describe();
       if (!described) return;
-      onVolumeBytesRef.current(bytes, described);
+      onVolumeBytesRef.current(bytes, described, volume.complete);
       setEvent({ type: "receiving", volume: described, complete: volume.complete });
     };
 

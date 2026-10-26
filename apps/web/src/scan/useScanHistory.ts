@@ -2,6 +2,7 @@ import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import type { DiscoveredVolume } from "../nexrad/keys";
 import { discoverDay, downloadVolume } from "../nexrad/bucket";
 import { type PollEvent, useScanPoller } from "./useScanPoller";
+import { completeSweepCount, ensureWasmModuleLoaded } from "../radar/wasmModule";
 
 /**
  * Hard cap on how many recently-downloaded scans are held in memory at
@@ -82,6 +83,10 @@ export interface HistoryEntryMeta {
   startTimeMillis: number;
   /** Changes when the held bytes change: a real-time volume grows chunk by chunk under one key. */
   revision?: number;
+  /** `false` while a real-time volume is still arriving; archive scans are always complete. */
+  complete?: boolean;
+  /** Sweeps fully received so far, for a volume still arriving. */
+  sweepsIn?: number;
 }
 
 interface HistoryState {
@@ -94,18 +99,24 @@ interface HistoryState {
    * `MAX_HISTORY_SCANS` constant, so the Settings panel's live value drives
    * eviction directly. */
   maxEntries: number;
+  /** Live mode follows a volume still arriving (`true`), or moves onto it once `watchedSweep` is in. */
+  showArriving: boolean;
+  /** The sweep on screen: live mode waits for this one in a volume still arriving. */
+  watchedSweep: number | null;
 }
 
 type HistoryAction =
   | { type: "RESET" }
-  | { type: "SCAN_ADDED"; key: string; startTimeMillis: number; revision?: number }
+  | { type: "SCAN_ADDED"; key: string; startTimeMillis: number; revision?: number; complete?: boolean; sweepsIn?: number }
   | { type: "STEP"; delta: -1 | 1 }
   | { type: "TOGGLE_PLAY" }
   | { type: "ADVANCE_FRAME" }
   | { type: "SET_FRAME_MS"; ms: number }
   | { type: "JUMP_LATEST" }
   | { type: "JUMP_TO_TIME"; millis: number }
-  | { type: "SET_MAX_ENTRIES"; maxEntries: number };
+  | { type: "SET_MAX_ENTRIES"; maxEntries: number }
+  | { type: "SET_SHOW_ARRIVING"; showArriving: boolean }
+  | { type: "SET_WATCHED_SWEEP"; watchedSweep: number | null };
 
 const MIN_FRAME_MS = 100;
 const MAX_FRAME_MS = 4000;
@@ -116,8 +127,30 @@ function utcDay(d: Date) {
   return { year: d.getUTCFullYear(), month: d.getUTCMonth() + 1, day: d.getUTCDate() };
 }
 
-export function initialState(maxEntries: number = MAX_HISTORY_SCANS): HistoryState {
-  return { entries: [], currentIndex: -1, playMode: "live", frameMs: DEFAULT_FRAME_MS, maxEntries: clampHistoryLimit(maxEntries) };
+export function initialState(maxEntries: number = MAX_HISTORY_SCANS, showArriving = false): HistoryState {
+  return {
+    entries: [],
+    currentIndex: -1,
+    playMode: "live",
+    frameMs: DEFAULT_FRAME_MS,
+    maxEntries: clampHistoryLimit(maxEntries),
+    showArriving,
+    watchedSweep: null,
+  };
+}
+
+/** Whether a frame can be shown at `sweep`: complete, or still arriving with that sweep already in. */
+export function frameHasSweep(e: HistoryEntryMeta, sweep: number | null): boolean {
+  return e.complete !== false || (sweep !== null && (e.sweepsIn ?? 0) > sweep);
+}
+
+/** The frame live mode shows: the newest one with the watched sweep in (the newest of all if none
+ * has it yet, or when arriving volumes are shown as they come). */
+function liveIndex(state: Pick<HistoryState, "showArriving" | "watchedSweep">, entries: HistoryEntryMeta[]): number {
+  if (!state.showArriving) {
+    for (let i = entries.length - 1; i >= 0; i--) if (frameHasSweep(entries[i], state.watchedSweep)) return i;
+  }
+  return entries.length - 1;
 }
 
 /** Shared FIFO-eviction trim used by both `SCAN_ADDED` (a new scan pushed
@@ -141,19 +174,27 @@ function clampIndex(index: number, length: number): number {
 export function historyReducer(state: HistoryState, action: HistoryAction): HistoryState {
   switch (action.type) {
     case "RESET":
-      return { ...initialState(state.maxEntries), frameMs: state.frameMs };
+      return { ...initialState(state.maxEntries, state.showArriving), frameMs: state.frameMs, watchedSweep: state.watchedSweep };
 
     case "SCAN_ADDED": {
       const existing = state.entries.findIndex((e) => e.key === action.key);
       if (existing !== -1) {
         // Same volume again: an in-place update when its bytes grew, otherwise nothing to do.
-        if (state.entries[existing].revision === action.revision) return state;
-        const entries = state.entries.map((e, i) => (i === existing ? { ...e, revision: action.revision } : e));
-        return { ...state, entries };
+        const held = state.entries[existing];
+        // An arriving volume's sweep count is worked out asynchronously, so an older revision can land late.
+        if ((action.revision ?? 0) < (held.revision ?? 0)) return state;
+        if (held.revision === action.revision && held.complete === action.complete && held.sweepsIn === action.sweepsIn) return state;
+        const entries = state.entries.map((e, i) =>
+          i === existing ? { ...e, revision: action.revision, complete: action.complete, sweepsIn: action.sweepsIn } : e,
+        );
+        // Live mode moves onto an arriving volume once the watched sweep is in, or it completes.
+        const currentIndex = state.playMode === "live" ? liveIndex(state, entries) : state.currentIndex;
+        return { ...state, entries, currentIndex };
       }
       // Kept in time order: backfill adds older scans while the poller adds newer ones.
       const currentKey = state.entries[state.currentIndex]?.key;
-      const grown = [...state.entries, { key: action.key, startTimeMillis: action.startTimeMillis, revision: action.revision }].sort(
+      const added = { key: action.key, startTimeMillis: action.startTimeMillis, revision: action.revision, complete: action.complete, sweepsIn: action.sweepsIn };
+      const grown = [...state.entries, added].sort(
         (a, b) => a.startTimeMillis - b.startTimeMillis,
       );
       const heldIndex = currentKey === undefined ? state.currentIndex : grown.findIndex((e) => e.key === currentKey);
@@ -168,7 +209,7 @@ export function historyReducer(state: HistoryState, action: HistoryAction): Hist
       // playing modes leave `currentIndex` untouched so a new background
       // download never yanks the view away from what's being reviewed.
       if (state.playMode === "live") {
-        currentIndex = entries.length - 1;
+        currentIndex = liveIndex(state, entries);
       }
       return { ...state, entries, currentIndex };
     }
@@ -186,7 +227,12 @@ export function historyReducer(state: HistoryState, action: HistoryAction): Hist
 
     case "ADVANCE_FRAME": {
       if (state.playMode !== "playing" || state.entries.length === 0) return state;
-      const currentIndex = (state.currentIndex + 1) % state.entries.length;
+      let currentIndex = state.currentIndex;
+      // The loop skips a volume still arriving without the sweep on screen, the same as live mode.
+      for (let n = 0; n < state.entries.length; n++) {
+        currentIndex = (currentIndex + 1) % state.entries.length;
+        if (state.showArriving || frameHasSweep(state.entries[currentIndex], state.watchedSweep)) break;
+      }
       return { ...state, currentIndex };
     }
 
@@ -205,7 +251,19 @@ export function historyReducer(state: HistoryState, action: HistoryAction): Hist
 
     case "JUMP_LATEST": {
       if (state.entries.length === 0) return { ...state, playMode: "live" };
-      return { ...state, currentIndex: state.entries.length - 1, playMode: "live" };
+      return { ...state, currentIndex: liveIndex(state, state.entries), playMode: "live" };
+    }
+
+    case "SET_SHOW_ARRIVING": {
+      if (action.showArriving === state.showArriving) return state;
+      const next = { ...state, showArriving: action.showArriving };
+      return { ...next, currentIndex: state.playMode === "live" ? liveIndex(next, state.entries) : state.currentIndex };
+    }
+
+    case "SET_WATCHED_SWEEP": {
+      if (action.watchedSweep === state.watchedSweep) return state;
+      const next = { ...state, watchedSweep: action.watchedSweep };
+      return { ...next, currentIndex: state.playMode === "live" ? liveIndex(next, state.entries) : state.currentIndex };
     }
 
     case "JUMP_TO_TIME": {
@@ -253,6 +311,8 @@ export interface ScanHistory {
    * `next`: a deliberate jump is never mistaken for "live". */
   jumpToNearestByTimestamp: (millis: number) => void;
   setFrameMs: (ms: number) => void;
+  /** The sweep on screen, which live mode waits for in a volume still arriving. */
+  setWatchedSweep: (sweep: number | null) => void;
   /** Non-null while showing archived (past) scans instead of the live feed:
    * the requested UTC start instant, in ms. */
   archiveStartMillis: number | null;
@@ -308,11 +368,13 @@ export interface ScanHistory {
  * new -- see `currentVolumeAgeMillis`/`isLiveStale` below and
  * `PlaybackControls`'s use of them.
  */
-export function useScanHistory(icao: string, maxEntries: number = MAX_HISTORY_SCANS): ScanHistory {
+export function useScanHistory(icao: string, maxEntries: number = MAX_HISTORY_SCANS, showArriving = false): ScanHistory {
   const [state, dispatch] = useReducer(historyReducer, maxEntries, initialState);
   const maxEntriesRef = useRef(maxEntries);
   maxEntriesRef.current = maxEntries;
   const bytesRef = useRef<Map<string, Uint8Array>>(new Map());
+  // Bumped on every reset, so a sweep count finishing after a site or mode switch is dropped.
+  const generationRef = useRef(0);
 
   // S10 Phase 2: live-adjust the cache cap when the Settings panel's value
   // changes, without needing a full site reset -- trims from the oldest
@@ -323,10 +385,19 @@ export function useScanHistory(icao: string, maxEntries: number = MAX_HISTORY_SC
   useEffect(() => {
     dispatch({ type: "SET_MAX_ENTRIES", maxEntries });
   }, [maxEntries]);
+  useEffect(() => {
+    dispatch({ type: "SET_SHOW_ARRIVING", showArriving });
+  }, [showArriving]);
 
-  const onVolumeBytes = useCallback((bytes: Uint8Array, volume: DiscoveredVolume) => {
+  const onVolumeBytes = useCallback((bytes: Uint8Array, volume: DiscoveredVolume, complete?: boolean) => {
     bytesRef.current.set(volume.key, bytes);
-    dispatch({ type: "SCAN_ADDED", key: volume.key, startTimeMillis: volume.startTimeMillis, revision: bytes.length });
+    const scan = { type: "SCAN_ADDED", key: volume.key, startTimeMillis: volume.startTimeMillis, revision: bytes.length, complete } as const;
+    if (complete !== false) return dispatch(scan);
+    // Counted on a separate decode, so the scan on screen stays untouched until live mode moves.
+    const generation = generationRef.current;
+    void ensureWasmModuleLoaded().then(() => {
+      if (generation === generationRef.current) dispatch({ ...scan, sweepsIn: completeSweepCount(bytes, false) });
+    });
   }, []);
 
   // An object, not a number, so retrying the same time is still a new value and re-runs the load.
@@ -339,6 +410,7 @@ export function useScanHistory(icao: string, maxEntries: number = MAX_HISTORY_SC
   // day's scans. Switching sites or modes cancels any in-flight loads.
   useEffect(() => {
     dispatch({ type: "RESET" });
+    generationRef.current++;
     bytesRef.current.clear();
     const controller = new AbortController();
     if (archive === null) {
@@ -391,6 +463,8 @@ export function useScanHistory(icao: string, maxEntries: number = MAX_HISTORY_SC
           const bytes = await downloadVolume(volume.key, controller.signal);
           if (controller.signal.aborted) return;
           onVolumeBytes(bytes, volume);
+          // Hold the requested time while the later scans load behind it.
+          if (i === 0) dispatch({ type: "JUMP_TO_TIME", millis: startMillis });
         }
         setArchiveStatus(`${picked.length} archived scans loaded`);
       } catch (err) {
@@ -455,6 +529,7 @@ export function useScanHistory(icao: string, maxEntries: number = MAX_HISTORY_SC
     [],
   );
   const setFrameMs = useCallback((ms: number) => dispatch({ type: "SET_FRAME_MS", ms }), []);
+  const setWatchedSweep = useCallback((watchedSweep: number | null) => dispatch({ type: "SET_WATCHED_SWEEP", watchedSweep }), []);
 
   return {
     entries: state.entries,
@@ -469,6 +544,7 @@ export function useScanHistory(icao: string, maxEntries: number = MAX_HISTORY_SC
     jumpToLatest,
     jumpToNearestByTimestamp,
     setFrameMs,
+    setWatchedSweep,
     archiveStartMillis,
     archiveStatus,
     loadArchive,

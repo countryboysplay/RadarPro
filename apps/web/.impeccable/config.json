@@ -1,0 +1,23 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "src/App.css"
+        ],
+        "createdAt": "2026-10-26T18:07:28.236Z",
+        "reason": "DESIGN.md line 173 specifies the 3px Forecast Amber left rule on the map forecast badge (.map-forecast-badge) as the 'model, not observed' marker; rule predates this session"
+      },
+      {
+        "rule": "design-system-font",
+        "value": "cascadia code",
+        "createdAt": "2026-10-26T18:09:29.577Z",
+        "reason": "DESIGN.md line 201 sanctions ui-monospace inside the colour-table editor's JSON textarea; Cascadia Code is a fallback in that same monospace stack (App.css .color-table-editor-textarea), unchanged this session"
+      }
+    ]
+  }
+}

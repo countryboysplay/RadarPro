@@ -27,7 +27,7 @@ import {
   notifyDesktop,
 } from "./platform/desktop";
 import { type PollEvent } from "./scan/useScanPoller";
-import { MAX_HISTORY_SCANS, useScanHistory } from "./scan/useScanHistory";
+import { frameHasSweep, MAX_HISTORY_SCANS, useScanHistory } from "./scan/useScanHistory";
 import { InfoPanel } from "./ui/InfoPanel";
 import { PlaybackControls } from "./ui/PlaybackControls";
 import { ArchiveLoader } from "./ui/ArchiveLoader";
@@ -403,7 +403,8 @@ export default function App() {
   // default to track, unlike `useRainbowPoint`).
   const stormMotion = useStormMotion();
 
-  const history = useScanHistory(icao, cacheLimit);
+  const [showArrivingScans, setShowArrivingScans] = useRememberedFlag("radarpro.showArrivingScans", false);
+  const history = useScanHistory(icao, cacheLimit, showArrivingScans);
 
   // S09: forecast state lifted here (out of `ForecastPanel`, which used to
   // own this hook entirely internally) so the unified timeline below can
@@ -713,6 +714,8 @@ export default function App() {
     siteIcao: string;
     sweepCount: number;
     elevationDegs: number[];
+    /** Wire codes per sweep, read once at decode so render never re-asks the renderer. */
+    sweepMomentCodes: string[][];
   } | null>(null);
   const [sweepIndex, setSweepIndex] = useState<number | null>(null);
   const [momentCode, setMomentCode] = useState<string | null>(null);
@@ -812,20 +815,28 @@ export default function App() {
   // not themselves depend on (and re-run for) every selection change.
   const sweepIndexRef = useRef<number | null>(null);
   const momentCodeRef = useRef<string | null>(null);
-  useEffect(() => {
-    sweepIndexRef.current = sweepIndex;
-  }, [sweepIndex]);
-  useEffect(() => {
-    momentCodeRef.current = momentCode;
-  }, [momentCode]);
+  // Set together with the state, never in a later effect: loop export reads the refs from a
+  // timer that can run between a scan change and its effects, asking an old tilt of a new scan.
+  const selectSweep = useCallback((i: number | null) => {
+    sweepIndexRef.current = i;
+    setSweepIndex(i);
+  }, []);
+  const selectMoment = useCallback((m: string | null) => {
+    momentCodeRef.current = m;
+    setMomentCode(m);
+  }, []);
+  // Live mode moves onto a new scan as soon as the tilt the user picked has arrived in it. The
+  // picked tilt, not the shown one: a fallback tilt here would flip live mode between two scans.
+  const { setWatchedSweep } = history;
+  useEffect(() => setWatchedSweep(preferredSweepRef.current ?? sweepIndex), [setWatchedSweep, sweepIndex]);
 
   // Switching sites invalidates any previous selection -- a new volume's
   // sweep/moment layout may not resemble the old site's at all.
   useEffect(() => {
     setVolumeMeta(null);
-    setSweepIndex(null);
+    selectSweep(null);
     preferredSweepRef.current = null;
-    setMomentCode(null);
+    selectMoment(null);
     setSweepMoments([]);
   }, [icao]);
 
@@ -864,10 +875,10 @@ export default function App() {
       preferredSweepRef.current = newSweepIndex;
       const moments = resolveMomentForSweep(newSweepIndex);
       const newMoment = resolvePreferredMoment(momentCodeRef.current, moments);
-      setSweepIndex(newSweepIndex);
+      selectSweep(newSweepIndex);
       setSweepMoments(moments);
       if (newMoment) {
-        setMomentCode(newMoment);
+        selectMoment(newMoment);
         renderSelection(newSweepIndex, newMoment);
       }
     },
@@ -881,22 +892,22 @@ export default function App() {
       const current = sweepIndexRef.current;
       if (current === null || !volumeMeta) return;
       const wire = newMoment === "SRV" ? "VEL" : newMoment;
-      if (momentWireCodesForSweep(current).includes(wire)) {
-        setMomentCode(newMoment);
+      if (volumeMeta.sweepMomentCodes[current]?.includes(wire)) {
+        selectMoment(newMoment);
         renderSelection(current, newMoment);
         return;
       }
       const elevations = volumeMeta.elevationDegs;
       let target: number | null = null;
       for (let i = 0; i < elevations.length; i++) {
-        if (!momentWireCodesForSweep(i).includes(wire)) continue;
+        if (!volumeMeta.sweepMomentCodes[i]?.includes(wire)) continue;
         if (target === null || Math.abs(elevations[i] - elevations[current]) < Math.abs(elevations[target] - elevations[current])) target = i;
       }
       if (target === null) return;
       momentCodeRef.current = newMoment;
       changeSweep(target);
     },
-    [renderSelection, changeSweep, momentWireCodesForSweep, volumeMeta],
+    [renderSelection, changeSweep, volumeMeta],
   );
 
   const stepElevation = useCallback(
@@ -939,11 +950,11 @@ export default function App() {
     const moments = momentWireCodesForSweep(newSweepIndex);
     const newMoment = resolvePreferredMoment(momentCodeRef.current, moments);
 
-    setVolumeMeta(meta);
-    setSweepIndex(newSweepIndex);
+    setVolumeMeta({ ...meta, sweepMomentCodes: meta.elevationDegs.map((_, i) => momentWireCodesForSweep(i)) });
+    selectSweep(newSweepIndex);
     setSweepMoments(moments);
     if (newMoment) {
-      setMomentCode(newMoment);
+      selectMoment(newMoment);
       renderSelection(newSweepIndex, newMoment);
     }
     // Intentionally keyed on (status, currentKey, currentRevision) only -- the
@@ -1001,6 +1012,12 @@ export default function App() {
     },
     [probeGate, site.lat, site.lon],
   );
+  // Re-read the gate under a cursor held still while the tilt, product or scan changes.
+  // `cursor` is read, not a dependency: moving it already re-probes (throttled) above.
+  useEffect(() => {
+    if (!cursor || sweepIndex === null || !momentCode) return;
+    setProbe(probeGate(site.lat, site.lon, sweepIndex, momentCode, cursor.lat, cursor.lon));
+  }, [sweepIndex, momentCode, volumeMeta]);
   const handleCursorLeave = useCallback(() => {
     setCursor(null);
     setProbe(null);
@@ -1124,6 +1141,8 @@ export default function App() {
             setRainbowPointPickTarget(null);
           }
           setSoundingPicking(false);
+          setXsPicking(false);
+          setXsLine((l) => (l?.b ? l : null)); // drop a half-placed leg
           break;
       }
     }
@@ -1221,7 +1240,7 @@ export default function App() {
   }
 
   // Every product in the volume, current tilt's first; `changeMoment` finds the tilt.
-  const volumeMoments = [...new Set([...sweepMoments, ...(volumeMeta ? volumeMeta.elevationDegs.flatMap((_, i) => momentWireCodesForSweep(i)) : [])])];
+  const volumeMoments = [...new Set([...sweepMoments, ...(volumeMeta?.sweepMomentCodes.flat() ?? [])])];
   const elevationDeg = sweepIndex !== null ? (volumeMeta?.elevationDegs[sweepIndex] ?? null) : null;
   // S11 Phase 2b: "SRV" is offered in the Moment picker only when "VEL" is
   // present on the current sweep (SRV is meaningless without a VEL moment
@@ -1388,15 +1407,21 @@ export default function App() {
       id: "app",
       title: "Data & app",
       content: (
-        <SettingsPanel
-          scanPollEvent={history.pollEvent}
-          alertStatus={alerts.status}
-          alertError={alerts.error}
-          alertLastPolledAt={alerts.lastPolledAt}
-          cacheLimit={cacheLimit}
-          cacheEntriesCount={history.entries.length}
-          onCacheLimitChange={setCacheLimit}
-        />
+        <>
+          <label className="check-field">
+            <input type="checkbox" checked={showArrivingScans} onChange={(e) => setShowArrivingScans(e.target.checked)} />
+            <span>Live: show a scan while it is still arriving (off switches to a new scan once the tilt on screen has fully arrived)</span>
+          </label>
+          <SettingsPanel
+            scanPollEvent={history.pollEvent}
+            alertStatus={alerts.status}
+            alertError={alerts.error}
+            alertLastPolledAt={alerts.lastPolledAt}
+            cacheLimit={cacheLimit}
+            cacheEntriesCount={history.entries.length}
+            onCacheLimitChange={setCacheLimit}
+          />
+        </>
       ),
     },
   ];
@@ -1606,7 +1631,7 @@ export default function App() {
             }
             timeMs={inForecast ? forecastValidMs : (currentEntry?.startTimeMillis ?? null)}
             tableJson={forecastOnMap ? null : activeTableJson}
-            frameTimes={inForecast ? [] : history.entries.map((e) => e.startTimeMillis)}
+            frameTimes={inForecast ? [] : history.entries.filter((e) => showArrivingScans || frameHasSweep(e, sweepIndex)).map((e) => e.startTimeMillis)}
             frameMs={history.frameMs}
             frameReady={drawnScan === `${currentKey}|${currentRevision}` && archived.settled && stormTracks.settled && spc.settled}
             goTo={history.jumpToNearestByTimestamp}

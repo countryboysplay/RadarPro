@@ -94,7 +94,17 @@ pub fn palette_for(product: crate::keys::MrmsProduct) -> MrmsPalette {
     match product {
         crate::keys::MrmsProduct::ReflectivityQcComposite => reflectivity_palette(),
         crate::keys::MrmsProduct::PrecipRate => precip_rate_palette(),
-        crate::keys::MrmsProduct::MeshMax60min => ramp_palette(&[
+        crate::keys::MrmsProduct::RotationTrack60min
+        | crate::keys::MrmsProduct::RotationTrack240min => ramp_palette(&[
+            (0.0, [0, 0, 0, 0]), // none, and the 3-4 background noise: transparent
+            (4.0, [0, 0, 0, 0]),
+            (5.0, [120, 200, 255, 200]),
+            (8.0, [230, 220, 0, 255]),  // moderate
+            (12.0, [230, 120, 0, 255]), // strong
+            (16.0, [220, 0, 0, 255]),   // tornadic range
+            (25.0, [200, 0, 220, 255]),
+        ]),
+        crate::keys::MrmsProduct::MeshMax60min | crate::keys::MrmsProduct::MeshMax240min => ramp_palette(&[
             (0.0, [0, 0, 0, 0]), // no hail: transparent
             (2.0, [120, 200, 255, 230]),
             (19.0, [40, 200, 90, 255]), // ~0.75 in

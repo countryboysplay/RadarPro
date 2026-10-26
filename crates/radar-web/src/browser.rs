@@ -1177,6 +1177,15 @@ impl RadarWebRenderer {
 /// `radar-geo`'s [`radar_geo::range_rings`], returning geometry only, with
 /// no knowledge of MapLibre or any other map renderer (`ARCHITECTURE.md`:
 /// "map integration is an adapter boundary, not a core dependency").
+/// Sweeps fully received in a real-time volume still arriving (see
+/// [`render_select::complete_sweep_count`]), decoded on its own so the
+/// volume a renderer is showing stays untouched; 0 if it doesn't decode yet.
+#[wasm_bindgen(js_name = completeSweepCount)]
+pub fn complete_sweep_count(archive2_bytes: &[u8], volume_complete: bool) -> u32 {
+    nexrad_level2::decode_volume(archive2_bytes)
+        .map_or(0, |v| render_select::complete_sweep_count(&v, volume_complete) as u32)
+}
+
 #[wasm_bindgen(js_name = rangeRingsGeoJson)]
 pub fn range_rings_geojson(
     site_lat_deg: f64,

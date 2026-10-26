@@ -71,6 +71,46 @@ describe("historyReducer", () => {
     expect(s.entries[s.currentIndex].key).toBe("k9");
   });
 
+  it("live mode holds the last complete scan until the arriving one finishes, unless told to show it", () => {
+    const arrive = (s: ReturnType<typeof initialState>, complete: boolean, revision: number) =>
+      historyReducer(s, { type: "SCAN_ADDED", key: "k2", startTimeMillis: 2000, revision, complete });
+    let s = add(add(initialState(5), 0), 1);
+    s = arrive(s, false, 100);
+    expect(s.entries[s.currentIndex].key).toBe("k1");
+    s = historyReducer(s, { type: "SET_SHOW_ARRIVING", showArriving: true });
+    expect(s.entries[s.currentIndex].key).toBe("k2");
+    s = historyReducer(s, { type: "SET_SHOW_ARRIVING", showArriving: false });
+    expect(s.entries[s.currentIndex].key).toBe("k1");
+    s = arrive(s, true, 200);
+    expect(s.entries[s.currentIndex].key).toBe("k2");
+    // The first volume of a site still arriving is shown rather than nothing.
+    const first = historyReducer(initialState(5), { type: "SCAN_ADDED", key: "a", startTimeMillis: 1, complete: false });
+    expect(first.currentIndex).toBe(0);
+  });
+
+  it("live mode moves onto an arriving scan once the watched tilt is in it", () => {
+    const arrive = (s: ReturnType<typeof initialState>, revision: number, sweepsIn: number) =>
+      historyReducer(s, { type: "SCAN_ADDED", key: "k2", startTimeMillis: 2000, revision, complete: false, sweepsIn });
+    let s = historyReducer(add(add(initialState(5), 0), 1), { type: "SET_WATCHED_SWEEP", watchedSweep: 2 });
+    s = arrive(s, 100, 2);
+    expect(s.entries[s.currentIndex].key).toBe("k1");
+    s = arrive(s, 200, 3);
+    expect(s.entries[s.currentIndex].key).toBe("k2");
+    // A count from an older revision landing late changes nothing.
+    expect(arrive(s, 150, 1)).toBe(s);
+    // Watching a higher tilt than has arrived goes back to the newest scan that has it.
+    s = historyReducer(s, { type: "SET_WATCHED_SWEEP", watchedSweep: 5 });
+    expect(s.entries[s.currentIndex].key).toBe("k1");
+  });
+
+  it("the loop skips a scan still arriving", () => {
+    let s = add(add(initialState(5), 0), 1);
+    s = historyReducer(s, { type: "SCAN_ADDED", key: "k2", startTimeMillis: 2000, complete: false });
+    s = historyReducer(s, { type: "TOGGLE_PLAY" });
+    const keys = [1, 2, 3].map(() => (s = historyReducer(s, { type: "ADVANCE_FRAME" })).entries[s.currentIndex].key);
+    expect(keys).toEqual(["k0", "k1", "k0"]);
+  });
+
   it("clamps the history limit", () => {
     expect(clampHistoryLimit(1)).toBe(5);
     expect(clampHistoryLimit(1000)).toBe(60);

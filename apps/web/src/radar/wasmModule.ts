@@ -21,6 +21,7 @@
 // This module just re-exports the new surface; all of the actual calling
 // logic lives in `useRadarRenderer.ts`.
 import init, {
+  completeSweepCount,
   initGpu,
   rangeRingsGeoJson,
   type ColorTableApplyResult,
@@ -30,7 +31,7 @@ import init, {
 } from "../wasm/radar_web.js";
 
 export type { RadarWebRenderer, VolumeSummary, ColorTableApplyResult, GateProbeResult };
-export { initGpu, rangeRingsGeoJson };
+export { completeSweepCount, initGpu, rangeRingsGeoJson };
 
 let modulePromise: Promise<void> | null = null;
 
