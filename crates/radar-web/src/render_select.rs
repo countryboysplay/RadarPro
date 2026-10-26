@@ -66,7 +66,11 @@ pub fn volume_sweep_summaries(volume: &Volume) -> Vec<SweepSummary> {
 /// counts once the volume is complete.
 pub fn complete_sweep_count(volume: &Volume, volume_complete: bool) -> usize {
     let n = volume.sweeps.len();
-    if volume_complete { n } else { n.saturating_sub(1) }
+    if volume_complete {
+        n
+    } else {
+        n.saturating_sub(1)
+    }
 }
 
 /// Every distinct [`MomentKind`] at least one of `sweep`'s radials

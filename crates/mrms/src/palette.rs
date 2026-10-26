@@ -104,15 +104,17 @@ pub fn palette_for(product: crate::keys::MrmsProduct) -> MrmsPalette {
             (16.0, [220, 0, 0, 255]),   // tornadic range
             (25.0, [200, 0, 220, 255]),
         ]),
-        crate::keys::MrmsProduct::MeshMax60min | crate::keys::MrmsProduct::MeshMax240min => ramp_palette(&[
-            (0.0, [0, 0, 0, 0]), // no hail: transparent
-            (2.0, [120, 200, 255, 230]),
-            (19.0, [40, 200, 90, 255]), // ~0.75 in
-            (25.0, [230, 220, 0, 255]), // 1 in, severe threshold
-            (44.0, [230, 120, 0, 255]), // 1.75 in
-            (51.0, [220, 0, 0, 255]),   // 2 in, significant
-            (76.0, [200, 0, 220, 255]), // 3 in+
-        ]),
+        crate::keys::MrmsProduct::MeshMax60min | crate::keys::MrmsProduct::MeshMax240min => {
+            ramp_palette(&[
+                (0.0, [0, 0, 0, 0]), // no hail: transparent
+                (2.0, [120, 200, 255, 230]),
+                (19.0, [40, 200, 90, 255]), // ~0.75 in
+                (25.0, [230, 220, 0, 255]), // 1 in, severe threshold
+                (44.0, [230, 120, 0, 255]), // 1.75 in
+                (51.0, [220, 0, 0, 255]),   // 2 in, significant
+                (76.0, [200, 0, 220, 255]), // 3 in+
+            ])
+        }
         crate::keys::MrmsProduct::EchoTop18 => ramp_palette(&[
             (0.0, [0, 0, 0, 0]), // no echo: transparent
             (1.0, [120, 200, 255, 200]),
