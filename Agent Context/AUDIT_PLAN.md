@@ -20,7 +20,7 @@ Size: S = under an hour, M = a few hours, L = a day or more.
 
 ## Status (updated 2026-11-16)
 
-All work is on branch `audit-batch-1` (not merged to `main`, not pushed).
+Batches 1-2 are on `main` and pushed (CI green on `8c26bef`). Continue on `main`.
 
 | Batch | State | Commit |
 |-------|-------|--------|

@@ -6,8 +6,9 @@
   issues. The fix plan, with a status table and a coverage table, is in
   `Agent Context/AUDIT_PLAN.md`. Work goes batch by batch; the owner says
   "start batch N".
-- **Branch `audit-batch-1`** holds `ef0d092` (batch 1) and `1fc8862`
-  (batch 2). Not merged to `main`, not pushed. CI has not run on it.
+- **On `main`, pushed:** `ef0d092` (batch 1), `1fc8862` (batch 2),
+  `8c26bef` (docs). CI green on `8c26bef`. The work branch was merged and
+  deleted.
 - **`apps/` had been deleted** in the working tree (not committed); it was
   restored from git. Untracked files there were lost: `node_modules` (were
   reinstalled for `apps/web` only), any `apps/web/.env` with a Rainbow key,
