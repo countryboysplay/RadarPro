@@ -18,6 +18,35 @@ batch.
 
 Size: S = under an hour, M = a few hours, L = a day or more.
 
+## Status (updated 2026-11-16)
+
+All work is on branch `audit-batch-1` (not merged to `main`, not pushed).
+
+| Batch | State | Commit |
+|-------|-------|--------|
+| 0 | Done: `apps/` restored with `git restore apps` | none needed |
+| 1 | Done, all 8 items | `ef0d092` |
+| 2 | Done, all 7 items | `1fc8862` |
+| 3-8 | Not started; next is batch 3 | |
+
+Notes from batches 1-2 that change later batches:
+
+- Batch 1.8 (F2): GEFS discovery now checks the mean at **+6h** (the
+  panel's default view), not +0h.
+- Batch 2.6 (F9) was done in Rust with a fetch sequence number in
+  forecast-web (`fetch_seq`), with no JS change.
+- Batch 2.3 (R4): KDP is offered wherever PHI is
+  (`render_select::moments_present_in`) and derived per sweep on first view
+  (`browser.rs` `kdp_sweeps`). `defaultSweepIndexForMoment("KDP")` maps to PHI.
+- Batch 2.2 (R3): `nexrad_level2::decode_volume_structure` decodes without
+  gates; it shares `decode()` with `decode_volume`.
+- Batch 4.1 (B2) is now cheaper: R2 and R3 are done.
+- Not yet verified: loop export (2.7) was not run in the browser, because
+  it downloads a file.
+- The native GPU tests (`forecast-core` gpu tests, `provider-hrrr
+  cross_provider_render`) crash on this PC's GPU driver with or without the
+  changes. GPU paths were checked in the browser instead.
+
 ## Batch 0: restore `apps/` (owner, before anything else)
 
 The working tree has the whole `apps/` folder (140 files) deleted but not

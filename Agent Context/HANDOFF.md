@@ -1,4 +1,26 @@
-# RadarPro handoff — 2026-10-26 (latest session on top; older notes below)
+# RadarPro handoff — 2026-11-16 (latest session on top; older notes below)
+
+## Session of 2026-11-16: whole-repo audit, fix batches 0-2
+
+- **Audit and plan:** a five-reviewer audit of `0173d47` found 46
+  issues. The fix plan, with a status table and a coverage table, is in
+  `Agent Context/AUDIT_PLAN.md`. Work goes batch by batch; the owner says
+  "start batch N".
+- **Branch `audit-batch-1`** holds `ef0d092` (batch 1) and `1fc8862`
+  (batch 2). Not merged to `main`, not pushed. CI has not run on it.
+- **`apps/` had been deleted** in the working tree (not committed); it was
+  restored from git. Untracked files there were lost: `node_modules` (were
+  reinstalled for `apps/web` only), any `apps/web/.env` with a Rainbow key,
+  and the desktop build output.
+- **This PC now has Rust** (rustup via winget, stable from
+  `rust-toolchain.toml`, wasm32 target, wasm-bindgen-cli 0.2.128). In Git
+  Bash, run `export PATH="$HOME/.cargo/bin:$PATH"` first.
+- **Native GPU tests crash** on this PC (STATUS_ACCESS_VIOLATION or
+  STATUS_HEAP_CORRUPTION) on unchanged code too: driver problem, not a
+  regression. Check GPU changes in the browser (dev server on 5173).
+- `apps/desktop/src-tauri` has rustfmt drift from before this session;
+  batch 6 adds the desktop crate to CI and fixes it.
+- Next: batch 3 (network input limits, placefile LAN block).
 
 ## Session of 2026-10-26
 
