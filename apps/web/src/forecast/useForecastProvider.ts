@@ -244,10 +244,13 @@ export function useForecastProvider(canvasRef: RefObject<HTMLCanvasElement>) {
   // Read inside selectProvider's async pipeline without making it a dependency.
   const variableRef = useRef(state.variable);
   variableRef.current = state.variable;
+  // The hour on screen: a fetch that finishes after the user moved on must not paint.
+  const leadRef = useRef(state.leadHours);
+  leadRef.current = state.leadHours;
   const generationRef = useRef(0);
   // Rendered frames for the current run, so revisiting an hour (and the loop) never refetches.
   // Cleared on provider/variable/ensemble change: 19 HRRR frames are ~105 MB.
-  const framesRef = useRef(new Map<string, ImageData>());
+  const framesRef = useRef(new Map<string, { grid: ForecastGridMetadata; imageData: ImageData }>());
   // The handle holds one "current grid", so fetch+render pairs must never interleave.
   const queueRef = useRef<Promise<unknown>>(Promise.resolve());
   const cachedLeadsFor = (variable: string, ensemble: ForecastEnsembleSpec | null) =>
@@ -315,8 +318,9 @@ export function useForecastProvider(canvasRef: RefObject<HTMLCanvasElement>) {
         )) as Uint8Array;
         // Copy: `Uint8Array.buffer` may be a SharedArrayBuffer, which ImageData rejects.
         const imageData = new ImageData(new Uint8ClampedArray(pixels), FORECAST_RENDER_WIDTH, FORECAST_RENDER_HEIGHT);
-        framesRef.current.set(frameKey(variable, ensemble, leadHours), imageData);
-        return { grid: JSON.parse(gridJson) as ForecastGridMetadata, imageData };
+        const frame = { grid: JSON.parse(gridJson) as ForecastGridMetadata, imageData };
+        framesRef.current.set(frameKey(variable, ensemble, leadHours), frame);
+        return frame;
       });
       queueRef.current = job.catch(() => undefined);
       return job;
@@ -339,14 +343,15 @@ export function useForecastProvider(canvasRef: RefObject<HTMLCanvasElement>) {
     ) => {
       const cached = framesRef.current.get(frameKey(variable, ensemble, leadHours));
       if (cached) {
-        paint(cached);
-        setState((s) => (generation === generationRef.current ? { ...s, phase: "ready", error: null } : s));
+        paint(cached.imageData);
+        setState((s) => (generation === generationRef.current ? { ...s, grid: cached.grid, phase: "ready", error: null } : s));
         return;
       }
+      const stale = () => generation !== generationRef.current || leadHours !== leadRef.current;
       try {
         setState((s) => (generation === generationRef.current ? { ...s, phase: "fetching", error: null } : s));
         const { grid, imageData } = await renderFrame(handle, variable, leadHours, ensemble);
-        if (generation !== generationRef.current) return;
+        if (stale()) return;
         paint(imageData);
         setState((s) =>
           generation === generationRef.current
@@ -354,7 +359,7 @@ export function useForecastProvider(canvasRef: RefObject<HTMLCanvasElement>) {
             : s,
         );
       } catch (err) {
-        if (generation !== generationRef.current) return;
+        if (stale()) return;
         setState((s) => ({ ...s, phase: "error", error: errMessage(err) }));
       }
     },
@@ -454,6 +459,7 @@ export function useForecastProvider(canvasRef: RefObject<HTMLCanvasElement>) {
         return;
       }
       const generation = generationRef.current;
+      leadRef.current = leadHours;
       setState((s) => ({ ...s, leadHours }));
       void fetchAndRender(handle, state.variable, leadHours, state.ensemble, generation);
     },

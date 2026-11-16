@@ -169,7 +169,12 @@ pub(crate) fn client() -> &'static reqwest::Client {
     static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
     CLIENT.get_or_init(|| {
         ensure_crypto_provider_installed();
-        reqwest::Client::builder().build().expect("failed to build reqwest client")
+        // A stalled server must not hang a command forever: the webview can't cancel an invoke.
+        reqwest::Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .expect("failed to build reqwest client")
     })
 }
 

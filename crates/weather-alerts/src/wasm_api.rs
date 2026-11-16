@@ -141,7 +141,7 @@ impl AlertStoreHandle {
     /// for this poll's time-based expiration check.
     ///
     /// Returns a JSON array of this poll's [`crate::store::AlertChange`]s
-    /// (same shape as [`AlertStoreHandle::drain_changes`]). Returns `Err`
+    /// (same shape as [`AlertStoreHandle::expire_stale`]). Returns `Err`
     /// only if the *entire* response body is unusable; a malformed
     /// individual feature inside it is dropped from this poll silently
     /// (per Deliverable 1 -- the caller can separately call
@@ -177,17 +177,6 @@ impl AlertStoreHandle {
             .inner
             .active_alerts_with_keys(now_from_millis(now_epoch_millis));
         crate::json::alerts_to_geojson(entries)
-    }
-
-    /// Drain and return every change accumulated since the last call to
-    /// this method (see [`crate::store::AlertStore::drain_changes`]), as a
-    /// JSON array string, for a details-panel/list UI to react to
-    /// incrementally rather than re-rendering the full active set on every
-    /// poll.
-    #[wasm_bindgen(js_name = drainChanges)]
-    pub fn drain_changes(&mut self) -> String {
-        let changes = self.inner.drain_changes();
-        crate::json::changes_to_json(&changes)
     }
 
     /// The number of alerts currently held (including any not yet past

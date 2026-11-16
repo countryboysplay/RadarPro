@@ -204,8 +204,7 @@ fn expiry_reason_str(reason: ExpiryReason) -> &'static str {
 
 /// Encode a batch of [`AlertChange`]s (as returned by
 /// [`crate::store::AlertStore::ingest_poll`],
-/// [`crate::store::AlertStore::expire_stale`], or
-/// [`crate::store::AlertStore::drain_changes`]) into a JSON array string,
+/// or [`crate::store::AlertStore::expire_stale`]) into a JSON array string,
 /// for a details-panel/list UI to react to incrementally.
 pub fn changes_to_json(changes: &[AlertChange]) -> String {
     let encoded: Vec<AlertChangeJson> = changes

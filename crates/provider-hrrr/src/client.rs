@@ -122,7 +122,8 @@ impl HrrrClient {
         product: Product,
         forecast_hour: ForecastHour,
     ) -> Result<bool, HrrrError> {
-        let key = crate::keys::object_key(run, product, forecast_hour);
+        // The `.idx` sidecar, not the GRIB2: a fetch needs the index first.
+        let key = crate::keys::idx_key(run, product, forecast_hour);
         let keys = self.list_objects(&key).await?;
         Ok(keys.iter().any(|k| k == &key))
     }
@@ -162,9 +163,7 @@ impl HrrrClient {
         }
         // Every attempt failed with a real error (never "confirmed absent",
         // per this method's own doc comment) -- surface it to the caller
-        // rather than silently treating it as absence; `find_recent_run`
-        // still just moves on to the next hour, but this keeps the
-        // distinction available to anything that wants it (e.g. logging).
+        // rather than silently treating it as absence.
         Err(last_err.expect("loop runs at least once, so last_err is always set on this path"))
     }
 
@@ -192,9 +191,10 @@ impl HrrrClient {
                 hour += 24;
             }
             let run = RunReference::new(year, month, day, hour as u8);
-            if let Ok(true) = self
+            // A network error is returned, not mistaken for "not published yet".
+            if self
                 .object_exists_with_retries(run, product, forecast_hour)
-                .await
+                .await?
             {
                 return Ok(run);
             }
@@ -375,5 +375,18 @@ mod tests {
     #[test]
     fn current_utc_hour_is_a_plausible_value() {
         assert!(current_utc_hour() < 24);
+    }
+
+    #[tokio::test]
+    async fn discovery_returns_a_network_error_instead_of_walking_back() {
+        let client = HrrrClient::new("http://127.0.0.1:1").unwrap();
+        let err = client
+            .find_recent_run(Product::CONUS_SURFACE, ForecastHour(0), 2)
+            .await
+            .unwrap_err();
+        assert!(
+            !matches!(err, HrrrError::NoPublishedRunFound { .. }),
+            "{err:?}"
+        );
     }
 }

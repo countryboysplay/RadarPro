@@ -666,8 +666,8 @@ export default function App() {
       return;
     }
     if (!myLocation.location) return;
-    const { covering, fresh: newlyCovering } = coveringAlerts(myLocation.location, alerts.activeAlerts, notifiedKeysRef.current, alertIdsHere);
-    notifiedKeysRef.current = new Set(covering.map(({ key }) => key));
+    const { fresh: newlyCovering, notified } = coveringAlerts(myLocation.location, alerts.activeAlerts, notifiedKeysRef.current, alertIdsHere);
+    notifiedKeysRef.current = notified;
     // Zone-only alerts include rip-current and fire-danger statements; of those, only watches and warnings notify.
     const fresh = newlyCovering.filter(({ alert }) => alert.geometry || /\b(Watch|Warning)$/.test(alert.event));
     if (fresh.length === 0) return;
@@ -769,7 +769,9 @@ export default function App() {
     showNotification(`Lightning ${Math.max(1, Math.round(km / 1.609))} mi from you`, "GOES lightning mapper, last 5 minutes", "lightning", false, () => {});
   }, [glm.flashes, glm.updatedMs, myLocation.location, notifyCovering, notifySound]);
   const nearbyStorms = useNearbyStormTracks(myLocation.location, notifyCovering);
-  const notifiedStormsRef = useRef<Map<string, number>>(new Map());
+  // Storm key -> highest rank notified and when it was last seen. A storm is kept
+  // 30 min after it drops out, so a radar-list reset doesn't notify it again.
+  const notifiedStormsRef = useRef<Map<string, { rank: number; seenMs: number }>>(new Map());
   useEffect(() => {
     if (!notifyCovering) {
       notifiedStormsRef.current = new Map();
@@ -777,8 +779,12 @@ export default function App() {
     }
     if (!myLocation.location) return;
     const threats = stormAlerts(myLocation.location, nearbyStorms);
-    const fresh = threats.filter(({ key, rank }) => rank > (notifiedStormsRef.current.get(key) ?? 0));
-    notifiedStormsRef.current = new Map(threats.map(({ key, rank }) => [key, Math.max(rank, notifiedStormsRef.current.get(key) ?? 0)]));
+    const prev = notifiedStormsRef.current;
+    const fresh = threats.filter(({ key, rank }) => rank > (prev.get(key)?.rank ?? 0));
+    const now = Date.now();
+    const next = new Map([...prev].filter(([, { seenMs }]) => now - seenMs < 30 * 60_000));
+    for (const { key, rank } of threats) next.set(key, { rank: Math.max(rank, prev.get(key)?.rank ?? 0), seenMs: now });
+    notifiedStormsRef.current = next;
     if (fresh.length === 0) return;
     if (notifySound) playAlertTone();
     for (const threat of fresh) showNotification(threat.title, threat.body, threat.key, threat.urgent, () => {});

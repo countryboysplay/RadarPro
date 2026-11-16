@@ -143,7 +143,15 @@ export function useRainbowOverlay(site: { lat: number; lon: number }): RainbowOv
   }, [configured]);
 
   useEffect(() => {
-    if (!configured) return; // status is permanently "unconfigured"; nothing to resolve.
+    if (!configured) {
+      // The key was cleared (or never set): turn the layer off, or it stays stuck on.
+      generationRef.current += 1;
+      setEnabled(false);
+      setStatus("unconfigured");
+      setTileUrlTemplate(null);
+      setError(null);
+      return;
+    }
 
     if (!enabled) {
       generationRef.current += 1; // invalidate any resolution still in flight.

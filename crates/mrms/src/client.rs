@@ -174,14 +174,14 @@ impl MrmsClient {
                 day = d;
             }
             let prefix = SnapshotReference::day_prefix(product, year, month, day);
-            if let Ok(keys) = self.list_objects_with_retries(&prefix).await {
-                let latest = keys
-                    .iter()
-                    .filter_map(|k| parse_snapshot_key(product, k))
-                    .max_by_key(|s| (s.year, s.month, s.day, s.hour, s.minute, s.second));
-                if let Some(snapshot) = latest {
-                    return Ok(snapshot);
-                }
+            // A failed listing is returned, not answered with yesterday's snapshot.
+            let keys = self.list_objects_with_retries(&prefix).await?;
+            let latest = keys
+                .iter()
+                .filter_map(|k| parse_snapshot_key(product, k))
+                .max_by_key(|s| (s.year, s.month, s.day, s.hour, s.minute, s.second));
+            if let Some(snapshot) = latest {
+                return Ok(snapshot);
             }
         }
 
@@ -327,5 +327,18 @@ mod tests {
     fn gunzip_rejects_empty_input_cleanly() {
         let err = gunzip("u", &[]).unwrap_err();
         assert!(matches!(err, MrmsError::GzipDecompress { .. }));
+    }
+
+    #[tokio::test]
+    async fn discovery_returns_a_network_error_instead_of_walking_back() {
+        let client = MrmsClient::new("http://127.0.0.1:1").unwrap();
+        let err = client
+            .discover_latest_snapshot(MrmsProduct::PrecipRate, 1)
+            .await
+            .unwrap_err();
+        assert!(
+            !matches!(err, MrmsError::NoPublishedSnapshotFound { .. }),
+            "{err:?}"
+        );
     }
 }

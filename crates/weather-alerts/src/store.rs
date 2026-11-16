@@ -66,9 +66,8 @@ pub enum ExpiryReason {
     AbsentFromPolls,
 }
 
-/// One lifecycle event produced by [`AlertStore::ingest_poll`] or
-/// [`AlertStore::expire_stale`], and accumulated for
-/// [`AlertStore::drain_changes`].
+/// One lifecycle event returned by [`AlertStore::ingest_poll`] or
+/// [`AlertStore::expire_stale`].
 #[derive(Debug, Clone, PartialEq)]
 pub enum AlertChange {
     /// A previously-unseen alert appeared.
@@ -123,8 +122,8 @@ struct HeldAlert {
 /// Feed each successive `/alerts/active` poll's parsed alerts to
 /// [`ingest_poll`](AlertStore::ingest_poll). Query "what's active right
 /// now" via [`active_alerts`](AlertStore::active_alerts) (time-filtered at
-/// query time, not just at the last poll) and consume incremental UI
-/// updates via [`drain_changes`](AlertStore::drain_changes).
+/// query time, not just at the last poll); each mutating call returns its
+/// incremental changes.
 ///
 /// See the module docs for the stable-key design and
 /// `docs/adr/0010-nws-alert-lifecycle-reconciliation.md` for the full
@@ -136,9 +135,6 @@ pub struct AlertStore {
     /// `references[].identifier` values back to the right held entry.
     index_by_latest_message_id: HashMap<String, AlertKey>,
     absence_limit: u32,
-    /// Changes not yet returned by `drain_changes`, accumulated by every
-    /// mutating call.
-    pending_changes: Vec<AlertChange>,
 }
 
 impl Default for AlertStore {
@@ -163,7 +159,6 @@ impl AlertStore {
             held: HashMap::new(),
             index_by_latest_message_id: HashMap::new(),
             absence_limit,
-            pending_changes: Vec::new(),
         }
     }
 
@@ -214,30 +209,6 @@ impl AlertStore {
             .collect()
     }
 
-    /// Drain and return every [`AlertChange`] accumulated since the last
-    /// call to this method (by [`ingest_poll`](Self::ingest_poll) and/or
-    /// [`expire_stale`](Self::expire_stale)), for a UI that wants to react
-    /// incrementally instead of re-rendering the full active set on every
-    /// poll.
-    pub fn drain_changes(&mut self) -> Vec<AlertChange> {
-        std::mem::take(&mut self.pending_changes)
-    }
-
-    /// Reconcile any held alert whose `expires` has passed as of `now`,
-    /// removing it and recording an [`AlertChange::Expired`] (reason
-    /// [`ExpiryReason::TimeExpired`]) for both this call's return value
-    /// and [`drain_changes`](Self::drain_changes).
-    ///
-    /// Safe and cheap to call frequently between polls (e.g. once per UI
-    /// render tick) purely to keep the *change stream* -- not just
-    /// [`active_alerts`](Self::active_alerts)'s own snapshot -- current
-    /// with real time, independent of network poll cadence.
-    pub fn expire_stale(&mut self, now: Timestamp) -> Vec<AlertChange> {
-        let changes = self.expire_stale_without_draining(now);
-        self.pending_changes.extend(changes.clone());
-        changes
-    }
-
     /// Ingest one successful poll's parsed alerts (the full current
     /// `/alerts/active` response, not a delta).
     ///
@@ -247,8 +218,7 @@ impl AlertStore {
     /// genuinely new alerts, per-held-alert absence bookkeeping (the
     /// race-safety net -- see the ADR), and finally the same time-based
     /// expiration [`expire_stale`](Self::expire_stale) performs, so a
-    /// single call fully reconciles one poll. Returns this call's changes
-    /// (also accumulated for [`drain_changes`](Self::drain_changes)).
+    /// single call fully reconciles one poll. Returns this call's changes.
     ///
     /// `now` should be the current wall-clock time (UTC) at the moment
     /// this poll's response was received -- used only for the time-based
@@ -308,20 +278,19 @@ impl AlertStore {
         // performs on its own, so one `ingest_poll` call fully reconciles
         // this poll rather than requiring a separate `expire_stale` call
         // right after every poll.
-        changes.extend(self.expire_stale_without_draining(now));
-
-        self.pending_changes.extend(changes.clone());
+        changes.extend(self.expire_stale(now));
         changes
     }
 
-    /// Shared implementation for the time-based expiration sweep, used by
-    /// both the public [`expire_stale`](Self::expire_stale) (which also
-    /// records into `pending_changes` itself) and
-    /// [`ingest_poll`](Self::ingest_poll) (which records the combined
-    /// result once at the end, to keep one `ingest_poll` call's `changes`
-    /// return value complete without double-appending to
-    /// `pending_changes`).
-    fn expire_stale_without_draining(&mut self, now: Timestamp) -> Vec<AlertChange> {
+    /// Reconcile any held alert whose `expires` has passed as of `now`,
+    /// removing it and returning an [`AlertChange::Expired`] (reason
+    /// [`ExpiryReason::TimeExpired`]) for each.
+    ///
+    /// Safe and cheap to call frequently between polls (e.g. once per UI
+    /// render tick) purely to keep the *change stream* -- not just
+    /// [`active_alerts`](Self::active_alerts)'s own snapshot -- current
+    /// with real time, independent of network poll cadence.
+    pub fn expire_stale(&mut self, now: Timestamp) -> Vec<AlertChange> {
         let expired_keys: Vec<AlertKey> = self
             .held
             .iter()

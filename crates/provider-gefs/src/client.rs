@@ -133,9 +133,10 @@ impl GefsClient {
             forecast_hour.file_suffix()
         );
 
+        // Count `.idx` sidecars: a member is only fetchable once its index exists.
         let mut members: Vec<MemberKey> = keys
             .iter()
-            .filter(|k| !k.ends_with(".idx"))
+            .filter_map(|k| k.strip_suffix(".idx"))
             .filter_map(|k| k.rsplit('/').next())
             .filter_map(|file_name| file_name.strip_suffix(suffix.as_str()))
             .filter_map(parse_member_stem)
@@ -181,9 +182,7 @@ impl GefsClient {
         }
         // Every attempt failed with a real error (never "confirmed absent",
         // per this method's own doc comment) -- surface it to the caller
-        // rather than silently treating it as absence; `find_recent_run`
-        // still just moves on to the next run hour, but this keeps the
-        // distinction available to anything that wants it (e.g. logging).
+        // rather than silently treating it as absence.
         Err(last_err.expect("loop runs at least once, so last_err is always set on this path"))
     }
 
@@ -209,13 +208,13 @@ impl GefsClient {
             }
             for run_hour in [RunHour::H18, RunHour::H12, RunHour::H06, RunHour::H00] {
                 let run = RunReference::new(year, month, day, run_hour);
-                if let Ok(members) = self
+                // A network error is returned, not mistaken for "not published yet".
+                // The ensemble mean is the default view, so the run counts only once it is readable.
+                let members = self
                     .discover_members_with_retries(run, group, forecast_hour)
-                    .await
-                {
-                    if !members.is_empty() {
-                        return Ok(run);
-                    }
+                    .await?;
+                if members.contains(&MemberKey::Mean) {
+                    return Ok(run);
                 }
             }
         }
@@ -440,6 +439,19 @@ mod tests {
                 MemberKey::Perturbed(2),
                 MemberKey::Mean,
             ]
+        );
+    }
+
+    #[tokio::test]
+    async fn discovery_returns_a_network_error_instead_of_walking_back() {
+        let client = GefsClient::new("http://127.0.0.1:1").unwrap();
+        let err = client
+            .find_recent_run(ProductGroup::PGRB2S_P25, ForecastHour(0), 1)
+            .await
+            .unwrap_err();
+        assert!(
+            !matches!(err, GefsError::NoPublishedRunFound { .. }),
+            "{err:?}"
         );
     }
 }

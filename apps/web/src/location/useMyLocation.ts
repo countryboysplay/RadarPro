@@ -65,8 +65,11 @@ export function useAlertIdsAtPoint(point: { lat: number; lon: number } | null): 
   const [ids, setIds] = useState<ReadonlySet<string>>(new Set());
   const at = point ? `${point.lat.toFixed(2)},${point.lon.toFixed(2)}` : null;
   useEffect(() => {
-    setIds(new Set());
-    if (!at) return;
+    // Keep the last answer while the new point loads, so a covering watch doesn't blink out.
+    if (!at) {
+      setIds(new Set());
+      return;
+    }
     const [lat, lon] = at.split(",").map(Number);
     const controller = new AbortController();
     const poll = () =>
@@ -86,17 +89,23 @@ export function useAlertIdsAtPoint(point: { lat: number; lon: number } | null): 
 
 /** Active alerts covering `point` -- its polygon contains it, or NWS lists it
  * for that point (`idsAtPoint`: zone-only alerts such as watches) -- and which
- * of those weren't covering it last time (`prevKeys`), i.e. the ones to notify about. */
+ * of those were never notified (`prevKeys`), i.e. the ones to notify about.
+ * `notified` is the next `prevKeys`: a key stays until its alert is no longer
+ * active, so stepping out of a polygon and back (GPS jitter, a point query
+ * still loading) doesn't notify again. */
 export function coveringAlerts(
   point: { lat: number; lon: number },
   active: readonly HeldAlert[],
   prevKeys: ReadonlySet<string>,
   idsAtPoint: ReadonlySet<string> = new Set(),
-): { covering: HeldAlert[]; fresh: HeldAlert[] } {
+): { covering: HeldAlert[]; fresh: HeldAlert[]; notified: Set<string> } {
   const covering = active.filter(
     ({ alert }) => idsAtPoint.has(alert.id) || (alert.geometry && pointInAlertGeometry([point.lon, point.lat], alert.geometry)),
   );
-  return { covering, fresh: covering.filter(({ key }) => !prevKeys.has(key)) };
+  const activeKeys = new Set(active.map(({ key }) => key));
+  const notified = new Set([...prevKeys].filter((key) => activeKeys.has(key)));
+  covering.forEach(({ key }) => notified.add(key));
+  return { covering, fresh: covering.filter(({ key }) => !prevKeys.has(key)), notified };
 }
 
 /** Two short tones. No audio asset to ship or load. */

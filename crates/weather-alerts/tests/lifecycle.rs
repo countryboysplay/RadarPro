@@ -479,32 +479,7 @@ fn alert_absent_for_n_consecutive_polls_is_removed_as_a_safety_net() {
     assert_eq!(store.held_count(), 0);
 }
 
-// -- drain_changes / active_alerts_with_keys ---------------------------------------
-
-#[test]
-fn drain_changes_returns_everything_since_the_last_drain_then_empties() {
-    let mut store = AlertStore::new();
-    store.ingest_poll(
-        vec![make_alert(
-            "urn:oid:test.11",
-            MessageType::Alert,
-            vec![],
-            "Flood Advisory",
-            10_000,
-        )],
-        ts(0),
-    );
-    store.expire_stale(ts(0)); // not yet expired, but exercises accumulation from two call sites
-
-    let drained = store.drain_changes();
-    assert_eq!(drained.len(), 1);
-    assert!(matches!(&drained[0], AlertChange::New { .. }));
-
-    assert!(
-        store.drain_changes().is_empty(),
-        "must be empty immediately after a drain"
-    );
-}
+// -- active_alerts_with_keys ---------------------------------------
 
 #[test]
 fn active_alerts_with_keys_pairs_stable_keys_with_current_content() {

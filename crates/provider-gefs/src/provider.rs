@@ -76,8 +76,9 @@ impl forecast_core::provider::ForecastProvider for GefsProvider {
     }
 
     async fn discover_latest_run(&self, lookback_days: u32) -> Result<Self::Run, Self::Error> {
+        // +6h is the panel's default view; hours publish in order, so +0h is there too.
         self.client
-            .find_recent_run(ProductGroup::PGRB2S_P25, ForecastHour(0), lookback_days)
+            .find_recent_run(ProductGroup::PGRB2S_P25, ForecastHour(6), lookback_days)
             .await
     }
 

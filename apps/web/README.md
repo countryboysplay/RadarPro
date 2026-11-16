@@ -112,7 +112,7 @@ NWS in every browser.
 
 No changes were needed to `crates/weather-alerts`'s wasm API
 (`AlertStoreHandle`) for this task -- `ingestPoll`/`expireStale`/
-`activeAlertsGeoJson`/`drainChanges`/`heldCount` covered every need this
+`activeAlertsGeoJson`/`heldCount` covered every need this
 app's map/list/details UI had.
 
 ## S05: what changed on top of S04

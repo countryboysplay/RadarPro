@@ -151,6 +151,18 @@ describe("coveringAlerts", () => {
     expect(coveringAlerts({ lat: 50, lon: 5 }, [...active, watch], new Set(), ids).covering.map((a) => a.key)).toEqual(["watch"]);
     expect(coveringAlerts({ lat: 50, lon: 5 }, [...active, watch], new Set()).covering).toEqual([]);
   });
+  it("notifies once while the alert stays active, even if the point briefly leaves it", () => {
+    const watch = { key: "watch", alert: { id: "urn:oid:watch.1", geometry: null } } as never;
+    const all = [...active, watch];
+    const ids = new Set(["urn:oid:watch.1"]);
+    const first = coveringAlerts({ lat: 50, lon: 5 }, all, new Set(), ids);
+    expect(first.fresh.map((a) => a.key)).toEqual(["watch"]);
+    const gap = coveringAlerts({ lat: 50, lon: 5 }, all, first.notified, new Set());
+    const back = coveringAlerts({ lat: 50, lon: 5 }, all, gap.notified, ids);
+    expect(back.fresh).toEqual([]);
+    // Once the alert is gone, its key is forgotten.
+    expect([...coveringAlerts({ lat: 50, lon: 5 }, active, back.notified).notified]).toEqual([]);
+  });
 });
 
 describe("parseColorTableJson", () => {

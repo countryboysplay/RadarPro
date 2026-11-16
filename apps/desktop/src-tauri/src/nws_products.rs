@@ -2,7 +2,11 @@
 //! the webview can't fetch them itself; this relays the raw bytes. `fetch_url`
 //! does the same for placefiles.
 
-use crate::rainbow::{client, sanitize_reqwest_error};
+use crate::rainbow::client;
+
+fn unreachable(e: reqwest::Error) -> String {
+    if e.is_timeout() { "timed out".to_string() } else { "could not reach the server".to_string() }
+}
 
 const TGFTP_RADAR: &str = "https://tgftp.nws.noaa.gov/SL.us008001/DF.of/DC.radar";
 /// Storm tracks, mesocyclone, TVS, hail -- the only products the frontend may ask for.
@@ -18,11 +22,11 @@ pub async fn nws_radar_product(product: String, site: String) -> Result<tauri::i
         return Err("site must be a lowercase 4-letter ICAO".into());
     }
     let url = format!("{TGFTP_RADAR}/DS.{product}/SI.{site}/sn.last");
-    let response = client().get(url).send().await.map_err(|e| sanitize_reqwest_error(&e))?;
+    let response = client().get(url).send().await.map_err(unreachable)?;
     if !response.status().is_success() {
         return Err(format!("HTTP {}", response.status().as_u16()));
     }
-    let bytes = response.bytes().await.map_err(|e| sanitize_reqwest_error(&e))?;
+    let bytes = response.bytes().await.map_err(unreachable)?;
     Ok(tauri::ipc::Response::new(bytes.to_vec()))
 }
 
@@ -35,7 +39,6 @@ pub async fn fetch_url(url: String) -> Result<tauri::ipc::Response, String> {
     if !(url.starts_with("http://") || url.starts_with("https://")) {
         return Err("only http and https URLs".into());
     }
-    let unreachable = |e: reqwest::Error| if e.is_timeout() { "timed out".to_string() } else { "could not reach the server".to_string() };
     let mut response = client().get(url).timeout(std::time::Duration::from_secs(20)).send().await.map_err(unreachable)?;
     if !response.status().is_success() {
         return Err(format!("HTTP {}", response.status().as_u16()));
