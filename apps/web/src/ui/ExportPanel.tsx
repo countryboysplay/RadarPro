@@ -39,25 +39,31 @@ export function ExportPanel({ capture, title, timeMs, tableJson, frameTimes, fra
 
   async function saveLoop() {
     setBusy("Capturing frames…");
-    const frames: HTMLCanvasElement[] = [];
     try {
-      for (const ms of frameTimes) {
-        goTo(ms);
-        // One render to switch the scan, then wait for it to be drawn and its overlays fetched (up to 15 s).
-        await sleep(100);
-        for (let waited = 0; !readyRef.current && waited < 15_000; waited += 100) await sleep(100);
-        const f = frame(ms);
-        if (f) frames.push(f);
+      const frames: HTMLCanvasElement[] = [];
+      try {
+        for (const ms of frameTimes) {
+          goTo(ms);
+          // One render to switch the scan, then wait for it to be drawn and its overlays fetched (up to 15 s).
+          await sleep(100);
+          for (let waited = 0; !readyRef.current && waited < 15_000; waited += 100) await sleep(100);
+          const f = frame(ms);
+          // Shrunk now, not at encode: 60 full-resolution 4K frames are ~2 GB.
+          if (f) frames.push(shrinkToVideoWidth(f));
+        }
+      } finally {
+        restore();
       }
+      if (frames.length) {
+        setBusy("Encoding…");
+        const { blob, ext } = await encode(frames, frameMs);
+        save(blob, fileName(title, frameTimes[0], ext));
+      }
+    } catch (err) {
+      console.error("[export] loop export failed:", err);
     } finally {
-      restore();
+      setBusy(null);
     }
-    if (frames.length) {
-      setBusy("Encoding…");
-      const { blob, ext } = await encode(frames, frameMs);
-      save(blob, fileName(title, frameTimes[0], ext));
-    }
-    setBusy(null);
   }
 
   return (
@@ -126,17 +132,26 @@ export function legendStops(table: ColorTableJson): [number, string][] {
   });
 }
 
-/** Plays the frames into a MediaRecorder in real time, the last one held three times as long. */
+/** At most 1920 wide (social sites and phones reject bigger video), with even
+ * dimensions (H.264 needs them). */
+function shrinkToVideoWidth(canvas: HTMLCanvasElement) {
+  const scale = Math.min(1, 1920 / canvas.width);
+  const out = document.createElement("canvas");
+  out.width = Math.round(canvas.width * scale) & ~1;
+  out.height = Math.round(canvas.height * scale) & ~1;
+  out.getContext("2d")!.drawImage(canvas, 0, 0, out.width, out.height);
+  return out;
+}
+
+/** Plays the frames (already sized by `shrinkToVideoWidth`) into a MediaRecorder
+ * in real time, the last one held three times as long. */
 async function encode(frames: HTMLCanvasElement[], frameMs: number) {
   const mp4 = MediaRecorder.isTypeSupported("video/mp4;codecs=avc1");
   const mimeType = mp4 ? "video/mp4;codecs=avc1" : "video/webm";
   const out = document.createElement("canvas");
-  // At most 1920 wide (social sites and phones reject bigger video); H.264 needs even dimensions.
-  const scale = Math.min(1, 1920 / frames[0].width);
-  out.width = Math.round(frames[0].width * scale) & ~1;
-  out.height = Math.round(frames[0].height * scale) & ~1;
+  out.width = frames[0].width;
+  out.height = frames[0].height;
   const ctx = out.getContext("2d")!;
-  ctx.scale(scale, scale);
   const stream = out.captureStream(0);
   const track = stream.getVideoTracks()[0] as CanvasCaptureMediaStreamTrack;
   const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 8_000_000 });

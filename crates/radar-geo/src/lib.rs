@@ -56,10 +56,10 @@ pub mod storm_relative_velocity;
 
 pub use beam::{beam_height_km, ground_range_km, slant_range_from_ground_range_km};
 pub use dealias::dealias_velocity_sweep;
-pub use kdp::add_kdp;
+pub use kdp::{add_kdp, add_kdp_to_sweep};
 pub use lookup::{
     cursor_to_polar, find_gate_index, find_radial_index, find_radial_index_for_sweep,
-    locate_gate_value, locate_radial_gate, PolarCoord, RadialGate,
+    locate_gate_value, locate_radial_gate, nearest_azimuth_index, PolarCoord, RadialGate,
 };
 pub use non_weather::hide_non_weather_reflectivity;
 pub use spherical::{

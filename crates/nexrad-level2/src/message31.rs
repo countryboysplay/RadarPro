@@ -32,10 +32,13 @@ pub(crate) struct ParsedMessage31 {
 /// Parse a Message 31 record. `buf` is the whole decompressed LDM record;
 /// `data_header_start` is the offset within `buf` where the Data Header
 /// Block begins (immediately after the 12-byte CTM prefix + 16-byte
-/// Generic Message Header).
+/// Generic Message Header). `gates: false` skips decoding the moment
+/// blocks (radials come back with no moments), for callers that only need
+/// the sweep structure.
 pub(crate) fn parse_message31(
     buf: &[u8],
     data_header_start: usize,
+    gates: bool,
 ) -> Result<ParsedMessage31, DecodeError> {
     if data_header_start > buf.len() {
         return Err(DecodeError::Internal(
@@ -165,7 +168,7 @@ pub(crate) fn parse_message31(
             },
             b'D' => {
                 let name = [tag[1], tag[2], tag[3]];
-                if let Some(kind) = moment_kind_for_wire_name(&name) {
+                if let Some(kind) = moment_kind_for_wire_name(&name).filter(|_| gates) {
                     let moment = parse_data_moment_block(payload, pointer, data_header_start)?;
                     moments.insert(kind, moment);
                 }
@@ -588,7 +591,7 @@ mod tests {
         let gates = [0u8, 1, 2, 255];
         let buf = build_minimal_message31(&gates);
 
-        let parsed = parse_message31(&buf, 0).expect("valid synthetic message 31");
+        let parsed = parse_message31(&buf, 0, true).expect("valid synthetic message 31");
         assert_eq!(parsed.elevation_number, 1);
         assert_eq!(parsed.radial.azimuth_number, 1);
         assert_eq!(parsed.payload_len, buf.len());
@@ -620,7 +623,7 @@ mod tests {
         let inflated = (buf.len() as u16) + 1000;
         buf[18..20].copy_from_slice(&inflated.to_be_bytes());
 
-        let err = parse_message31(&buf, 0).unwrap_err();
+        let err = parse_message31(&buf, 0, true).unwrap_err();
         assert!(matches!(
             err,
             DecodeError::Message31RadialLengthOutOfBounds { .. }
@@ -638,7 +641,7 @@ mod tests {
         let ng_pos = ref_block_start + 8;
         buf[ng_pos..ng_pos + 2].copy_from_slice(&2000u16.to_be_bytes());
 
-        let err = parse_message31(&buf, 0).unwrap_err();
+        let err = parse_message31(&buf, 0, true).unwrap_err();
         assert!(matches!(err, DecodeError::DataMomentOutOfBounds { .. }));
     }
 
@@ -647,7 +650,7 @@ mod tests {
         let gates = [0u8, 1, 2, 255];
         let mut buf = build_minimal_message31(&gates);
         buf[16] = 1; // claim BZIP2-compressed message 31 payload
-        let err = parse_message31(&buf, 0).unwrap_err();
+        let err = parse_message31(&buf, 0, true).unwrap_err();
         assert!(matches!(
             err,
             DecodeError::UnsupportedMessage31Compression { .. }
@@ -660,7 +663,7 @@ mod tests {
         let mut buf = build_minimal_message31(&gates);
         let ref_block_start = buf.len() - DATA_MOMENT_HEADER_LEN - gates.len();
         buf[ref_block_start + 19] = 12; // neither 8 nor 16
-        let err = parse_message31(&buf, 0).unwrap_err();
+        let err = parse_message31(&buf, 0, true).unwrap_err();
         assert!(matches!(err, DecodeError::InvalidDataWordSize { .. }));
     }
 }

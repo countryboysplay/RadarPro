@@ -23,6 +23,10 @@ grib = { version = "=0.18.5", default-features = false }
 
 thiserror = "=2.0.20"
 
+# `try_join_all`, to fetch a derived field's messages concurrently. Already
+# in the tree through reqwest.
+futures-util = { version = "=0.3.34", default-features = false, features = ["alloc"] }
+
 # S3 `ListObjectsV2` (run discovery) returns XML; pure text/XML parsing, no
 # OS/network dependency of its own -- fine unconditionally on every target,
 # wasm32 included.

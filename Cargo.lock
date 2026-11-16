@@ -1552,6 +1552,7 @@ name = "provider-hrrr"
 version = "0.1.0"
 dependencies = [
  "forecast-core",
+ "futures-util",
  "grib",
  "image",
  "provider-gefs",

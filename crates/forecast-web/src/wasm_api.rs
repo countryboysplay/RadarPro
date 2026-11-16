@@ -112,6 +112,12 @@ struct ProviderState {
     provider: ProviderImpl,
     last_run: Option<RunImpl>,
     last_grid: Option<ForecastGrid>,
+    /// Bumped by every `fetch_field`; a fetch only stores its grid if no newer
+    /// one started meanwhile (a JS timeout can abandon a fetch that still finishes).
+    fetch_seq: u64,
+    /// Created on the first render and reused: a GPU device per frame is slow
+    /// and browsers cap how many exist.
+    renderer: Option<Rc<forecast_core::gpu::ForecastRenderer>>,
 }
 
 /// A selected forecast provider (`"gefs"`, `"hrrr"` or `"rtma"`), exposed to
@@ -151,6 +157,8 @@ impl ProviderHandle {
                 provider,
                 last_run: None,
                 last_grid: None,
+                fetch_seq: 0,
+                renderer: None,
             })),
         })
     }
@@ -292,12 +300,13 @@ impl ProviderHandle {
         };
 
         future_to_promise(async move {
-            let (provider, run) = {
-                let state = state.borrow();
+            let (provider, run, seq) = {
+                let mut state = state.borrow_mut();
                 let run = state.last_run.ok_or_else(|| {
                     JsValue::from_str("no run discovered yet; call discoverLatestRun first")
                 })?;
-                (state.provider.clone(), run)
+                state.fetch_seq += 1;
+                (state.provider.clone(), run, state.fetch_seq)
             };
             let request = FieldRequest {
                 variable,
@@ -329,7 +338,11 @@ impl ProviderHandle {
                 }
             };
             let json = grid_metadata_json(&grid);
-            state.borrow_mut().last_grid = Some(grid);
+            let mut state = state.borrow_mut();
+            if state.fetch_seq != seq {
+                return Err(JsValue::from_str("superseded by a newer fetchField"));
+            }
+            state.last_grid = Some(grid);
             Ok(JsValue::from_str(&json))
         })
     }
@@ -389,24 +402,34 @@ impl ProviderHandle {
                 (half_extent_lon, half_extent_lat),
             );
 
-            let pixels = forecast_core::gpu::render_forecast_grid(
-                &grid.geometry,
-                &display_values,
-                &palette_lut,
-                scale.min,
-                scale.max,
-                clip_to_world,
-                render_width,
-                render_height,
-            )
-            .await;
-
-            match pixels {
-                Some(pixels) => Ok(js_sys::Uint8Array::from(pixels.as_slice()).into()),
-                None => Err(JsValue::from_str(
-                    "no GPU adapter available in this browser",
-                )),
-            }
+            let cached = state.borrow().renderer.clone();
+            let renderer = match cached {
+                Some(renderer) => renderer,
+                None => {
+                    let renderer = Rc::new(
+                        forecast_core::gpu::ForecastRenderer::new()
+                            .await
+                            .ok_or_else(|| {
+                                JsValue::from_str("no GPU adapter available in this browser")
+                            })?,
+                    );
+                    state.borrow_mut().renderer = Some(Rc::clone(&renderer));
+                    renderer
+                }
+            };
+            let pixels = renderer
+                .render(
+                    &grid.geometry,
+                    &display_values,
+                    &palette_lut,
+                    scale.min,
+                    scale.max,
+                    clip_to_world,
+                    render_width,
+                    render_height,
+                )
+                .await;
+            Ok(js_sys::Uint8Array::from(pixels.as_slice()).into())
         })
     }
 }

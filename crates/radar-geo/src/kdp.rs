@@ -17,7 +17,7 @@
 //!
 //! Output only where REF is at least [`MIN_DBZ`]; elsewhere `Missing`.
 
-use radar_types::{GateValue, Moment, MomentKind, Volume};
+use radar_types::{GateValue, Moment, MomentKind, Sweep, Volume};
 
 /// PHI below this CC is ignored.
 pub const MIN_CC: f32 = 0.85;
@@ -32,22 +32,25 @@ const MEDIAN_GATES: usize = 5;
 /// Add a [`MomentKind::SpecificDifferentialPhase`] moment to every radial
 /// that carries PHI and has echo to report (drawing skips radials without it).
 pub fn add_kdp(volume: &mut Volume) {
-    for sweep in &mut volume.sweeps {
-        for radial in &mut sweep.radials {
-            let Some(phi) = radial.moments.get(&MomentKind::DifferentialPhase) else {
-                continue;
-            };
-            let Some(kdp) = kdp_moment(
-                phi,
-                radial.moments.get(&MomentKind::CorrelationCoefficient),
-                radial.moments.get(&MomentKind::Reflectivity),
-            ) else {
-                continue;
-            };
-            radial
-                .moments
-                .insert(MomentKind::SpecificDifferentialPhase, kdp);
-        }
+    volume.sweeps.iter_mut().for_each(add_kdp_to_sweep);
+}
+
+/// [`add_kdp`] for one sweep, so a viewer can derive it only where it is shown.
+pub fn add_kdp_to_sweep(sweep: &mut Sweep) {
+    for radial in &mut sweep.radials {
+        let Some(phi) = radial.moments.get(&MomentKind::DifferentialPhase) else {
+            continue;
+        };
+        let Some(kdp) = kdp_moment(
+            phi,
+            radial.moments.get(&MomentKind::CorrelationCoefficient),
+            radial.moments.get(&MomentKind::Reflectivity),
+        ) else {
+            continue;
+        };
+        radial
+            .moments
+            .insert(MomentKind::SpecificDifferentialPhase, kdp);
     }
 }
 

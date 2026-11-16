@@ -374,45 +374,93 @@ pub async fn render_forecast_grid(
     render_width: u32,
     render_height: u32,
 ) -> Option<Vec<u8>> {
-    let ctx = radar_render::gpu::GpuContext::request().await?;
+    let renderer = ForecastRenderer::new().await?;
+    Some(
+        renderer
+            .render(
+                geometry,
+                display_values,
+                palette_lut,
+                palette_min,
+                palette_max,
+                clip_to_world,
+                render_width,
+                render_height,
+            )
+            .await,
+    )
+}
 
-    let grid_gpu = upload_grid(
-        &ctx.device,
-        &ctx.queue,
-        geometry.width(),
-        geometry.height(),
-        display_values,
-    );
-    let palette_gpu = radar_render::gpu::upload_palette(&ctx.device, &ctx.queue, palette_lut);
-    let pipeline = create_pipeline(&ctx.device, radar_render::gpu::RENDER_TARGET_FORMAT);
-    let uniforms_gpu = UniformsGpu::new(
-        &ctx.device,
-        GpuUniforms::for_geometry(clip_to_world, geometry, palette_min, palette_max),
-    );
-    let bind_group = create_bind_group(
-        &ctx.device,
-        &pipeline.bind_group_layout,
-        &uniforms_gpu,
-        &grid_gpu,
-        &palette_gpu,
-    );
-    let target = radar_render::gpu::create_render_target(&ctx.device, render_width, render_height);
+/// A GPU device plus the compiled grid pipeline, kept so a caller that
+/// renders many frames (the forecast loop) sets them up once, not per frame.
+/// [`render_forecast_grid`] is the one-shot form.
+pub struct ForecastRenderer {
+    ctx: radar_render::gpu::GpuContext,
+    pipeline: GridPipeline,
+}
 
-    radar_render::gpu::render_frame(
-        &ctx.device,
-        &ctx.queue,
-        &pipeline.pipeline,
-        &bind_group,
-        &target,
-    );
-    // `read_rgba8_async`, not `wait_for_gpu`+`read_rgba8`: the latter pair
-    // blocks a thread on `std::sync::mpsc::Receiver::recv`, which deadlocks
-    // the browser tab on wasm32 (see this module's doc comment). This
-    // `.await` itself drives the wait for the GPU to finish (native: an
-    // internal `Device::poll(wait_indefinitely)`; wasm32: the browser's own
-    // polling, surfaced back to this future via `map_async`'s callback) --
-    // no separate `wait_for_gpu` call is needed either way.
-    Some(radar_render::gpu::read_rgba8_async(&ctx.device, &ctx.queue, &target).await)
+impl ForecastRenderer {
+    /// `None` if no GPU adapter is available.
+    pub async fn new() -> Option<Self> {
+        let ctx = radar_render::gpu::GpuContext::request().await?;
+        let pipeline = create_pipeline(&ctx.device, radar_render::gpu::RENDER_TARGET_FORMAT);
+        Some(Self { ctx, pipeline })
+    }
+
+    /// Draw one frame and read it back as RGBA8; see [`render_forecast_grid`].
+    #[allow(clippy::too_many_arguments)]
+    pub async fn render(
+        &self,
+        geometry: &GridGeometry,
+        display_values: &[f32],
+        palette_lut: &[[u8; 4]],
+        palette_min: f32,
+        palette_max: f32,
+        clip_to_world: Mat4,
+        render_width: u32,
+        render_height: u32,
+    ) -> Vec<u8> {
+        let ctx = &self.ctx;
+        let pipeline = &self.pipeline;
+
+        let grid_gpu = upload_grid(
+            &ctx.device,
+            &ctx.queue,
+            geometry.width(),
+            geometry.height(),
+            display_values,
+        );
+        let palette_gpu = radar_render::gpu::upload_palette(&ctx.device, &ctx.queue, palette_lut);
+        let uniforms_gpu = UniformsGpu::new(
+            &ctx.device,
+            GpuUniforms::for_geometry(clip_to_world, geometry, palette_min, palette_max),
+        );
+        let bind_group = create_bind_group(
+            &ctx.device,
+            &pipeline.bind_group_layout,
+            &uniforms_gpu,
+            &grid_gpu,
+            &palette_gpu,
+        );
+        let target =
+            radar_render::gpu::create_render_target(&ctx.device, render_width, render_height);
+
+        radar_render::gpu::render_frame(
+            &ctx.device,
+            &ctx.queue,
+            &pipeline.pipeline,
+            &bind_group,
+            &target,
+        );
+        // `read_rgba8_async`, not `wait_for_gpu`+`read_rgba8`: the latter pair
+        // blocks a thread on `std::sync::mpsc::Receiver::recv`, which deadlocks
+        // the browser tab on wasm32 (see this module's doc comment). This
+        // `.await` itself drives the wait for the GPU to finish (native: an
+        // internal `Device::poll(wait_indefinitely)`; wasm32: the browser's own
+        // polling, surfaced back to this future via `map_async`'s callback) --
+        // no separate `wait_for_gpu` call is needed either way.
+        radar_render::gpu::read_rgba8_async(&ctx.device, &ctx.queue, &target).await
+    }
 }
 
 #[cfg(test)]

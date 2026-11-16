@@ -81,6 +81,11 @@ fn moments_present_in(sweep: &Sweep) -> Vec<MomentKind> {
         .iter()
         .flat_map(|radial| radial.moments.keys().copied())
         .collect();
+    // KDP is derived from PHI when first shown (see `browser.rs`), so offer it wherever PHI is.
+    let mut present = present;
+    if present.contains(&MomentKind::DifferentialPhase) {
+        present.insert(MomentKind::SpecificDifferentialPhase);
+    }
     present.into_iter().collect()
 }
 
@@ -149,6 +154,13 @@ mod tests {
         assert!(summaries
             .iter()
             .any(|s| s.moments.contains(&MomentKind::Reflectivity)));
+        // KDP is derived lazily, so it is offered exactly where PHI is.
+        for s in &summaries {
+            assert_eq!(
+                s.moments.contains(&MomentKind::SpecificDifferentialPhase),
+                s.moments.contains(&MomentKind::DifferentialPhase)
+            );
+        }
     }
 
     #[test]

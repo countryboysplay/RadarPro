@@ -157,6 +157,16 @@ pub enum DecodeError {
 /// [`DecodeError`] — never panics — on malformed, truncated, or otherwise
 /// unsupported input.
 pub fn decode_volume(bytes: &[u8]) -> Result<Volume, DecodeError> {
+    decode(bytes, true)
+}
+
+/// [`decode_volume`] without the gate data: every radial has no moments.
+/// For counting sweeps in a volume still arriving, at a fraction of the cost.
+pub fn decode_volume_structure(bytes: &[u8]) -> Result<Volume, DecodeError> {
+    decode(bytes, false)
+}
+
+fn decode(bytes: &[u8], gates: bool) -> Result<Volume, DecodeError> {
     let header = ldm::parse_volume_header(bytes)?;
 
     let mut offset = ldm::VOLUME_HEADER_LEN;
@@ -169,7 +179,7 @@ pub fn decode_volume(bytes: &[u8]) -> Result<Volume, DecodeError> {
     // header: its first 4 bytes are the all-zero CTM prefix, never a valid
     // LDM control word, so that is the discriminator.
     if bytes.get(offset..offset + 4) == Some(&[0, 0, 0, 0]) {
-        let outcome = message::process_record(&bytes[offset..], &mut sweeps)?;
+        let outcome = message::process_record(&bytes[offset..], &mut sweeps, gates)?;
         site_location = outcome.site_location;
         volume_coverage_pattern = outcome.volume_coverage_pattern;
         offset = bytes.len();
@@ -178,7 +188,7 @@ pub fn decode_volume(bytes: &[u8]) -> Result<Volume, DecodeError> {
     while offset < bytes.len() {
         let record = ldm::read_ldm_record(bytes, offset)?;
         let decompressed = ldm::decompress_bzip2(record.compressed, record.offset)?;
-        let outcome = message::process_record(&decompressed, &mut sweeps)?;
+        let outcome = message::process_record(&decompressed, &mut sweeps, gates)?;
 
         if outcome.site_location.is_some() {
             site_location = outcome.site_location;

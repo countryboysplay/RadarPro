@@ -360,3 +360,23 @@ fn decodes_partial_volume_assembled_from_real_time_chunks() {
     assert!(!refl.is_empty(), "no reflectivity decoded");
     assert_moment_values_in_documented_range(MomentKind::Reflectivity, &refl);
 }
+
+/// The live sweep counter decodes without gates; it must split sweeps exactly
+/// as the full decode does.
+#[test]
+fn structure_decode_matches_full_decode_sweeps() {
+    let bytes = load_fixture("KTLX20240601_000353_V06");
+    let full = decode_volume(&bytes).expect("full decode");
+    let bare = nexrad_level2::decode_volume_structure(&bytes).expect("structure decode");
+    let shape = |v: &Volume| -> Vec<(u8, usize)> {
+        v.sweeps
+            .iter()
+            .map(|s| (s.elevation_number, s.radials.len()))
+            .collect()
+    };
+    assert_eq!(shape(&bare), shape(&full));
+    assert!(bare
+        .sweeps
+        .iter()
+        .all(|s| s.radials.iter().all(|r| r.moments.is_empty())));
+}

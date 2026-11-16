@@ -106,7 +106,11 @@ fn render_pipeline_produces_a_non_uniform_image_when_a_gpu_is_available() {
     );
 
     let lookup_table = build_radial_lookup(
-        &buffer_data.source_radials,
+        &buffer_data
+            .radial_meta
+            .iter()
+            .map(|m| m.azimuth_deg)
+            .collect::<Vec<_>>(),
         AzimuthResolution::One,
         DEFAULT_LOOKUP_TEXEL_COUNT,
     );

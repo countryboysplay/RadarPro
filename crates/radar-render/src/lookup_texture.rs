@@ -12,7 +12,7 @@
 //! No `wgpu` dependency — this builds a plain `Vec<u32>`, uploaded to a
 //! `R32Uint` 1D texture by `gpu.rs`. Fully unit-testable without a GPU.
 
-use radar_types::{AzimuthResolution, Radial};
+use radar_types::AzimuthResolution;
 
 /// Sentinel value for a lookup-table entry with no matching radial within
 /// tolerance — a gap in a partial scan, or a genuine dropped-radial gap
@@ -30,12 +30,10 @@ pub const SENTINEL_NO_RADIAL: u32 = u32::MAX;
 /// texels x 4 bytes = 14.4 KiB, negligible either way).
 pub const DEFAULT_LOOKUP_TEXEL_COUNT: u32 = 3600;
 
-/// Build the radial-index lookup table for `radials` (which should be a
-/// [`crate::sweep_buffers::SweepBufferData::source_radials`] — i.e.
-/// already filtered to the radials that carry the moment being rendered,
-/// in the same order as the corresponding `radial_meta`, since table
-/// entries are indices into that array), using `azimuth_resolution` to
-/// derive the matching tolerance.
+/// Build the radial-index lookup table for `azimuths` (degrees, one per
+/// entry of a [`crate::sweep_buffers::SweepBufferData`]'s `radial_meta`, in
+/// the same order, since table entries are indices into that array), using
+/// `azimuth_resolution` to derive the matching tolerance.
 ///
 /// Reuses [`radar_geo::find_radial_index`] directly — the same "nearest
 /// radial by circular azimuth distance" convention already documented and
@@ -50,7 +48,7 @@ pub const DEFAULT_LOOKUP_TEXEL_COUNT: u32 = 3600;
 /// it only has the already-filtered radial slice — so the same tolerance
 /// rule is applied directly here instead of going through it).
 pub fn build_radial_lookup(
-    radials: &[Radial],
+    azimuths: &[f32],
     azimuth_resolution: AzimuthResolution,
     texel_count: u32,
 ) -> Vec<u32> {
@@ -60,7 +58,11 @@ pub fn build_radial_lookup(
 
     for texel in 0..texel_count_usize {
         let bucket_center_deg = (texel as f64 + 0.5) * 360.0 / f64::from(texel_count.max(1));
-        let entry = match radar_geo::find_radial_index(radials, bucket_center_deg, tolerance_deg) {
+        let entry = match radar_geo::nearest_azimuth_index(
+            azimuths.iter().copied(),
+            bucket_center_deg,
+            tolerance_deg,
+        ) {
             Some(index) => index as u32,
             None => SENTINEL_NO_RADIAL,
         };
@@ -73,29 +75,11 @@ pub fn build_radial_lookup(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use radar_types::{RadialStatus, RadialStatusKind, Timestamp};
-    use std::collections::BTreeMap;
-
-    fn radial_at(azimuth_deg: f32) -> Radial {
-        Radial {
-            azimuth_number: 1,
-            azimuth_angle_deg: azimuth_deg,
-            azimuth_resolution: AzimuthResolution::One,
-            elevation_angle_deg: 0.5,
-            radial_status: RadialStatus {
-                kind: RadialStatusKind::Intermediate,
-                bad_data: false,
-            },
-            collection_time: Timestamp::from_epoch_millis(0),
-            nyquist_velocity_mps: None,
-            moments: BTreeMap::new(),
-        }
-    }
 
     #[test]
     fn full_360_scan_assigns_nearest_radial_everywhere() {
         // One radial per whole degree, 0..359 — a full, regular scan.
-        let radials: Vec<Radial> = (0..360).map(|az| radial_at(az as f32)).collect();
+        let radials: Vec<f32> = (0..360).map(|az| az as f32).collect();
         let table = build_radial_lookup(&radials, AzimuthResolution::One, 3600);
 
         assert_eq!(table.len(), 3600);
@@ -109,12 +93,7 @@ mod tests {
     #[test]
     fn wraparound_bucket_near_zero_resolves_correctly() {
         // Radials at 358, 359, 0, 1 degrees.
-        let radials = vec![
-            radial_at(358.0),
-            radial_at(359.0),
-            radial_at(0.0),
-            radial_at(1.0),
-        ];
+        let radials = vec![358.0, 359.0, 0.0, 1.0];
         let table = build_radial_lookup(&radials, AzimuthResolution::One, 3600);
 
         // Texel 3599 covers [359.9, 360.0), center 359.95 -> nearest is
@@ -129,7 +108,7 @@ mod tests {
     #[test]
     fn partial_scan_gap_gets_sentinel_outside_coverage() {
         // Radials only from 45 to 135 degrees (a partial scan).
-        let radials: Vec<Radial> = (45..=135).map(|az| radial_at(az as f32)).collect();
+        let radials: Vec<f32> = (45..=135).map(|az| az as f32).collect();
         let table = build_radial_lookup(&radials, AzimuthResolution::One, 3600);
 
         // Bucket at 90 degrees (well inside coverage) resolves to a real
@@ -157,12 +136,7 @@ mod tests {
     fn irregular_spacing_resolves_to_nearest_actual_radial() {
         // Non-uniform gaps, mirroring radar-geo's own irregular-spacing
         // test fixture.
-        let radials = vec![
-            radial_at(10.0),
-            radial_at(11.0),
-            radial_at(15.0),
-            radial_at(40.0),
-        ];
+        let radials = vec![10.0, 11.0, 15.0, 40.0];
         let table = build_radial_lookup(&radials, AzimuthResolution::One, 3600);
 
         let bucket_at = |deg: f64| (deg * 3600.0 / 360.0) as usize;

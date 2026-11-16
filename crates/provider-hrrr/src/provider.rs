@@ -117,9 +117,10 @@ pub(crate) async fn fetch_messages(
 ) -> Result<ForecastGrid, HrrrError> {
     let idx_text = client.fetch_idx_text(idx_key).await?;
     let entries = crate::idx::parse_idx(idx_key, &idx_text)?;
-    // A derived field (shear, STP) needs several messages; each is one range GET.
-    let mut grids = Vec::with_capacity(specs.len());
-    for spec in specs {
+    // A derived field (shear, STP) needs several messages; each is one range
+    // GET, all in flight at once.
+    let entries = &entries;
+    let mut grids = futures_util::future::try_join_all(specs.into_iter().map(|spec| async move {
         let (idx_variable, idx_level, ..) = spec;
         let position = entries
             .iter()
@@ -134,10 +135,11 @@ pub(crate) async fn fetch_messages(
         } else {
             None
         };
-        let (start, end) = crate::idx::byte_range(key, &entries, position, content_length)?;
+        let (start, end) = crate::idx::byte_range(key, entries, position, content_length)?;
         let bytes = client.fetch_byte_range(key, start, end).await?;
-        grids.push(crate::decode::decode_message(key, &bytes, variable, spec)?);
-    }
+        crate::decode::decode_message(key, &bytes, variable, spec)
+    }))
+    .await?;
     if grids.len() == 1 {
         return Ok(grids.remove(0));
     }

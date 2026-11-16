@@ -32,7 +32,7 @@
 //! before upload rather than deferred to the shader, which is one of the
 //! two options the S03 stage doc explicitly allows.
 
-use radar_types::{GateValue, MomentKind, Radial, Sweep};
+use radar_types::{AzimuthResolution, GateValue, MomentKind, Sweep};
 
 /// Marks a [`GpuGateSample`]'s `flag` field: the gate held a valid,
 /// converted physical value in `value`.
@@ -131,13 +131,10 @@ pub struct GpuRadialMeta {
 /// out-of-range or wrong index.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SweepBufferData {
-    /// Original sweep's radials, filtered to only those carrying
-    /// `moment_kind`, in original scan order. Kept alongside the GPU
-    /// buffers (not just their indices) because [`crate::lookup_texture`]
-    /// needs the actual azimuth angles to build its lookup table, and
-    /// keeping the association here (rather than recomputing the filter
-    /// twice) avoids the two buffers silently drifting out of sync.
-    pub source_radials: Vec<Radial>,
+    /// The first included radial's nominal azimuth resolution (a sweep's
+    /// radials share one), for [`crate::lookup_texture`]'s match tolerance;
+    /// its azimuths come from `radial_meta`.
+    pub azimuth_resolution: AzimuthResolution,
     pub radial_meta: Vec<GpuRadialMeta>,
     pub gate_samples: Vec<GpuGateSample>,
 }
@@ -147,7 +144,7 @@ pub struct SweepBufferData {
 /// if no radial in `sweep` carries `moment_kind` — the caller decides
 /// whether that is an error worth reporting.
 pub fn build_sweep_buffers(sweep: &Sweep, moment_kind: MomentKind) -> SweepBufferData {
-    let mut source_radials = Vec::new();
+    let mut azimuth_resolution = None;
     let mut radial_meta = Vec::with_capacity(sweep.radials.len());
     let mut gate_samples = Vec::new();
 
@@ -172,11 +169,11 @@ pub fn build_sweep_buffers(sweep: &Sweep, moment_kind: MomentKind) -> SweepBuffe
             gate_count: moment.gates.len() as u32,
             gate_offset,
         });
-        source_radials.push(radial.clone());
+        azimuth_resolution.get_or_insert(radial.azimuth_resolution);
     }
 
     SweepBufferData {
-        source_radials,
+        azimuth_resolution: azimuth_resolution.unwrap_or(AzimuthResolution::One),
         radial_meta,
         gate_samples,
     }
@@ -185,7 +182,7 @@ pub fn build_sweep_buffers(sweep: &Sweep, moment_kind: MomentKind) -> SweepBuffe
 #[cfg(test)]
 mod tests {
     use super::*;
-    use radar_types::{AzimuthResolution, RadialStatus, RadialStatusKind, Timestamp};
+    use radar_types::{Radial, RadialStatus, RadialStatusKind, Timestamp};
     use std::collections::BTreeMap;
 
     fn radial_with_ref(
@@ -279,7 +276,6 @@ mod tests {
         let built = build_sweep_buffers(&sweep, MomentKind::Reflectivity);
 
         assert_eq!(built.radial_meta.len(), 2);
-        assert_eq!(built.source_radials.len(), 2);
         assert_eq!(built.radial_meta[0].azimuth_deg, 0.0);
         assert_eq!(built.radial_meta[1].azimuth_deg, 2.0);
     }
@@ -332,7 +328,6 @@ mod tests {
         let built = build_sweep_buffers(&sweep, MomentKind::Reflectivity);
         assert!(built.radial_meta.is_empty());
         assert!(built.gate_samples.is_empty());
-        assert!(built.source_radials.is_empty());
     }
 
     #[test]

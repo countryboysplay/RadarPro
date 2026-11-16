@@ -71,7 +71,7 @@
 //! [`RadarWebRenderer::probe_gate`] and the free function
 //! [`range_rings_geojson`].
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use js_sys::Promise;
 use wasm_bindgen::prelude::*;
@@ -88,7 +88,7 @@ use radar_render::gpu::{
 use radar_render::lookup_texture::{build_radial_lookup, DEFAULT_LOOKUP_TEXEL_COUNT};
 use radar_render::palette::PALETTE_TEXEL_COUNT;
 use radar_render::sweep_buffers::{build_sweep_buffers, GpuRadialMeta, SweepBufferData};
-use radar_types::{AzimuthResolution, GateValue, Moment, MomentKind, Volume};
+use radar_types::{GateValue, Moment, MomentKind, Volume};
 
 use crate::{render_select, srv_select, sweep_select};
 
@@ -305,6 +305,8 @@ pub struct RadarWebRenderer {
     /// filtered). Done lazily, only for what is viewed, so decoding stays
     /// fast for loops/live chunk updates; restored when the toggle goes off.
     raw_moments: HashMap<(usize, MomentKind), Vec<Moment>>,
+    /// Sweeps that already have KDP derived (also lazy, for the same reason).
+    kdp_sweeps: HashSet<usize>,
 }
 
 #[wasm_bindgen(js_name = initGpu)]
@@ -456,6 +458,7 @@ impl RadarWebRenderer {
             dealias: false,
             hide_non_weather: false,
             raw_moments: HashMap::new(),
+            kdp_sweeps: HashSet::new(),
         })
     }
 
@@ -506,9 +509,8 @@ impl RadarWebRenderer {
     /// needed in this signature.
     #[wasm_bindgen(js_name = decodeVolume)]
     pub fn decode_volume(&mut self, archive2_bytes: &[u8]) -> Result<VolumeSummary, JsValue> {
-        let mut volume = nexrad_level2::decode_volume(archive2_bytes)
+        let volume = nexrad_level2::decode_volume(archive2_bytes)
             .map_err(|e| JsValue::from_str(&format!("failed to decode Archive II volume: {e}")))?;
-        radar_geo::add_kdp(&mut volume);
 
         let summary = VolumeSummary {
             site_icao: volume.site.icao.clone(),
@@ -522,6 +524,7 @@ impl RadarWebRenderer {
 
         self.volume = Some(volume);
         self.raw_moments.clear();
+        self.kdp_sweeps.clear();
         // A new decode invalidates any GPU resources uploaded for the
         // previous volume's selection; `select_and_render` rebuilds them
         // lazily on the next call.
@@ -615,7 +618,11 @@ impl RadarWebRenderer {
         &self,
         moment_wire_code: &str,
     ) -> Result<Option<u32>, JsValue> {
-        let moment = resolve_moment(moment_wire_code)?;
+        let mut moment = resolve_moment(moment_wire_code)?;
+        // KDP is derived on demand from PHI, so it exists wherever PHI does.
+        if moment == MomentKind::SpecificDifferentialPhase {
+            moment = MomentKind::DifferentialPhase;
+        }
         let volume = self.volume.as_ref().ok_or_else(|| {
             JsValue::from_str("defaultSweepIndexForMoment called before a successful decodeVolume")
         })?;
@@ -959,6 +966,16 @@ impl RadarWebRenderer {
         moment: MomentKind,
         sweeps: impl IntoIterator<Item = usize>,
     ) {
+        if moment == MomentKind::SpecificDifferentialPhase {
+            if let Some(volume) = self.volume.as_mut() {
+                for index in sweeps {
+                    if index < volume.sweeps.len() && self.kdp_sweeps.insert(index) {
+                        radar_geo::add_kdp_to_sweep(&mut volume.sweeps[index]);
+                    }
+                }
+            }
+            return;
+        }
         let enabled = match moment {
             MomentKind::Velocity => self.dealias,
             MomentKind::Reflectivity => self.hide_non_weather,
@@ -1035,14 +1052,14 @@ impl RadarWebRenderer {
         buffer_data: SweepBufferData,
         moment: MomentKind,
     ) -> Result<(), JsValue> {
-        let azimuth_resolution = buffer_data
-            .source_radials
-            .first()
-            .map(|r| r.azimuth_resolution)
-            .unwrap_or(AzimuthResolution::One);
+        let azimuths: Vec<f32> = buffer_data
+            .radial_meta
+            .iter()
+            .map(|m| m.azimuth_deg)
+            .collect();
         let lookup_table = build_radial_lookup(
-            &buffer_data.source_radials,
-            azimuth_resolution,
+            &azimuths,
+            buffer_data.azimuth_resolution,
             DEFAULT_LOOKUP_TEXEL_COUNT,
         );
 
@@ -1182,7 +1199,7 @@ impl RadarWebRenderer {
 /// volume a renderer is showing stays untouched; 0 if it doesn't decode yet.
 #[wasm_bindgen(js_name = completeSweepCount)]
 pub fn complete_sweep_count(archive2_bytes: &[u8], volume_complete: bool) -> u32 {
-    nexrad_level2::decode_volume(archive2_bytes).map_or(0, |v| {
+    nexrad_level2::decode_volume_structure(archive2_bytes).map_or(0, |v| {
         render_select::complete_sweep_count(&v, volume_complete) as u32
     })
 }

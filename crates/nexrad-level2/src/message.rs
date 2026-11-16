@@ -150,6 +150,7 @@ pub(crate) struct RecordOutcome {
 pub(crate) fn process_record(
     buf: &[u8],
     sweeps: &mut Vec<Sweep>,
+    gates: bool,
 ) -> Result<RecordOutcome, DecodeError> {
     let mut outcome = RecordOutcome::default();
     let mut cursor = Cursor::new(buf, 0);
@@ -168,7 +169,7 @@ pub(crate) fn process_record(
         let header = parse_generic_message_header(&mut cursor)?;
 
         if header.message_type == 31 {
-            let parsed = message31::parse_message31(buf, cursor.position())?;
+            let parsed = message31::parse_message31(buf, cursor.position(), gates)?;
             if parsed.site_location.is_some() {
                 outcome.site_location = parsed.site_location;
             }
@@ -324,7 +325,7 @@ mod tests {
     #[test]
     fn rejects_truncated_message_header() {
         let bytes = [0u8; 5]; // far short of CTM prefix + header
-        let err = process_record(&bytes, &mut Vec::new()).unwrap_err();
+        let err = process_record(&bytes, &mut Vec::new(), true).unwrap_err();
         assert!(matches!(err, DecodeError::TruncatedMessage { .. }));
     }
 
@@ -332,7 +333,7 @@ mod tests {
     fn rejects_unsupported_message_type() {
         let mut bytes = vec![0u8; CTM_PREFIX_LEN];
         bytes.extend_from_slice(&header_bytes(99));
-        let err = process_record(&bytes, &mut Vec::new()).unwrap_err();
+        let err = process_record(&bytes, &mut Vec::new(), true).unwrap_err();
         assert!(matches!(
             err,
             DecodeError::UnsupportedMessageType {
@@ -347,7 +348,7 @@ mod tests {
         let mut bytes = vec![0u8; CTM_PREFIX_LEN];
         bytes.extend_from_slice(&header_bytes(2));
         bytes.resize(LEGACY_FRAME_LEN, 0xAB); // pad out to one full legacy frame
-        let outcome = process_record(&bytes, &mut Vec::new()).expect("valid legacy frame");
+        let outcome = process_record(&bytes, &mut Vec::new(), true).expect("valid legacy frame");
         assert!(outcome.site_location.is_none());
         assert!(outcome.volume_coverage_pattern.is_none());
     }
@@ -359,7 +360,8 @@ mod tests {
         // (message type 0, zero segments) and must be skipped, not
         // treated as an unsupported message type.
         let bytes = vec![0u8; LEGACY_FRAME_LEN];
-        let outcome = process_record(&bytes, &mut Vec::new()).expect("zero-padded slot is valid");
+        let outcome =
+            process_record(&bytes, &mut Vec::new(), true).expect("zero-padded slot is valid");
         assert!(outcome.site_location.is_none());
         assert!(outcome.volume_coverage_pattern.is_none());
     }
@@ -374,7 +376,7 @@ mod tests {
         // lands exactly on the next message, not one byte early or late.
         bytes.extend_from_slice(&[0u8; CTM_PREFIX_LEN]);
         bytes.extend_from_slice(&header_bytes(15));
-        let outcome = process_record(&bytes, &mut Vec::new());
+        let outcome = process_record(&bytes, &mut Vec::new(), true);
         // Message 15 with a fabricated size will itself fail (its own
         // fixed 2432-byte frame is truncated at end-of-buffer here), but
         // that failure being `UnexpectedEnd` rather than
@@ -398,7 +400,8 @@ mod tests {
         let prfs_c = [500u32, 600, 700, 800, 900];
         let body = build_message32_body(&[(1u16, &prfs_a), (2u16, &prfs_b), (5u16, &prfs_c)]);
         let bytes = build_legacy_slot(32, &body);
-        let outcome = process_record(&bytes, &mut Vec::new()).expect("valid type-32 legacy frame");
+        let outcome =
+            process_record(&bytes, &mut Vec::new(), true).expect("valid type-32 legacy frame");
         assert!(outcome.site_location.is_none());
         assert!(outcome.volume_coverage_pattern.is_none());
     }
@@ -410,7 +413,7 @@ mod tests {
         // Declares a full legacy frame but the buffer ends far short of
         // it — same shape as `legacy_message_type_rejects_truncated_frame`.
         let truncated = &full[..CTM_PREFIX_LEN + MESSAGE_HEADER_LEN + body.len()];
-        let err = process_record(truncated, &mut Vec::new()).unwrap_err();
+        let err = process_record(truncated, &mut Vec::new(), true).unwrap_err();
         assert!(matches!(err, DecodeError::UnexpectedEnd { .. }));
     }
 
@@ -418,7 +421,8 @@ mod tests {
     fn message33_even_compressed_size_skips_one_fixed_frame() {
         let body = build_message33_body("AzServoLog", &[0xAA, 0xBB, 0xCC, 0xDD]);
         let bytes = build_legacy_slot(33, &body);
-        let outcome = process_record(&bytes, &mut Vec::new()).expect("valid type-33 legacy frame");
+        let outcome =
+            process_record(&bytes, &mut Vec::new(), true).expect("valid type-33 legacy frame");
         assert!(outcome.site_location.is_none());
         assert!(outcome.volume_coverage_pattern.is_none());
     }
@@ -434,7 +438,8 @@ mod tests {
         let body = build_message33_body("ElServoLog", &[0xAA, 0xBB, 0xCC]);
         assert_eq!(body.len() % 2, 0, "builder must pad to a whole halfword");
         let bytes = build_legacy_slot(33, &body);
-        let outcome = process_record(&bytes, &mut Vec::new()).expect("valid type-33 legacy frame");
+        let outcome =
+            process_record(&bytes, &mut Vec::new(), true).expect("valid type-33 legacy frame");
         assert!(outcome.site_location.is_none());
         assert!(outcome.volume_coverage_pattern.is_none());
     }
@@ -444,7 +449,7 @@ mod tests {
         let body = build_message33_body("AzServoLog", &[0xAA, 0xBB, 0xCC, 0xDD]);
         let full = build_legacy_slot(33, &body);
         let truncated = &full[..CTM_PREFIX_LEN + MESSAGE_HEADER_LEN + body.len()];
-        let err = process_record(truncated, &mut Vec::new()).unwrap_err();
+        let err = process_record(truncated, &mut Vec::new(), true).unwrap_err();
         assert!(matches!(err, DecodeError::UnexpectedEnd { .. }));
     }
 
@@ -454,7 +459,7 @@ mod tests {
         bytes.extend_from_slice(&header_bytes(2));
         // Frame is declared as legacy (fixed 2432 bytes) but the buffer
         // ends far short of that.
-        let err = process_record(&bytes, &mut Vec::new()).unwrap_err();
+        let err = process_record(&bytes, &mut Vec::new(), true).unwrap_err();
         assert!(matches!(err, DecodeError::UnexpectedEnd { .. }));
     }
 }

@@ -51,9 +51,23 @@ pub fn find_radial_index(
     target_azimuth_deg: f64,
     tolerance_deg: f64,
 ) -> Option<usize> {
+    nearest_azimuth_index(
+        radials.iter().map(|r| r.azimuth_angle_deg),
+        target_azimuth_deg,
+        tolerance_deg,
+    )
+}
+
+/// [`find_radial_index`] over bare azimuths (degrees), for callers that
+/// hold azimuths without whole radials.
+pub fn nearest_azimuth_index(
+    azimuths: impl IntoIterator<Item = f32>,
+    target_azimuth_deg: f64,
+    tolerance_deg: f64,
+) -> Option<usize> {
     let mut best: Option<(usize, f64)> = None;
-    for (index, radial) in radials.iter().enumerate() {
-        let diff = circular_diff_deg(f64::from(radial.azimuth_angle_deg), target_azimuth_deg);
+    for (index, azimuth) in azimuths.into_iter().enumerate() {
+        let diff = circular_diff_deg(f64::from(azimuth), target_azimuth_deg);
         if best.is_none_or(|(_, best_diff)| diff < best_diff) {
             best = Some((index, diff));
         }

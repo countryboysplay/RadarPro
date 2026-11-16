@@ -17,7 +17,7 @@ use radar_render::palette::{
     DEFAULT_REF_MIN_DBZ, PALETTE_TEXEL_COUNT,
 };
 use radar_render::sweep_buffers::{build_sweep_buffers, GpuGateSample, GpuRadialMeta};
-use radar_types::{AzimuthResolution, MomentKind, Sweep, Volume};
+use radar_types::{MomentKind, Sweep, Volume};
 use std::time::{Duration, Instant};
 
 const FIXTURE_PATH: &str = concat!(
@@ -78,14 +78,14 @@ fn main() {
 
     let upload_start = Instant::now();
     let buffer_data = build_sweep_buffers(sweep, MomentKind::Reflectivity);
-    let azimuth_resolution = sweep
-        .radials
-        .first()
-        .map(|r| r.azimuth_resolution)
-        .unwrap_or(AzimuthResolution::One);
+    let azimuths: Vec<f32> = buffer_data
+        .radial_meta
+        .iter()
+        .map(|m| m.azimuth_deg)
+        .collect();
     let lookup_table = build_radial_lookup(
-        &buffer_data.source_radials,
-        azimuth_resolution,
+        &azimuths,
+        buffer_data.azimuth_resolution,
         DEFAULT_LOOKUP_TEXEL_COUNT,
     );
     let palette_lut = build_palette_lut(
